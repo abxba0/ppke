@@ -1,0 +1,115 @@
+"""Unified LLM client supporting Anthropic and OpenAI."""
+
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any
+
+from ppke.config import LLMConfig
+
+logger = logging.getLogger(__name__)
+
+
+class LLMClient:
+    """Configurable LLM client wrapping Anthropic and OpenAI APIs."""
+
+    def __init__(self, config: LLMConfig):
+        self.config = config
+        self._anthropic_client = None
+        self._openai_client = None
+
+    def _get_anthropic(self):
+        if self._anthropic_client is None:
+            import anthropic
+            self._anthropic_client = anthropic.Anthropic(
+                api_key=self.config.anthropic_api_key
+            )
+        return self._anthropic_client
+
+    def _get_openai(self):
+        if self._openai_client is None:
+            import openai
+            self._openai_client = openai.OpenAI(
+                api_key=self.config.openai_api_key
+            )
+        return self._openai_client
+
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_format: str = "text",
+    ) -> str:
+        """Send a prompt and return the response text.
+
+        Args:
+            system_prompt: System-level instructions.
+            user_prompt: The user message / content to process.
+            response_format: "text" or "json" (for OpenAI JSON mode).
+
+        Returns:
+            The model's response as a string.
+        """
+        if self.config.provider == "anthropic":
+            return self._complete_anthropic(system_prompt, user_prompt)
+        elif self.config.provider == "openai":
+            return self._complete_openai(system_prompt, user_prompt, response_format)
+        else:
+            raise ValueError(f"Unknown provider: {self.config.provider}")
+
+    def _complete_anthropic(self, system_prompt: str, user_prompt: str) -> str:
+        client = self._get_anthropic()
+        response = client.messages.create(
+            model=self.config.model,
+            max_tokens=self.config.max_tokens,
+            temperature=self.config.temperature,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        return response.content[0].text
+
+    def _complete_openai(
+        self, system_prompt: str, user_prompt: str, response_format: str
+    ) -> str:
+        client = self._get_openai()
+        kwargs: dict[str, Any] = {
+            "model": self.config.model,
+            "max_tokens": self.config.max_tokens,
+            "temperature": self.config.temperature,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        if response_format == "json":
+            kwargs["response_format"] = {"type": "json_object"}
+
+        response = client.chat.completions.create(**kwargs)
+        return response.choices[0].message.content
+
+    def complete_json(self, system_prompt: str, user_prompt: str) -> dict:
+        """Send a prompt expecting JSON response. Parses and returns dict."""
+        if self.config.provider == "openai":
+            raw = self.complete(system_prompt, user_prompt, response_format="json")
+        else:
+            raw = self.complete(system_prompt, user_prompt)
+
+        # Extract JSON from response (handle markdown code blocks)
+        text = raw.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            # Remove first and last lines (```json and ```)
+            json_lines = []
+            inside = False
+            for line in lines:
+                if line.strip().startswith("```") and not inside:
+                    inside = True
+                    continue
+                elif line.strip() == "```" and inside:
+                    break
+                elif inside:
+                    json_lines.append(line)
+            text = "\n".join(json_lines)
+
+        return json.loads(text)
