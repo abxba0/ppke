@@ -6,3 +6,5 @@ build/
 .pytest_cache/
 *.egg
 .ppke/
+.env
+*.env

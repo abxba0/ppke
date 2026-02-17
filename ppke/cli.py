@@ -9,7 +9,7 @@ from pathlib import Path
 import click
 
 from ppke import __version__
-from ppke.config import Config
+from ppke.config import Config, is_first_run, save_env_file
 
 
 def _setup_logging(verbose: bool):
@@ -55,14 +55,131 @@ def _require_api_key(config: Config):
         sys.exit(1)
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(version=__version__)
-def main():
+@click.pass_context
+def main(ctx):
     """PPKE - Personal Philosophical Knowledge Engine.
 
     A CLI tool for structured philosophical book analysis.
     """
-    pass
+    if ctx.invoked_subcommand is None:
+        if is_first_run():
+            click.echo("Welcome to PPKE! It looks like this is your first time.")
+            click.echo("Running setup wizard...\n")
+            ctx.invoke(init)
+        else:
+            click.echo(ctx.get_help())
+
+
+# ── init command ──
+
+
+@main.command()
+def init():
+    """First-time setup wizard.
+
+    Walks you through configuring your LLM provider, API keys,
+    and knowledge base location. Secrets are stored in ~/.ppke/.env
+    (permissions 600) and never committed to git.
+
+    Example:
+        ppke init
+    """
+    click.echo("=" * 50)
+    click.echo("  PPKE Setup Wizard")
+    click.echo("=" * 50)
+    click.echo()
+
+    # 1. Choose provider
+    provider = click.prompt(
+        "LLM provider",
+        type=click.Choice(["anthropic", "openai"], case_sensitive=False),
+        default="anthropic",
+    )
+
+    # 2. Choose model
+    if provider == "anthropic":
+        default_model = "claude-sonnet-4-20250514"
+        click.echo(f"\nDefault model: {default_model}")
+        model = click.prompt("Model name", default=default_model)
+    else:
+        default_model = "gpt-4o"
+        click.echo(f"\nDefault model: {default_model}")
+        model = click.prompt("Model name", default=default_model)
+
+    # 3. API key for chosen provider
+    env_vars: dict[str, str] = {}
+    if provider == "anthropic":
+        click.echo("\nYou need an Anthropic API key.")
+        click.echo("Get one at: https://console.anthropic.com/settings/keys")
+        key = click.prompt("ANTHROPIC_API_KEY", hide_input=True)
+        env_vars["ANTHROPIC_API_KEY"] = key
+    else:
+        click.echo("\nYou need an OpenAI API key.")
+        click.echo("Get one at: https://platform.openai.com/api-keys")
+        key = click.prompt("OPENAI_API_KEY", hide_input=True)
+        env_vars["OPENAI_API_KEY"] = key
+
+    # 4. Optionally set the other provider key too
+    other = "openai" if provider == "anthropic" else "anthropic"
+    if click.confirm(f"\nAlso set an API key for {other}?", default=False):
+        if other == "anthropic":
+            click.echo("Get one at: https://console.anthropic.com/settings/keys")
+            other_key = click.prompt("ANTHROPIC_API_KEY", hide_input=True)
+            env_vars["ANTHROPIC_API_KEY"] = other_key
+        else:
+            click.echo("Get one at: https://platform.openai.com/api-keys")
+            other_key = click.prompt("OPENAI_API_KEY", hide_input=True)
+            env_vars["OPENAI_API_KEY"] = other_key
+
+    # 5. Vault path
+    default_vault = str(Path.home() / "KnowledgeBase")
+    click.echo(f"\nKnowledge base directory (default: {default_vault})")
+    vault_path = click.prompt("Vault path", default=default_vault)
+
+    # 6. Batch size
+    batch_size = click.prompt(
+        "\nParagraphs per LLM batch",
+        type=int,
+        default=5,
+    )
+
+    # Save secrets to .env file
+    click.echo("\nSaving API keys to ~/.ppke/.env ...")
+    save_env_file(env_vars)
+
+    # Save config
+    click.echo("Saving configuration to ~/.ppke/config.json ...")
+    cfg = Config(
+        vault_path=Path(vault_path),
+        llm=Config.load().llm,
+    )
+    cfg.llm.provider = provider
+    cfg.llm.model = model
+    cfg.llm.paragraphs_per_batch = batch_size
+    cfg.save()
+
+    # Create vault directory
+    vault = Path(vault_path)
+    vault.mkdir(parents=True, exist_ok=True)
+
+    click.echo()
+    click.echo("=" * 50)
+    click.echo("  Setup complete!")
+    click.echo("=" * 50)
+    click.echo()
+    click.echo("Your configuration:")
+    click.echo(f"  Provider:    {provider}")
+    click.echo(f"  Model:       {model}")
+    click.echo(f"  Vault:       {vault_path}")
+    click.echo(f"  Batch size:  {batch_size}")
+    click.echo(f"  Secrets:     ~/.ppke/.env (chmod 600)")
+    click.echo()
+    click.echo("Next steps:")
+    click.echo("  ppke ingest book.md --title 'Book Title' --author 'Author Name'")
+    click.echo("  ppke config --show")
+    click.echo("  ppke --help")
 
 
 # ── ingest command ──

@@ -10,7 +10,43 @@ from typing import Optional
 
 
 DEFAULT_CONFIG_PATH = Path.home() / ".ppke" / "config.json"
+DEFAULT_ENV_PATH = Path.home() / ".ppke" / ".env"
 DEFAULT_VAULT_PATH = Path.home() / "KnowledgeBase"
+
+
+def _load_env_file(path: Optional[Path] = None) -> dict[str, str]:
+    """Load key=value pairs from a .env file."""
+    path = path or DEFAULT_ENV_PATH
+    env_vars: dict[str, str] = {}
+    if not path.exists():
+        return env_vars
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        env_vars[key] = value
+    return env_vars
+
+
+def save_env_file(env_vars: dict[str, str], path: Optional[Path] = None):
+    """Save key=value pairs to the .env file (merges with existing)."""
+    path = path or DEFAULT_ENV_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = _load_env_file(path)
+    existing.update(env_vars)
+    lines = [f"{k}={v}" for k, v in sorted(existing.items()) if v]
+    path.write_text("\n".join(lines) + "\n")
+    path.chmod(0o600)
+
+
+def is_first_run() -> bool:
+    """Check if this is the first time PPKE is being run."""
+    return not DEFAULT_CONFIG_PATH.exists()
 
 
 @dataclass
@@ -26,10 +62,18 @@ class LLMConfig:
     paragraphs_per_batch: int = 5
 
     def __post_init__(self):
+        # Load from .env file first, then fall back to environment
+        dot_env = _load_env_file()
         if self.anthropic_api_key is None:
-            self.anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
+            self.anthropic_api_key = (
+                os.environ.get("ANTHROPIC_API_KEY")
+                or dot_env.get("ANTHROPIC_API_KEY")
+            )
         if self.openai_api_key is None:
-            self.openai_api_key = os.environ.get("OPENAI_API_KEY")
+            self.openai_api_key = (
+                os.environ.get("OPENAI_API_KEY")
+                or dot_env.get("OPENAI_API_KEY")
+            )
 
     @property
     def active_api_key(self) -> Optional[str]:
