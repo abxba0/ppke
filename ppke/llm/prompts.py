@@ -231,3 +231,106 @@ Return JSON:
 
 Return ONLY the JSON. No explanation.
 """
+
+# ── Skill 6: Cross-Book Synthesizer ──
+
+CROSS_BOOK_SYSTEM = """\
+You are a cross-book synthesizer for philosophical texts. You compare books by \
+their concept definitions, ontology, epistemology, moral framework, logical style, \
+and structural patterns.
+
+Rules:
+- Always cite sources as: Book_Folder_Name -> paragraph ID.
+- Compare actual content, not surface similarity.
+- Mark hypotheses with [HYPOTHESIS].
+- Return valid JSON only.
+"""
+
+CROSS_BOOK_USER = """\
+Given the following analyses of multiple books, perform a cross-book synthesis.
+
+Books:
+{books_json}
+
+Question/Focus: {question}
+
+Compare the books across these dimensions:
+1. Concept definitions: How do the same or similar concepts differ?
+2. Ontology: What each author takes to be real
+3. Epistemology: How each author understands knowledge
+4. Moral framework: Ethical positions and value hierarchies
+5. Logical style: Deductive vs inductive vs dialectical etc.
+6. Structural patterns: How arguments are built
+
+Return JSON:
+{{
+  "comparisons": [
+    {{
+      "dimension": "concept_definitions|ontology|epistemology|moral_framework|logical_style|structural_patterns",
+      "description": "...",
+      "per_book": [
+        {{"book_folder": "...", "position": "...", "evidence": "..."}}
+      ],
+      "synthesis": "...",
+      "tensions": ["..."],
+      "is_hypothesis": true/false
+    }}
+  ],
+  "cross_links": [
+    {{
+      "concept": "...",
+      "books": ["book_folder_1", "book_folder_2"],
+      "relationship": "agreement|tension|evolution|contradiction",
+      "description": "..."
+    }}
+  ],
+  "overall_synthesis": "..."
+}}
+
+Return ONLY the JSON. No explanation.
+"""
+
+# ── Single Book Query ──
+
+SINGLE_BOOK_QUERY_SYSTEM = """\
+You are a philosophical knowledge retrieval engine. Given structural analysis of a \
+book, you answer questions by reconstructing logical chains from the extracted data.
+
+Rules:
+- Include paragraph IDs for every claim.
+- Include full verbatim quotes as evidence.
+- Reconstruct the logical chain, not just point to paragraphs.
+- Mark inferences with [INFERENCE].
+- Return valid JSON only.
+"""
+
+SINGLE_BOOK_QUERY_USER = """\
+Based on the following analysis of "{book_title}" by {author}, answer this question:
+
+**Question:** {question}
+
+Raw structure (relevant excerpts):
+{raw_structure}
+
+Logical map:
+{logical_map}
+
+Concept index:
+{concept_index}
+
+Return JSON:
+{{
+  "answer": "...",
+  "paragraph_ids_used": ["..."],
+  "verbatim_quotes": [
+    {{"paragraph_id": "...", "quote": "..."}}
+  ],
+  "logical_chain": [
+    {{"step": 1, "claim": "...", "paragraph_id": "...", "is_inference": false}}
+  ],
+  "confidence": "high|medium|low",
+  "notes": "..."
+}}
+
+Return ONLY the JSON. No explanation.
+"""

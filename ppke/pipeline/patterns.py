@@ -12,9 +12,15 @@ from ppke.parser.models import ExtractionResult
 
 logger = logging.getLogger(__name__)
 
+# Max paragraphs per LLM call to stay within token limits
+_PATTERN_CHUNK_SIZE = 30
+
 
 def _extraction_to_pattern_input(results: list[ExtractionResult]) -> str:
-    """Build input focusing on tones, claims, and structural data."""
+    """Build input focusing on tones, claims, and structural data.
+
+    Full verbatim text is preserved — no truncation.
+    """
     items = []
     for r in results:
         items.append({
@@ -24,9 +30,17 @@ def _extraction_to_pattern_input(results: list[ExtractionResult]) -> str:
             "tone": r.emotional_tone,
             "claims": r.explicit_claims,
             "assumptions": r.implicit_assumptions,
-            "original_text": r.original_text[:400],
+            "original_text": r.original_text,
         })
     return json.dumps(items, indent=1)
+
+
+def _merge_pattern_results(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Merge pattern detection results from multiple chunks."""
+    all_patterns: list[dict[str, Any]] = []
+    for result in results:
+        all_patterns.extend(result.get("patterns", []))
+    return {"patterns": all_patterns}
 
 
 def detect_patterns(
@@ -37,23 +51,39 @@ def detect_patterns(
 ) -> dict[str, Any]:
     """Detect patterns and tensions in the book.
 
+    Processes in chunks to respect token limits while preserving full text.
     Returns dict structure for writing to pattern sections.
     """
-    extraction_json = _extraction_to_pattern_input(extraction_results)
+    if not extraction_results:
+        return {"patterns": []}
 
-    user_prompt = PATTERN_DETECTION_USER.format(
-        book_title=book_title,
-        author=author,
-        extraction_json=extraction_json,
-    )
+    chunk_results: list[dict[str, Any]] = []
 
-    try:
-        result = client.complete_json(PATTERN_DETECTION_SYSTEM, user_prompt)
-        logger.info(
-            "Pattern detection complete: %d patterns found",
-            len(result.get("patterns", [])),
+    for i in range(0, len(extraction_results), _PATTERN_CHUNK_SIZE):
+        chunk = extraction_results[i : i + _PATTERN_CHUNK_SIZE]
+        extraction_json = _extraction_to_pattern_input(chunk)
+
+        user_prompt = PATTERN_DETECTION_USER.format(
+            book_title=book_title,
+            author=author,
+            extraction_json=extraction_json,
         )
-        return result
-    except Exception as e:
-        logger.error("Failed to detect patterns: %s", e)
-        return {"patterns": [], "error": str(e)}
+
+        try:
+            result = client.complete_json(PATTERN_DETECTION_SYSTEM, user_prompt)
+            chunk_results.append(result)
+            logger.info(
+                "Pattern chunk %d-%d: %d patterns found",
+                i + 1,
+                min(i + _PATTERN_CHUNK_SIZE, len(extraction_results)),
+                len(result.get("patterns", [])),
+            )
+        except Exception as e:
+            logger.error("Failed to detect patterns for chunk %d: %s", i, e)
+
+    if not chunk_results:
+        return {"patterns": [], "error": "All pattern detection chunks failed"}
+
+    merged = _merge_pattern_results(chunk_results)
+    logger.info("Pattern detection complete: %d patterns total", len(merged["patterns"]))
+    return merged

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import logging
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +12,6 @@ import yaml
 from ppke.parser.models import (
     Book,
     CoverageReport,
-    DepthLevel,
     ExtractionResult,
 )
 
@@ -24,13 +23,20 @@ def _ensure_dir(path: Path) -> Path:
     return path
 
 
+# ── Per-book files ──
+
+
 def write_meta_yml(
     book_dir: Path,
     book: Book,
     coverage: CoverageReport,
     agent_version: str = "ppke-0.1.0",
+    human_operator: str = "",
 ) -> Path:
-    """Write meta.yml with book metadata."""
+    """Write meta.yml with book metadata.
+
+    Includes all fields required by spec section 10 (Versioning & Permanence).
+    """
     meta = {
         "title": book.title,
         "author": book.author,
@@ -40,6 +46,7 @@ def write_meta_yml(
         "ingest_date": coverage.ingest_date,
         "ingest_mode": coverage.ingest_mode,
         "agent_version": agent_version,
+        "human_operator": human_operator or "unspecified",
         "total_chapters": coverage.total_chapters,
         "total_paragraphs": coverage.total_paragraphs,
         "verification_status": coverage.verification_status,
@@ -71,7 +78,7 @@ def write_raw_structure(
             ext = extraction_map.get(para.paragraph_id)
             lines.append(f"### {para.paragraph_id}")
             lines.append("")
-            lines.append(f"**Original Text:**")
+            lines.append("**Original Text:**")
             lines.append(f"> {para.text}")
             lines.append("")
 
@@ -87,18 +94,17 @@ def write_raw_structure(
                         lines.append(f"- {claim}")
                     lines.append("")
 
-                if ext.depth == DepthLevel.FULL:
-                    if ext.implicit_assumptions:
-                        lines.append("**Implicit Assumptions:**")
-                        for assumption in ext.implicit_assumptions:
-                            lines.append(f"- {assumption}")
-                        lines.append("")
+                if ext.implicit_assumptions:
+                    lines.append("**Implicit Assumptions:**")
+                    for assumption in ext.implicit_assumptions:
+                        lines.append(f"- {assumption}")
+                    lines.append("")
 
-                    if ext.logical_steps:
-                        lines.append("**Logical Steps:**")
-                        for step in ext.logical_steps:
-                            lines.append(f"- {step}")
-                        lines.append("")
+                if ext.logical_steps:
+                    lines.append("**Logical Steps:**")
+                    for step in ext.logical_steps:
+                        lines.append(f"- {step}")
+                    lines.append("")
 
                 if ext.defined_concepts:
                     lines.append("**Defined Concepts:**")
@@ -230,7 +236,7 @@ def write_concept_index(
             lines.append("**Semantic Shifts:**")
             for shift in shifts:
                 lines.append(
-                    f"- {shift.get('from_id', '?')} → {shift.get('to_id', '?')}: "
+                    f"- {shift.get('from_id', '?')} -> {shift.get('to_id', '?')}: "
                     f"{shift.get('description', '')}"
                 )
             lines.append("")
@@ -254,7 +260,7 @@ def write_author_model(
     book: Book,
     author_model: dict[str, Any],
 ) -> Path:
-    """Write 04_Author_Model.md."""
+    """Write 04_Author_Model.md with all 7 sections from the spec."""
     lines = [
         f"# Author Model: {book.author}",
         f"**Based on:** {book.title}",
@@ -309,7 +315,7 @@ def write_coverage_report(
     book_dir: Path,
     coverage: CoverageReport,
 ) -> Path:
-    """Write 05_Coverage_Report.md."""
+    """Write 05_Coverage_Report.md matching the spec format exactly."""
     lines = [
         "# Coverage Report",
         "",
@@ -338,6 +344,7 @@ def write_all_book_files(
     concept_data: dict[str, Any],
     author_model: dict[str, Any],
     coverage: CoverageReport,
+    human_operator: str = "",
 ) -> Path:
     """Write all files for a book to the KnowledgeBase vault.
 
@@ -346,7 +353,7 @@ def write_all_book_files(
     book_dir = _ensure_dir(vault_path / book.folder_name)
     logger.info("Writing book files to %s", book_dir)
 
-    write_meta_yml(book_dir, book, coverage)
+    write_meta_yml(book_dir, book, coverage, human_operator=human_operator)
     write_raw_structure(book_dir, book, extractions)
     write_logical_map(book_dir, book, logical_map)
     write_concept_index(book_dir, book, concept_data)
@@ -355,3 +362,169 @@ def write_all_book_files(
 
     logger.info("All files written for %s", book.title)
     return book_dir
+
+
+# ── Global vault files (spec section 4) ──
+
+
+def write_global_files(vault_path: Path, config: Any) -> None:
+    """Write/update the global KnowledgeBase files.
+
+    These live at the vault root, not inside any book folder:
+    - 00_PROJECT_SETTINGS.md
+    - MASTER_CONCEPT_INDEX.md
+    - QA_RESULTS.md
+    - PLAYBOOK.md
+    """
+    _ensure_dir(vault_path)
+
+    # Discover all encoded books
+    book_dirs = sorted(
+        d for d in vault_path.iterdir()
+        if d.is_dir() and d.name.startswith("Book_")
+    )
+
+    book_list_lines = []
+    for bd in book_dirs:
+        meta_path = bd / "meta.yml"
+        if meta_path.exists():
+            meta = yaml.safe_load(meta_path.read_text()) or {}
+            status = meta.get("verification_status", "UNKNOWN")
+            book_list_lines.append(
+                f"- **{bd.name}** — {meta.get('title', '?')} by "
+                f"{meta.get('author', '?')} [{status}]"
+            )
+        else:
+            book_list_lines.append(f"- **{bd.name}** — (no meta.yml)")
+
+    book_list = "\n".join(book_list_lines) if book_list_lines else "(none yet)"
+
+    # 00_PROJECT_SETTINGS.md
+    settings_content = (
+        "# PPKE Project Settings\n"
+        "\n"
+        "## Configuration\n"
+        f"- **Vault Path:** {config.vault_path}\n"
+        f"- **LLM Provider:** {config.llm.provider}\n"
+        f"- **Model:** {config.llm.model}\n"
+        f"- **Selective Depth:** {config.selective_depth}\n"
+        f"- **Double Pass:** {config.double_pass}\n"
+        "\n"
+        "## Encoded Books\n"
+        f"{book_list}\n"
+        "\n"
+        "## Last Updated\n"
+        f"{date.today().isoformat()}\n"
+    )
+    (vault_path / "00_PROJECT_SETTINGS.md").write_text(settings_content)
+
+    # MASTER_CONCEPT_INDEX.md — aggregate concepts from all books
+    master_lines = [
+        "# Master Concept Index",
+        "",
+        "Cross-book concept tracking. Each entry references:",
+        "```",
+        "Book_Folder_Name -> {CH}.p{P}",
+        "```",
+        "",
+        "---",
+        "",
+    ]
+    for bd in book_dirs:
+        concept_path = bd / "03_Concept_Index.md"
+        if concept_path.exists():
+            master_lines.append(f"## From: {bd.name}")
+            master_lines.append("")
+            # Read and include the concept index (skip the header)
+            content = concept_path.read_text()
+            for line in content.split("\n"):
+                if line.startswith("# Concept Index") or line.startswith("**Author:**"):
+                    continue
+                master_lines.append(line)
+            master_lines.append("")
+
+    (vault_path / "MASTER_CONCEPT_INDEX.md").write_text("\n".join(master_lines))
+
+    # QA_RESULTS.md — aggregate coverage status
+    qa_lines = [
+        "# QA Results",
+        "",
+        "## Book Verification Status",
+        "",
+    ]
+    all_complete = True
+    for bd in book_dirs:
+        report_path = bd / "05_Coverage_Report.md"
+        if report_path.exists():
+            content = report_path.read_text()
+            qa_lines.append(f"### {bd.name}")
+            qa_lines.append("")
+            qa_lines.append(content)
+            qa_lines.append("")
+            if "INCOMPLETE" in content:
+                all_complete = False
+        else:
+            qa_lines.append(f"### {bd.name}")
+            qa_lines.append("- **Status:** NO COVERAGE REPORT FOUND")
+            qa_lines.append("")
+            all_complete = False
+
+    qa_lines.append("---")
+    qa_lines.append("")
+    qa_lines.append(f"**Overall Status:** {'ALL COMPLETE' if all_complete else 'INCOMPLETE — review missing books above'}")
+    qa_lines.append(f"**Last checked:** {date.today().isoformat()}")
+
+    (vault_path / "QA_RESULTS.md").write_text("\n".join(qa_lines))
+
+    # PLAYBOOK.md
+    playbook_content = (
+        "# PPKE Playbook\n"
+        "\n"
+        "## Commands\n"
+        "\n"
+        "### Ingest a Book\n"
+        "```bash\n"
+        'ppke ingest <book.md> --title "Title" --author "Author" --year YYYY\n'
+        "```\n"
+        "\n"
+        "### Parse Only (dry run, no LLM)\n"
+        "```bash\n"
+        'ppke parse <book.md> --title "Title" --author "Author"\n'
+        "```\n"
+        "\n"
+        "### Query a Single Book\n"
+        "```bash\n"
+        'ppke query --book "Book_Title_Author_YYYY" --question "Your question"\n'
+        "```\n"
+        "\n"
+        "### Cross-Book Query\n"
+        "```bash\n"
+        'ppke cross-query --question "Your question"\n'
+        "```\n"
+        "\n"
+        "### Configure\n"
+        "```bash\n"
+        "ppke config --show\n"
+        "ppke config --provider anthropic --model claude-sonnet-4-20250514\n"
+        "ppke config --vault-path /path/to/vault\n"
+        "```\n"
+        "\n"
+        "## File Structure\n"
+        "\n"
+        "Each book produces:\n"
+        "- `meta.yml` — Book metadata and versioning\n"
+        "- `01_Raw_Structure.md` — Per-paragraph structural extraction\n"
+        "- `02_Logical_Map.md` — Argument architecture\n"
+        "- `03_Concept_Index.md` — Concept tracking with semantic drift\n"
+        "- `04_Author_Model.md` — Author's intellectual framework (7 sections)\n"
+        "- `05_Coverage_Report.md` — Completeness verification\n"
+        "\n"
+        "Global vault files:\n"
+        "- `00_PROJECT_SETTINGS.md` — Configuration and book inventory\n"
+        "- `MASTER_CONCEPT_INDEX.md` — Cross-book concept aggregation\n"
+        "- `QA_RESULTS.md` — Aggregated quality assurance results\n"
+        "- `PLAYBOOK.md` — This file\n"
+    )
+    (vault_path / "PLAYBOOK.md").write_text(playbook_content)
+
+    logger.info("Global vault files updated at %s", vault_path)
