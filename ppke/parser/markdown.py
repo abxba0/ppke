@@ -143,11 +143,15 @@ def parse_markdown_text(
         book.chapters.append(chapter)
         return book
 
-    # Extract text between chapter boundaries
+    # Extract text between chapter boundaries.
+    # Track the last assigned number so auto-numbered headings always increment
+    # monotonically, even when mixed with explicitly numbered headings.
+    _last_ch_num = 0
     for boundary_idx, (line_idx, ch_title, ch_num) in enumerate(chapter_boundaries):
-        # Auto-number if chapter number not detected
         if ch_num is None:
-            ch_num = boundary_idx + 1
+            # Auto-number: one past the highest chapter number seen so far.
+            ch_num = _last_ch_num + 1
+        _last_ch_num = max(_last_ch_num, ch_num)
 
         # Get text from this heading to next heading (or end of file)
         start = line_idx + 1

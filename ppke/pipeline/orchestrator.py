@@ -105,7 +105,12 @@ def _load_checkpoint(
             ))
         return completed, extractions
     except Exception as e:
-        logger.warning("Failed to load checkpoint %s: %s", path, e)
+        logger.error(
+            "Checkpoint file %s is corrupt or unreadable (%s). "
+            "Starting extraction from scratch. The corrupted checkpoint will be "
+            "overwritten once the first chapter completes.",
+            path, e,
+        )
         return None
 
 
@@ -262,6 +267,9 @@ def ingest_book(
                 f"Resuming from checkpoint: {len(completed_indices)}/{len(book.chapters)} "
                 f"chapters already completed ({len(all_extractions)} paragraphs)",
             )
+        elif cp_path.exists():
+            # File existed but _load_checkpoint returned None → it was corrupt.
+            _progress("resume", f"WARNING: Checkpoint {cp_path.name} is corrupt — starting fresh")
         else:
             _progress("resume", "No checkpoint found, starting fresh")
 
@@ -306,16 +314,20 @@ def ingest_book(
                 ch = book.chapters[idx]
                 try:
                     results = future.result()
-                    chapter_results_map[idx] = results
-                    completed_indices.append(idx)
-                    all_extractions.extend(results)
-                    _save_checkpoint(cp_path, completed_indices, all_extractions)
+                    # Guard shared state and checkpoint write under the progress lock
+                    # to prevent concurrent futures from corrupting the lists or file.
+                    with _progress_lock:
+                        chapter_results_map[idx] = results
+                        completed_indices.append(idx)
+                        all_extractions.extend(results)
+                        _save_checkpoint(cp_path, completed_indices, all_extractions)
                     _progress("extraction", f"Chapter {ch.number:02d} complete (checkpoint saved)")
                 except Exception as e:
                     logger.error(
                         "Chapter %02d extraction failed: %s", ch.number, e
                     )
-                    chapter_results_map[idx] = []
+                    with _progress_lock:
+                        chapter_results_map[idx] = []
 
         # Re-sort extractions to maintain chapter order
         ext_map: dict[str, ExtractionResult] = {e.paragraph_id: e for e in all_extractions}
@@ -558,11 +570,17 @@ def reread_chapters(
             ext = saved_map.get(pid)
         if ext:
             all_extractions.append(ext)
+        else:
+            logger.warning(
+                "Paragraph %s missing from both re-read results and saved data — "
+                "it will be absent from final output. Run 'ppke re-read' again to recover.",
+                pid,
+            )
 
+    from_disk_count = len(all_extractions) - len(new_extractions)
     _progress(
         "re-read",
-        f"Merged: {len(new_extractions)} re-extracted + "
-        f"{len(all_extractions) - len(new_extractions)} from disk",
+        f"Merged: {len(new_extractions)} re-extracted + {from_disk_count} from disk",
     )
 
     # Re-run the analysis pipeline
