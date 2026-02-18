@@ -26,7 +26,7 @@ def _paragraphs_to_json(paragraphs: list[Paragraph]) -> str:
             "paragraph_id": p.paragraph_id,
             "text": p.text,
         })
-    return json.dumps(items, indent=2)
+    return json.dumps(items, separators=(',', ':'))
 
 
 def _parse_extraction_response(

@@ -68,7 +68,7 @@ def _save_checkpoint(
         ],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=1))
+    path.write_text(json.dumps(data, separators=(',', ':')))
 
 
 def _load_checkpoint(
@@ -120,9 +120,9 @@ def _build_author_model(
     user_prompt = AUTHOR_MODEL_USER.format(
         book_title=book.title,
         author=book.author,
-        logical_map_json=json.dumps(logical_map, indent=1),
-        concept_index_json=json.dumps(concept_data, indent=1),
-        patterns_json=json.dumps(pattern_data, indent=1),
+        logical_map_json=json.dumps(logical_map, separators=(',', ':')),
+        concept_index_json=json.dumps(concept_data, separators=(',', ':')),
+        patterns_json=json.dumps(pattern_data, separators=(',', ':')),
     )
 
     try:
