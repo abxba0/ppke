@@ -5,11 +5,32 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from typing import Any
 
 from ppke.config import LLMConfig
 
 logger = logging.getLogger(__name__)
+
+# Retry settings for rate-limit (429) and transient server errors (5xx)
+_MAX_RETRIES = 4
+_BACKOFF_BASE_SECONDS = 2  # 2s, 4s, 8s, 16s
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Check if an exception is a retryable rate-limit or server error."""
+    exc_str = str(exc).lower()
+    if "429" in exc_str or "rate" in exc_str:
+        return True
+    if any(code in exc_str for code in ("500", "502", "503", "529", "overloaded")):
+        return True
+    cls_name = type(exc).__name__
+    if cls_name in ("RateLimitError", "InternalServerError", "OverloadedError"):
+        return True
+    status = getattr(exc, "status_code", None) or getattr(exc, "http_status", None)
+    if status in (429, 500, 502, 503, 529):
+        return True
+    return False
 
 
 class LLMClient:
@@ -52,6 +73,9 @@ class LLMClient:
     ) -> str:
         """Send a prompt and return the response text.
 
+        Retries up to 4 times with exponential backoff (2s, 4s, 8s, 16s)
+        on rate-limit (429) and transient server errors (5xx).
+
         Args:
             system_prompt: System-level instructions.
             user_prompt: The user message / content to process.
@@ -60,12 +84,29 @@ class LLMClient:
         Returns:
             The model's response as a string.
         """
-        if self.config.provider == "anthropic":
-            return self._complete_anthropic(system_prompt, user_prompt)
-        elif self.config.provider == "openai":
-            return self._complete_openai(system_prompt, user_prompt, response_format)
-        else:
-            raise ValueError(f"Unknown provider: {self.config.provider}")
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                if self.config.provider == "anthropic":
+                    return self._complete_anthropic(system_prompt, user_prompt)
+                elif self.config.provider == "openai":
+                    return self._complete_openai(
+                        system_prompt, user_prompt, response_format
+                    )
+                else:
+                    raise ValueError(f"Unknown provider: {self.config.provider}")
+            except Exception as e:
+                last_exc = e
+                if attempt < _MAX_RETRIES and _is_retryable(e):
+                    wait = _BACKOFF_BASE_SECONDS * (2 ** attempt)
+                    logger.warning(
+                        "Retryable error (attempt %d/%d), waiting %ds: %s",
+                        attempt + 1, _MAX_RETRIES, wait, e,
+                    )
+                    time.sleep(wait)
+                    continue
+                raise
+        raise last_exc  # type: ignore[misc]
 
     def _complete_anthropic(self, system_prompt: str, user_prompt: str) -> str:
         client = self._get_anthropic()

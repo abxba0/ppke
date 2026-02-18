@@ -338,6 +338,65 @@ def write_coverage_report(
     return path
 
 
+def write_patterns(
+    book_dir: Path,
+    book: Book,
+    pattern_data: dict[str, Any],
+) -> Path:
+    """Write 06_Patterns.md with detected patterns and tensions."""
+    lines = [
+        f"# Patterns & Tensions: {book.title}",
+        f"**Author:** {book.author}",
+        "",
+    ]
+
+    patterns = pattern_data.get("patterns", [])
+    if not patterns:
+        lines.append("*No patterns detected.*")
+        lines.append("")
+    else:
+        # Group patterns by type
+        by_type: dict[str, list[dict[str, Any]]] = {}
+        for p in patterns:
+            ptype = p.get("type", "other")
+            by_type.setdefault(ptype, []).append(p)
+
+        type_labels = {
+            "metaphor": "Recurring Metaphors",
+            "emotional_arc": "Emotional Arcs",
+            "repetition": "Structural Repetition",
+            "recursion": "Logical Recursion",
+            "contradiction": "Internal Contradictions",
+        }
+
+        for ptype, items in by_type.items():
+            heading = type_labels.get(ptype, ptype.replace("_", " ").title())
+            lines.append(f"## {heading}")
+            lines.append("")
+
+            for i, item in enumerate(items, 1):
+                hypothesis_tag = " [HYPOTHESIS]" if item.get("is_hypothesis") else ""
+                lines.append(f"### {i}. {item.get('description', 'Unnamed')}{hypothesis_tag}")
+                lines.append("")
+
+                evidence = item.get("evidence", [])
+                if evidence:
+                    lines.append("**Evidence:**")
+                    for e in evidence:
+                        pid = e.get("paragraph_id", "?")
+                        quote = e.get("quote", "")
+                        lines.append(f'- **{pid}**: "{quote}"')
+                    lines.append("")
+
+            lines.append("---")
+            lines.append("")
+
+    path = book_dir / "06_Patterns.md"
+    path.write_text("\n".join(lines))
+    logger.info("Wrote %s", path)
+    return path
+
+
 def _save_extractions_json(book_dir: Path, extractions: list[ExtractionResult]) -> Path:
     """Persist extraction data as JSON for re-read support."""
     data = []
@@ -354,7 +413,7 @@ def _save_extractions_json(book_dir: Path, extractions: list[ExtractionResult]) 
             "emotional_tone": ext.emotional_tone,
             "tone_evidence": ext.tone_evidence,
             "internal_references": ext.internal_references,
-            "is_argument_carrying": ext.is_argument_carrying,
+            "is_argument_carrying": ext.depth.value == "full",
             "depth": ext.depth.value,
         })
     path = book_dir / "extractions.json"
@@ -404,6 +463,7 @@ def write_all_book_files(
     author_model: dict[str, Any],
     coverage: CoverageReport,
     human_operator: str = "",
+    pattern_data: dict[str, Any] | None = None,
 ) -> Path:
     """Write all files for a book to the KnowledgeBase vault.
 
@@ -418,6 +478,8 @@ def write_all_book_files(
     write_concept_index(book_dir, book, concept_data)
     write_author_model(book_dir, book, author_model)
     write_coverage_report(book_dir, coverage)
+    if pattern_data is not None:
+        write_patterns(book_dir, book, pattern_data)
     _save_extractions_json(book_dir, extractions)
 
     logger.info("All files written for %s", book.title)
@@ -637,6 +699,7 @@ def write_global_files(vault_path: Path, config: Any) -> None:
         "- `03_Concept_Index.md` — Concept tracking with semantic drift\n"
         "- `04_Author_Model.md` — Author's intellectual framework (7 sections)\n"
         "- `05_Coverage_Report.md` — Completeness verification\n"
+        "- `06_Patterns.md` — Detected patterns, tensions, and recurring structures\n"
         "\n"
         "Global vault files:\n"
         "- `00_PROJECT_SETTINGS.md` — Configuration and book inventory\n"

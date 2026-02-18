@@ -206,6 +206,7 @@ def init():
 @click.option("--batch-size", type=int, default=None, help="Paragraphs per LLM batch")
 @click.option("--operator", default="", help="Human operator name for versioning")
 @click.option("--double-pass", is_flag=True, help="Enable double-pass extraction")
+@click.option("--resume", is_flag=True, help="Resume from last checkpoint if a previous run failed")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging")
 def ingest(
     filepath: Path,
@@ -218,14 +219,17 @@ def ingest(
     batch_size: int | None,
     operator: str,
     double_pass: bool,
+    resume: bool,
     verbose: bool,
 ):
     """Ingest a markdown book into the knowledge base.
 
     Runs the full pipeline: parse -> extract -> validate -> analyze -> write.
+    Use --resume to continue from where a previous ingestion failed.
 
-    Example:
+    Examples:
         ppke ingest book.md --title "Being and Time" --author "Heidegger" --year 1927
+        ppke ingest book.md --title "Being and Time" --author "Heidegger" --resume
     """
     _setup_logging(verbose)
 
@@ -255,6 +259,7 @@ def ingest(
         book, config,
         progress_callback=progress_callback,
         human_operator=operator,
+        resume=resume,
     )
 
     click.echo(f"\nDone! Output written to: {book_dir}")
@@ -649,6 +654,289 @@ def config(
 
     cfg.save()
     click.echo("Configuration saved.")
+
+
+# ── list command ──
+
+
+@main.command("list")
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path",
+)
+def list_books(vault_path: Path | None):
+    """List all ingested books in the knowledge base.
+
+    Shows title, author, year, chapters, paragraphs, and verification status.
+
+    Example:
+        ppke list
+    """
+    import yaml
+
+    cfg = Config.load()
+    vp = vault_path or cfg.vault_path
+
+    if not vp.exists():
+        click.echo(f"Vault not found: {vp}", err=True)
+        sys.exit(1)
+
+    book_dirs = sorted(
+        d for d in vp.iterdir() if d.is_dir() and d.name.startswith("Book_")
+    )
+    if not book_dirs:
+        click.echo("No books ingested yet.")
+        click.echo(f"Vault: {vp}")
+        return
+
+    click.echo(f"{'#':<4} {'Title':<35} {'Author':<20} {'Year':<6} {'Ch':<5} {'Para':<6} {'Status'}")
+    click.echo("-" * 100)
+
+    for i, bd in enumerate(book_dirs, 1):
+        meta_path = bd / "meta.yml"
+        if meta_path.exists():
+            meta = yaml.safe_load(meta_path.read_text()) or {}
+            title = meta.get("title", "?")
+            author = meta.get("author", "?")
+            year = str(meta.get("year", ""))
+            chapters = str(meta.get("total_chapters", "?"))
+            paragraphs = str(meta.get("total_paragraphs", "?"))
+            status = meta.get("verification_status", "?")
+        else:
+            title = bd.name
+            author = year = "?"
+            chapters = paragraphs = status = "?"
+
+        # Truncate long titles/authors
+        title_disp = (title[:32] + "...") if len(title) > 35 else title
+        author_disp = (author[:17] + "...") if len(author) > 20 else author
+        click.echo(
+            f"{i:<4} {title_disp:<35} {author_disp:<20} {year:<6} "
+            f"{chapters:<5} {paragraphs:<6} {status}"
+        )
+
+    click.echo(f"\nTotal: {len(book_dirs)} book(s) in {vp}")
+
+
+# ── stats command ──
+
+
+@main.command()
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path",
+)
+def stats(vault_path: Path | None):
+    """Show vault-wide statistics.
+
+    Displays total books, chapters, paragraphs, concepts, patterns,
+    and overall coverage status.
+
+    Example:
+        ppke stats
+    """
+    import re
+
+    import yaml
+
+    cfg = Config.load()
+    vp = vault_path or cfg.vault_path
+
+    if not vp.exists():
+        click.echo(f"Vault not found: {vp}", err=True)
+        sys.exit(1)
+
+    book_dirs = sorted(
+        d for d in vp.iterdir() if d.is_dir() and d.name.startswith("Book_")
+    )
+
+    total_books = len(book_dirs)
+    total_chapters = 0
+    total_paragraphs = 0
+    total_processed = 0
+    total_concepts = 0
+    total_patterns = 0
+    complete_count = 0
+    incomplete_count = 0
+
+    for bd in book_dirs:
+        meta_path = bd / "meta.yml"
+        if meta_path.exists():
+            meta = yaml.safe_load(meta_path.read_text()) or {}
+            total_chapters += meta.get("total_chapters", 0)
+            total_paragraphs += meta.get("total_paragraphs", 0)
+            if meta.get("verification_status") == "COMPLETE":
+                complete_count += 1
+            else:
+                incomplete_count += 1
+
+        # Count processed paragraphs from coverage report
+        report_path = bd / "05_Coverage_Report.md"
+        if report_path.exists():
+            content = report_path.read_text()
+            match = re.search(r"processed_paragraphs_count:\*\*\s*(\d+)", content)
+            if not match:
+                match = re.search(r"processed_paragraphs_count.+?(\d+)", content)
+            if match:
+                total_processed += int(match.group(1))
+
+        # Count concepts
+        concept_path = bd / "03_Concept_Index.md"
+        if concept_path.exists():
+            total_concepts += len(
+                re.findall(r"^## .+$", concept_path.read_text(), re.MULTILINE)
+            )
+
+        # Count patterns
+        pattern_path = bd / "06_Patterns.md"
+        if pattern_path.exists():
+            total_patterns += len(
+                re.findall(r"^### \d+\.", pattern_path.read_text(), re.MULTILINE)
+            )
+
+    click.echo("=" * 40)
+    click.echo("  PPKE Vault Statistics")
+    click.echo("=" * 40)
+    click.echo()
+    click.echo(f"  Books:           {total_books}")
+    click.echo(f"  Chapters:        {total_chapters}")
+    click.echo(f"  Paragraphs:      {total_paragraphs}")
+    click.echo(f"  Processed:       {total_processed}")
+    click.echo(f"  Concepts:        {total_concepts}")
+    click.echo(f"  Patterns:        {total_patterns}")
+    click.echo()
+    click.echo(f"  Complete:        {complete_count}")
+    click.echo(f"  Incomplete:      {incomplete_count}")
+    coverage_pct = (
+        f"{total_processed / total_paragraphs * 100:.1f}%"
+        if total_paragraphs > 0
+        else "N/A"
+    )
+    click.echo(f"  Coverage:        {coverage_pct}")
+    click.echo()
+    click.echo(f"  Vault:           {vp}")
+
+    # Check for pending checkpoints
+    checkpoints = list(vp.glob(".checkpoint_*.json"))
+    if checkpoints:
+        click.echo()
+        click.echo(f"  Pending checkpoints: {len(checkpoints)}")
+        for cp in checkpoints:
+            book_name = cp.stem.replace("checkpoint_", "")
+            click.echo(f"    - {book_name} (use --resume to continue)")
+
+
+# ── search command ──
+
+
+@main.command()
+@click.argument("text")
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path",
+)
+@click.option("--book", default=None, help="Limit search to a specific book folder")
+@click.option(
+    "--max-results", type=int, default=20, help="Maximum results to show (default: 20)"
+)
+def search(text: str, vault_path: Path | None, book: str | None, max_results: int):
+    """Search across all extracted paragraphs (no LLM, local text search).
+
+    Searches the original text and extracted topic sentences in all ingested
+    books. Case-insensitive.
+
+    Examples:
+        ppke search "Dasein"
+        ppke search "free will" --book "Book_Being_and_Time_Heidegger_1927"
+        ppke search "dialectic" --max-results 50
+    """
+    import json as _json
+
+    cfg = Config.load()
+    vp = vault_path or cfg.vault_path
+
+    if not vp.exists():
+        click.echo(f"Vault not found: {vp}", err=True)
+        sys.exit(1)
+
+    # Determine which book dirs to search
+    if book:
+        book_dir = vp / book
+        if not book_dir.exists():
+            click.echo(f"Error: Book folder not found: {book_dir}", err=True)
+            sys.exit(1)
+        search_dirs = [book_dir]
+    else:
+        search_dirs = sorted(
+            d for d in vp.iterdir() if d.is_dir() and d.name.startswith("Book_")
+        )
+
+    if not search_dirs:
+        click.echo("No books found to search.")
+        return
+
+    query_lower = text.lower()
+    hits: list[tuple[str, str, str, str]] = []  # (book, pid, field, snippet)
+
+    for bd in search_dirs:
+        ext_path = bd / "extractions.json"
+        if not ext_path.exists():
+            continue
+        try:
+            data = _json.loads(ext_path.read_text())
+        except Exception:
+            continue
+
+        for item in data:
+            pid = item.get("paragraph_id", "?")
+            original = item.get("original_text", "")
+            topic = item.get("topic_sentence", "")
+            claims = " ".join(item.get("explicit_claims", []))
+            concepts = " ".join(item.get("defined_concepts", []))
+
+            # Search across multiple fields
+            for field_name, field_text in [
+                ("text", original),
+                ("topic", topic),
+                ("claim", claims),
+                ("concept", concepts),
+            ]:
+                if query_lower in field_text.lower():
+                    # Build a snippet around the match
+                    idx = field_text.lower().index(query_lower)
+                    start = max(0, idx - 40)
+                    end = min(len(field_text), idx + len(text) + 40)
+                    snippet = field_text[start:end]
+                    if start > 0:
+                        snippet = "..." + snippet
+                    if end < len(field_text):
+                        snippet = snippet + "..."
+                    hits.append((bd.name, pid, field_name, snippet))
+                    break  # One hit per paragraph
+
+            if len(hits) >= max_results:
+                break
+        if len(hits) >= max_results:
+            break
+
+    if not hits:
+        click.echo(f'No results found for "{text}".')
+        return
+
+    click.echo(f'Search results for "{text}" ({len(hits)} hits):\n')
+    for book_name, pid, field, snippet in hits:
+        click.echo(f"  [{book_name}] {pid} ({field})")
+        click.echo(f"    {snippet}")
+        click.echo()
+
+    if len(hits) >= max_results:
+        click.echo(f"(showing first {max_results} results, use --max-results for more)")
 
 
 if __name__ == "__main__":

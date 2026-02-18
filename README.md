@@ -7,14 +7,17 @@ A CLI tool for structured philosophical book analysis. PPKE ingests markdown boo
 - **Structural Extraction** - Parses books into chapters and paragraphs, extracts claims, arguments, and concepts via LLM
 - **Sub-Paragraph Splitting** - Automatically splits long paragraphs into sub-paragraphs (`{03}.p12.1`, `{03}.p12.2`) when they exceed token limits
 - **Parallel Extraction** - Multi-threaded chapter extraction for faster ingestion of large books
+- **Resumable Ingestion** - Checkpoints saved after each chapter; resume from where you left off with `--resume` if ingestion fails
+- **Exponential Backoff** - Automatic retry with 2s/4s/8s/16s backoff on rate-limit (429) and server errors (5xx)
 - **Coverage Validation** - Ensures 100% paragraph coverage with automatic re-read on gaps
 - **Interactive Re-Read** - User-triggered re-scan of specific chapters after ingestion
 - **Logical Architecture** - Maps argument chains and inferential connections across chapters
 - **Concept Indexing** - Tracks concept definitions, evolution, and cross-references
 - **Semantic Deduplication** - Master Concept Index groups semantically equivalent concepts across books using LLM matching (not just string matching)
-- **Pattern Detection** - Identifies rhetorical strategies, dialectical tensions, and recurring structures
+- **Pattern Detection** - Identifies rhetorical strategies, dialectical tensions, and recurring structures (written to `06_Patterns.md`)
 - **Cross-Book Synthesis** - Compares and contrasts ideas across multiple encoded books
 - **Single-Book Querying** - Ask questions about any ingested book with verbatim evidence
+- **Vault Management** - List books, view statistics, and search across all extractions locally
 
 ## Quick Start
 
@@ -46,7 +49,11 @@ If you just run `ppke` without any command on a fresh install, the setup wizard 
 ppke ingest book.md --title "Being and Time" --author "Heidegger" --year 1927
 ```
 
-Long paragraphs are automatically split into sub-paragraphs. Chapters are extracted in parallel for faster processing.
+Long paragraphs are automatically split into sub-paragraphs. Chapters are extracted in parallel for faster processing. If ingestion fails partway through, resume with:
+
+```bash
+ppke ingest book.md --title "Being and Time" --author "Heidegger" --year 1927 --resume
+```
 
 ### 4. Query
 
@@ -58,7 +65,21 @@ ppke query --book "Book_Being_and_Time_Heidegger_1927" --question "What is Dasei
 ppke cross-query --question "How do these authors differ on free will?"
 ```
 
-### 5. Re-Read Specific Chapters
+### 5. Explore Your Knowledge Base
+
+```bash
+# List all ingested books
+ppke list
+
+# View vault-wide statistics
+ppke stats
+
+# Search across all extracted paragraphs (local, no LLM)
+ppke search "Dasein"
+ppke search "free will" --book "Book_Being_and_Time_Heidegger_1927"
+```
+
+### 6. Re-Read Specific Chapters
 
 ```bash
 ppke re-read --book "Book_Being_and_Time_Heidegger_1927" --chapters "1,3,5"
@@ -74,6 +95,9 @@ ppke re-read --book "Book_Being_and_Time_Heidegger_1927" --chapters "1,3,5"
 | `ppke query` | Query a single ingested book |
 | `ppke cross-query` | Query across all ingested books |
 | `ppke re-read` | Re-extract specific chapters from an ingested book |
+| `ppke list` | List all ingested books with metadata |
+| `ppke stats` | Show vault-wide statistics (books, chapters, coverage) |
+| `ppke search <text>` | Full-text search across all extractions (no LLM) |
 | `ppke config` | View or update configuration |
 
 ## Configuration
@@ -118,6 +142,7 @@ Config file: `~/.ppke/config.json`
 | `--batch-size` | Paragraphs per LLM batch |
 | `--operator` | Human operator name for versioning |
 | `--double-pass` | Enable double-pass extraction for verification |
+| `--resume` | Resume from last checkpoint if a previous run failed |
 | `-v, --verbose` | Verbose logging |
 
 ### Advanced Config Options
@@ -138,10 +163,10 @@ ppke/
 │   ├── models.py        # Data models (Book, Chapter, Paragraph, etc.)
 │   └── markdown.py      # Markdown parsing + sub-paragraph splitting
 ├── llm/
-│   ├── client.py        # Unified Anthropic/OpenAI client
+│   ├── client.py        # Unified Anthropic/OpenAI client (with retry/backoff)
 │   └── prompts.py       # Prompt templates for all pipeline stages
 ├── pipeline/
-│   ├── orchestrator.py  # Master controller (parallel extraction, re-read)
+│   ├── orchestrator.py  # Master controller (parallel, checkpoints, re-read)
 │   ├── extractor.py     # Structural extraction (Skill 1)
 │   ├── validator.py     # Coverage validation (Skill 2)
 │   ├── logical_map.py   # Logical architecture (Skill 3)
@@ -153,7 +178,8 @@ ppke/
 │   └── templates.py     # Output templates
 └── tests/
     ├── test_parser.py
-    └── test_validator.py
+    ├── test_validator.py
+    └── test_splitter.py
 ```
 
 ## Output Structure
@@ -168,11 +194,13 @@ Each ingested book creates a folder in the vault:
 ├── PLAYBOOK.md                 # Usage guide
 └── Book_Being_and_Time_Heidegger_1927/
     ├── meta.yml                # Book metadata
+    ├── extractions.json        # Raw extraction data (for re-read & search)
     ├── 01_Raw_Structure.md     # Full extraction
     ├── 02_Logical_Map.md       # Argument architecture
     ├── 03_Concept_Index.md     # Concept tracking
     ├── 04_Author_Model.md      # Author analysis
-    └── 05_Coverage_Report.md   # Validation report
+    ├── 05_Coverage_Report.md   # Validation report
+    └── 06_Patterns.md          # Patterns & tensions
 ```
 
 ## Requirements

@@ -32,6 +32,85 @@ _progress_lock = threading.Lock()
 ProgressCallback = Callable[[str, str], None]
 
 
+# ── Checkpoint support ──
+
+
+def _checkpoint_path(vault_path: Path, book_folder: str) -> Path:
+    """Return path for the in-progress checkpoint file."""
+    return vault_path / f".checkpoint_{book_folder}.json"
+
+
+def _save_checkpoint(
+    path: Path,
+    completed_indices: list[int],
+    extractions: list[ExtractionResult],
+) -> None:
+    """Save extraction checkpoint after each chapter completes."""
+    from ppke.parser.models import DepthLevel
+
+    data = {
+        "completed_chapter_indices": completed_indices,
+        "extractions": [
+            {
+                "paragraph_id": ext.paragraph_id,
+                "original_text": ext.original_text,
+                "topic_sentence": ext.topic_sentence,
+                "function_in_argument": ext.function_in_argument,
+                "explicit_claims": ext.explicit_claims,
+                "implicit_assumptions": ext.implicit_assumptions,
+                "logical_steps": ext.logical_steps,
+                "defined_concepts": ext.defined_concepts,
+                "emotional_tone": ext.emotional_tone,
+                "tone_evidence": ext.tone_evidence,
+                "internal_references": ext.internal_references,
+                "is_argument_carrying": ext.depth.value == "full",
+                "depth": ext.depth.value,
+            }
+            for ext in extractions
+        ],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=1))
+
+
+def _load_checkpoint(
+    path: Path,
+) -> tuple[list[int], list[ExtractionResult]] | None:
+    """Load checkpoint if it exists. Returns (completed_indices, extractions) or None."""
+    if not path.exists():
+        return None
+    try:
+        from ppke.parser.models import DepthLevel
+
+        data = json.loads(path.read_text())
+        completed = data.get("completed_chapter_indices", [])
+        extractions = []
+        for item in data.get("extractions", []):
+            depth_str = item.get("depth", "LIGHT")
+            try:
+                depth = DepthLevel(depth_str)
+            except ValueError:
+                depth = DepthLevel.LIGHT
+            extractions.append(ExtractionResult(
+                paragraph_id=item["paragraph_id"],
+                original_text=item.get("original_text", ""),
+                topic_sentence=item.get("topic_sentence", ""),
+                function_in_argument=item.get("function_in_argument", ""),
+                explicit_claims=item.get("explicit_claims", []),
+                implicit_assumptions=item.get("implicit_assumptions", []),
+                logical_steps=item.get("logical_steps", []),
+                defined_concepts=item.get("defined_concepts", []),
+                emotional_tone=item.get("emotional_tone", ""),
+                tone_evidence=item.get("tone_evidence", ""),
+                internal_references=item.get("internal_references", []),
+                depth=depth,
+            ))
+        return completed, extractions
+    except Exception as e:
+        logger.warning("Failed to load checkpoint %s: %s", path, e)
+        return None
+
+
 def _build_author_model(
     client: LLMClient,
     book: Book,
@@ -126,12 +205,14 @@ def ingest_book(
     config: Config,
     progress_callback: ProgressCallback | None = None,
     human_operator: str = "",
+    resume: bool = False,
 ) -> Path:
     """Run the full ingestion pipeline for a book.
 
     Pipeline stages (QUALITY_MAX mode):
     1. Structural extraction (per chapter, batched)
        - Per-chapter coverage validation with automatic re-read retry
+       - Checkpoint saved after each chapter (resumable on failure)
     2. Optional double-pass: re-extract entire book if config.double_pass is True
     3. Full coverage validation
     4. Logical architecture building
@@ -145,6 +226,7 @@ def ingest_book(
         config: PPKE configuration.
         progress_callback: Optional callable(stage_name, detail) for progress updates.
         human_operator: Name of the human operator for meta.yml versioning.
+        resume: If True, resume from last checkpoint instead of starting fresh.
 
     Returns:
         Path to the book's output directory.
@@ -168,23 +250,43 @@ def ingest_book(
             f"({split_count_after - split_count_before} sub-paragraphs created)",
         )
 
-    # ── Stage 1: Structural extraction (first pass, parallel) ──
+    # ── Checkpoint: load existing progress if resuming ──
+    cp_path = _checkpoint_path(config.vault_path, book.folder_name)
+    completed_indices: list[int] = []
+    all_extractions: list[ExtractionResult] = []
+
+    if resume:
+        checkpoint = _load_checkpoint(cp_path)
+        if checkpoint is not None:
+            completed_indices, all_extractions = checkpoint
+            _progress(
+                "resume",
+                f"Resuming from checkpoint: {len(completed_indices)}/{len(book.chapters)} "
+                f"chapters already completed ({len(all_extractions)} paragraphs)",
+            )
+        else:
+            _progress("resume", "No checkpoint found, starting fresh")
+
+    # ── Stage 1: Structural extraction (first pass) ──
+    remaining_indices = [
+        idx for idx in range(len(book.chapters))
+        if idx not in set(completed_indices)
+    ]
     max_workers = config.llm.max_workers
     _progress(
         "extraction",
-        f"Pass 1: Processing {len(book.chapters)} chapters "
+        f"Pass 1: Processing {len(remaining_indices)}/{len(book.chapters)} chapters "
         f"(max {max_workers} parallel workers)",
     )
-    all_extractions: list[ExtractionResult] = []
 
-    if max_workers > 1 and len(book.chapters) > 1:
+    if max_workers > 1 and len(remaining_indices) > 1:
         # Parallel extraction using thread pool
-        # Key by index (not chapter number) to handle duplicate chapter numbers
         chapter_results_map: dict[int, list[ExtractionResult]] = {}
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {}
-            for idx, chapter in enumerate(book.chapters):
+            for idx in remaining_indices:
+                chapter = book.chapters[idx]
                 _progress(
                     "extraction",
                     f"Submitting Chapter {chapter.number:02d}: {chapter.title} "
@@ -205,20 +307,29 @@ def ingest_book(
                 idx = futures[future]
                 ch = book.chapters[idx]
                 try:
-                    chapter_results_map[idx] = future.result()
-                    _progress("extraction", f"Chapter {ch.number:02d} complete")
+                    results = future.result()
+                    chapter_results_map[idx] = results
+                    completed_indices.append(idx)
+                    all_extractions.extend(results)
+                    _save_checkpoint(cp_path, completed_indices, all_extractions)
+                    _progress("extraction", f"Chapter {ch.number:02d} complete (checkpoint saved)")
                 except Exception as e:
                     logger.error(
                         "Chapter %02d extraction failed: %s", ch.number, e
                     )
                     chapter_results_map[idx] = []
 
-        # Reassemble in chapter order
+        # Re-sort extractions to maintain chapter order
+        ext_map: dict[str, ExtractionResult] = {e.paragraph_id: e for e in all_extractions}
+        all_extractions = []
         for idx in range(len(book.chapters)):
-            all_extractions.extend(chapter_results_map.get(idx, []))
+            for p in book.chapters[idx].paragraphs:
+                if p.paragraph_id in ext_map:
+                    all_extractions.append(ext_map[p.paragraph_id])
     else:
         # Sequential extraction (single worker or single chapter)
-        for chapter in book.chapters:
+        for idx in remaining_indices:
+            chapter = book.chapters[idx]
             _progress(
                 "extraction",
                 f"Chapter {chapter.number:02d}: {chapter.title} "
@@ -233,6 +344,9 @@ def ingest_book(
                 progress=_progress,
             )
             all_extractions.extend(chapter_results)
+            completed_indices.append(idx)
+            _save_checkpoint(cp_path, completed_indices, all_extractions)
+            _progress("checkpoint", f"Chapter {chapter.number:02d} checkpoint saved")
 
     # ── Stage 2: Double-pass (if enabled) ──
     if config.double_pass:
@@ -324,11 +438,17 @@ def ingest_book(
         author_model=author_model,
         coverage=coverage,
         human_operator=human_operator,
+        pattern_data=pattern_data,
     )
 
     # Write/update global vault files
     _progress("output", "Updating global vault files")
     write_global_files(config.vault_path, config)
+
+    # Clean up checkpoint file on success
+    if cp_path.exists():
+        cp_path.unlink()
+        _progress("cleanup", "Checkpoint file removed (ingestion complete)")
 
     _progress("complete", f"Book ingested: {book_dir}")
     return book_dir
@@ -469,6 +589,7 @@ def reread_chapters(
         author_model=author_model,
         coverage=coverage,
         human_operator=meta.get("human_operator", ""),
+        pattern_data=pattern_data,
     )
     write_global_files(config.vault_path, config)
 
