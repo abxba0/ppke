@@ -826,7 +826,7 @@ def stats(vault_path: Path | None):
         click.echo()
         click.echo(f"  Pending checkpoints: {len(checkpoints)}")
         for cp in checkpoints:
-            book_name = cp.stem.replace("checkpoint_", "")
+            book_name = cp.stem.replace(".checkpoint_", "")
             click.echo(f"    - {book_name} (use --resume to continue)")
 
 

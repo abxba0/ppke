@@ -448,7 +448,6 @@ def load_extractions_json(book_dir: Path) -> list[ExtractionResult]:
             emotional_tone=item.get("emotional_tone", ""),
             tone_evidence=item.get("tone_evidence", ""),
             internal_references=item.get("internal_references", []),
-            is_argument_carrying=item.get("is_argument_carrying", False),
             depth=depth,
         ))
     return results

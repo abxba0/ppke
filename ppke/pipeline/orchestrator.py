@@ -46,8 +46,6 @@ def _save_checkpoint(
     extractions: list[ExtractionResult],
 ) -> None:
     """Save extraction checkpoint after each chapter completes."""
-    from ppke.parser.models import DepthLevel
-
     data = {
         "completed_chapter_indices": completed_indices,
         "extractions": [
