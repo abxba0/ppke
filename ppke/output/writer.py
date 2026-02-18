@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -336,6 +338,63 @@ def write_coverage_report(
     return path
 
 
+def _save_extractions_json(book_dir: Path, extractions: list[ExtractionResult]) -> Path:
+    """Persist extraction data as JSON for re-read support."""
+    data = []
+    for ext in extractions:
+        data.append({
+            "paragraph_id": ext.paragraph_id,
+            "original_text": ext.original_text,
+            "topic_sentence": ext.topic_sentence,
+            "function_in_argument": ext.function_in_argument,
+            "explicit_claims": ext.explicit_claims,
+            "implicit_assumptions": ext.implicit_assumptions,
+            "logical_steps": ext.logical_steps,
+            "defined_concepts": ext.defined_concepts,
+            "emotional_tone": ext.emotional_tone,
+            "tone_evidence": ext.tone_evidence,
+            "internal_references": ext.internal_references,
+            "is_argument_carrying": ext.is_argument_carrying,
+            "depth": ext.depth.value,
+        })
+    path = book_dir / "extractions.json"
+    path.write_text(json.dumps(data, indent=1))
+    return path
+
+
+def load_extractions_json(book_dir: Path) -> list[ExtractionResult]:
+    """Load previously saved extraction data from JSON."""
+    from ppke.parser.models import DepthLevel
+
+    path = book_dir / "extractions.json"
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text())
+    results = []
+    for item in data:
+        depth_str = item.get("depth", "LIGHT")
+        try:
+            depth = DepthLevel(depth_str)
+        except ValueError:
+            depth = DepthLevel.LIGHT
+        results.append(ExtractionResult(
+            paragraph_id=item["paragraph_id"],
+            original_text=item.get("original_text", ""),
+            topic_sentence=item.get("topic_sentence", ""),
+            function_in_argument=item.get("function_in_argument", ""),
+            explicit_claims=item.get("explicit_claims", []),
+            implicit_assumptions=item.get("implicit_assumptions", []),
+            logical_steps=item.get("logical_steps", []),
+            defined_concepts=item.get("defined_concepts", []),
+            emotional_tone=item.get("emotional_tone", ""),
+            tone_evidence=item.get("tone_evidence", ""),
+            internal_references=item.get("internal_references", []),
+            is_argument_carrying=item.get("is_argument_carrying", False),
+            depth=depth,
+        ))
+    return results
+
+
 def write_all_book_files(
     vault_path: Path,
     book: Book,
@@ -359,12 +418,39 @@ def write_all_book_files(
     write_concept_index(book_dir, book, concept_data)
     write_author_model(book_dir, book, author_model)
     write_coverage_report(book_dir, coverage)
+    _save_extractions_json(book_dir, extractions)
 
     logger.info("All files written for %s", book.title)
     return book_dir
 
 
 # ── Global vault files (spec section 4) ──
+
+
+def _deduplicate_concepts(
+    concepts_by_book: dict[str, list[str]],
+    config: Any,
+) -> list[dict[str, Any]]:
+    """Use LLM to semantically deduplicate concepts across books.
+
+    Returns a list of concept groups with canonical names and members.
+    Falls back to empty list on failure.
+    """
+    from ppke.llm.client import LLMClient
+    from ppke.llm.prompts import CONCEPT_DEDUP_SYSTEM, CONCEPT_DEDUP_USER
+
+    try:
+        client = LLMClient(config.llm)
+        user_prompt = CONCEPT_DEDUP_USER.format(
+            concepts_by_book_json=json.dumps(concepts_by_book, indent=1),
+        )
+        result = client.complete_json(CONCEPT_DEDUP_SYSTEM, user_prompt)
+        groups = result.get("groups", [])
+        # Only keep groups with 2+ members (actual cross-book matches)
+        return [g for g in groups if len(g.get("members", [])) >= 2]
+    except Exception as e:
+        logger.warning("Concept deduplication failed (non-fatal): %s", e)
+        return []
 
 
 def write_global_files(vault_path: Path, config: Any) -> None:
@@ -418,24 +504,57 @@ def write_global_files(vault_path: Path, config: Any) -> None:
     )
     (vault_path / "00_PROJECT_SETTINGS.md").write_text(settings_content)
 
-    # MASTER_CONCEPT_INDEX.md — aggregate concepts from all books
+    # MASTER_CONCEPT_INDEX.md — aggregate concepts with semantic deduplication
     master_lines = [
         "# Master Concept Index",
         "",
-        "Cross-book concept tracking. Each entry references:",
+        "Cross-book concept tracking with semantic deduplication.",
         "```",
         "Book_Folder_Name -> {CH}.p{P}",
         "```",
         "",
-        "---",
-        "",
     ]
+
+    # Collect concept names per book for deduplication
+    concepts_by_book: dict[str, list[str]] = {}
+    for bd in book_dirs:
+        concept_path = bd / "03_Concept_Index.md"
+        if concept_path.exists():
+            content = concept_path.read_text()
+            names = re.findall(r"^## (.+)$", content, re.MULTILINE)
+            if names:
+                concepts_by_book[bd.name] = names
+
+    # Attempt semantic deduplication if 2+ books have concepts
+    dedup_groups: list[dict[str, Any]] = []
+    if len(concepts_by_book) >= 2 and config.llm.active_api_key:
+        dedup_groups = _deduplicate_concepts(concepts_by_book, config)
+
+    if dedup_groups:
+        master_lines.append("## Semantic Groups (Cross-Book)")
+        master_lines.append("")
+        for group in dedup_groups:
+            canonical = group.get("canonical_name", "Unknown")
+            master_lines.append(f"### {canonical}")
+            master_lines.append("")
+            members = group.get("members", [])
+            for m in members:
+                reason = m.get("reason", "")
+                reason_str = f" — {reason}" if reason else ""
+                master_lines.append(
+                    f"- **{m.get('book_folder', '?')}**: "
+                    f"{m.get('concept_name', '?')}{reason_str}"
+                )
+            master_lines.append("")
+        master_lines.append("---")
+        master_lines.append("")
+
+    # Per-book concept index (full content)
     for bd in book_dirs:
         concept_path = bd / "03_Concept_Index.md"
         if concept_path.exists():
             master_lines.append(f"## From: {bd.name}")
             master_lines.append("")
-            # Read and include the concept index (skip the header)
             content = concept_path.read_text()
             for line in content.split("\n"):
                 if line.startswith("# Concept Index") or line.startswith("**Author:**"):

@@ -339,10 +339,13 @@ def query(
     book_dir = config.vault_path / book
     if not book_dir.exists():
         click.echo(f"Error: Book folder not found: {book_dir}", err=True)
-        click.echo("Available books:", err=True)
-        for d in sorted(config.vault_path.iterdir()):
-            if d.is_dir() and d.name.startswith("Book_"):
-                click.echo(f"  {d.name}", err=True)
+        if config.vault_path.exists():
+            click.echo("Available books:", err=True)
+            for d in sorted(config.vault_path.iterdir()):
+                if d.is_dir() and d.name.startswith("Book_"):
+                    click.echo(f"  {d.name}", err=True)
+        else:
+            click.echo(f"Vault directory does not exist: {config.vault_path}", err=True)
         sys.exit(1)
 
     # Load analysis files
@@ -351,7 +354,7 @@ def query(
     from ppke.llm.prompts import SINGLE_BOOK_QUERY_SYSTEM, SINGLE_BOOK_QUERY_USER
 
     meta_path = book_dir / "meta.yml"
-    meta = yaml.safe_load(meta_path.read_text()) if meta_path.exists() else {}
+    meta = (yaml.safe_load(meta_path.read_text()) or {}) if meta_path.exists() else {}
 
     book_title = meta.get("title", "Unknown")
     author_name = meta.get("author", "Unknown")
@@ -510,6 +513,84 @@ def cross_query(
         click.echo(overall)
 
 
+# ── re-read command ──
+
+
+@main.command("re-read")
+@click.option("--book", required=True, help="Book folder name")
+@click.option(
+    "--chapters",
+    required=True,
+    help="Comma-separated chapter numbers to re-scan (e.g. '1,3,5')",
+)
+@click.option(
+    "--provider",
+    type=click.Choice(["anthropic", "openai"]),
+    default=None,
+    help="LLM provider",
+)
+@click.option("--model", default=None, help="Model name")
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path",
+)
+@click.option("-v", "--verbose", is_flag=True, help="Verbose logging")
+def re_read(
+    book: str,
+    chapters: str,
+    provider: str | None,
+    model: str | None,
+    vault_path: Path | None,
+    verbose: bool,
+):
+    """Interactive re-read: re-extract specific chapters from an ingested book.
+
+    Re-parses the original source file, re-extracts the specified chapters,
+    and updates all output files with the new results.
+
+    Examples:
+        ppke re-read --book "Book_Being_and_Time_Heidegger_1927" --chapters "1,3"
+        ppke re-read --book "Book_Republic_Plato" --chapters "5"
+    """
+    _setup_logging(verbose)
+
+    config = _load_config_with_overrides(provider, model, vault_path)
+    _require_api_key(config)
+
+    book_dir = config.vault_path / book
+    if not book_dir.exists():
+        click.echo(f"Error: Book folder not found: {book_dir}", err=True)
+        sys.exit(1)
+
+    # Parse chapter numbers
+    try:
+        chapter_numbers = [int(c.strip()) for c in chapters.split(",")]
+    except ValueError:
+        click.echo("Error: --chapters must be comma-separated integers.", err=True)
+        sys.exit(1)
+
+    click.echo(f"Re-reading chapters {chapter_numbers} from {book}")
+
+    def progress_callback(stage: str, detail: str):
+        click.echo(f"  [{stage}] {detail}")
+
+    from ppke.pipeline.orchestrator import reread_chapters
+
+    try:
+        reread_chapters(
+            book_dir=book_dir,
+            chapter_numbers=chapter_numbers,
+            config=config,
+            progress_callback=progress_callback,
+        )
+        click.echo(f"\nRe-read complete! Updated files in: {book_dir}")
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
 # ── config command ──
 
 
@@ -550,6 +631,8 @@ def config(
         click.echo(f"Model:        {cfg.llm.model}")
         click.echo(f"Vault path:   {cfg.vault_path}")
         click.echo(f"Batch size:   {cfg.llm.paragraphs_per_batch}")
+        click.echo(f"Max para tokens: {cfg.llm.max_paragraph_tokens}")
+        click.echo(f"Max workers:  {cfg.llm.max_workers}")
         click.echo(f"Selective:    {cfg.selective_depth}")
         click.echo(f"Double pass:  {cfg.double_pass}")
         click.echo(f"API key set:  {'yes' if cfg.llm.active_api_key else 'no'}")

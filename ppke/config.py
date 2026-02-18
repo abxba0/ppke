@@ -60,6 +60,8 @@ class LLMConfig:
     max_tokens: int = 4096
     temperature: float = 0.2
     paragraphs_per_batch: int = 5
+    max_paragraph_tokens: int = 2000  # Split paragraphs exceeding this
+    max_workers: int = 4  # Parallel extraction workers
 
     def __post_init__(self):
         # Load from .env file first, then fall back to environment
@@ -102,6 +104,8 @@ class Config:
                 "max_tokens": self.llm.max_tokens,
                 "temperature": self.llm.temperature,
                 "paragraphs_per_batch": self.llm.paragraphs_per_batch,
+                "max_paragraph_tokens": self.llm.max_paragraph_tokens,
+                "max_workers": self.llm.max_workers,
             },
             "selective_depth": self.selective_depth,
             "double_pass": self.double_pass,
@@ -123,6 +127,8 @@ class Config:
                 max_tokens=llm_data.get("max_tokens", 4096),
                 temperature=llm_data.get("temperature", 0.2),
                 paragraphs_per_batch=llm_data.get("paragraphs_per_batch", 5),
+                max_paragraph_tokens=llm_data.get("max_paragraph_tokens", 2000),
+                max_workers=llm_data.get("max_workers", 4),
             ),
             selective_depth=data.get("selective_depth", True),
             double_pass=data.get("double_pass", False),

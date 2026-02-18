@@ -334,3 +334,42 @@ Return JSON:
 
 Return ONLY the JSON. No explanation.
 """
+
+# ── Concept Deduplication (semantic matching across books) ──
+
+CONCEPT_DEDUP_SYSTEM = """\
+You are a semantic concept matcher for philosophical texts. Given concept names \
+from different books, you identify concepts that are semantically equivalent or \
+closely related despite different naming.
+
+Rules:
+- Group concepts that refer to the same philosophical idea.
+- Consider philosophical tradition, context, and usage — not just string similarity.
+- "Dasein" and "Being-there" are equivalent. "Will to Power" and "Power" are NOT.
+- Return valid JSON only.
+"""
+
+CONCEPT_DEDUP_USER = """\
+Given the following concept names from multiple books, identify groups of \
+semantically equivalent or near-equivalent concepts.
+
+Concepts by book:
+{concepts_by_book_json}
+
+Return JSON:
+{{
+  "groups": [
+    {{
+      "canonical_name": "The best/most common name for this concept",
+      "members": [
+        {{"book_folder": "...", "concept_name": "...", "reason": "..."}}
+      ]
+    }}
+  ],
+  "ungrouped": [
+    {{"book_folder": "...", "concept_name": "..."}}
+  ]
+}}
+
+Return ONLY the JSON. No explanation.
+"""

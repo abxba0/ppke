@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -22,11 +23,15 @@ class Paragraph:
     paragraph_number: int
     text: str
     depth: DepthLevel = DepthLevel.LIGHT
+    sub_number: Optional[int] = None  # For sub-paragraph splits: {03}.p12.1
 
     @property
     def paragraph_id(self) -> str:
-        """Format: {CH}.p{P} e.g. {03}.p12"""
-        return f"{{{self.chapter_number:02d}}}.p{self.paragraph_number}"
+        """Format: {CH}.p{P} e.g. {03}.p12, or {CH}.p{P}.{S} for sub-paragraphs."""
+        base = f"{{{self.chapter_number:02d}}}.p{self.paragraph_number}"
+        if self.sub_number is not None:
+            return f"{base}.{self.sub_number}"
+        return base
 
     def __repr__(self) -> str:
         preview = self.text[:60] + "..." if len(self.text) > 60 else self.text
@@ -66,8 +71,8 @@ class Book:
     @property
     def folder_name(self) -> str:
         """Generate the KnowledgeBase folder name: Book_{Title}_{Author}_{YYYY}"""
-        safe_title = self.title.replace(" ", "_")
-        safe_author = self.author.replace(" ", "_")
+        safe_title = re.sub(r'[^\w\s-]', '', self.title).replace(" ", "_")
+        safe_author = re.sub(r'[^\w\s-]', '', self.author).replace(" ", "_")
         year_part = f"_{self.year}" if self.year else ""
         return f"Book_{safe_title}_{safe_author}{year_part}"
 

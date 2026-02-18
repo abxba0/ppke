@@ -7,6 +7,10 @@ from pathlib import Path
 
 from ppke.parser.models import Book, Chapter, Paragraph
 
+# Default: ~2000 tokens ≈ ~8000 characters (4 chars/token heuristic)
+DEFAULT_MAX_PARAGRAPH_TOKENS = 2000
+_CHARS_PER_TOKEN = 4
+
 
 # Patterns for detecting chapter headings
 CHAPTER_PATTERNS = [
@@ -165,5 +169,75 @@ def parse_markdown_text(
                 )
             )
         book.chapters.append(chapter)
+
+    return book
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count using character-based heuristic."""
+    return len(text) // _CHARS_PER_TOKEN
+
+
+def _split_text_at_sentences(text: str, max_chars: int) -> list[str]:
+    """Split text into chunks at sentence boundaries, respecting max size."""
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    for sentence in sentences:
+        sentence_len = len(sentence)
+        if current and (current_len + sentence_len + 1) > max_chars:
+            chunks.append(" ".join(current))
+            current = [sentence]
+            current_len = sentence_len
+        else:
+            current.append(sentence)
+            current_len += sentence_len + 1
+
+    if current:
+        chunks.append(" ".join(current))
+
+    return chunks
+
+
+def split_long_paragraphs(
+    book: Book,
+    max_tokens: int = DEFAULT_MAX_PARAGRAPH_TOKENS,
+) -> Book:
+    """Split paragraphs that exceed max_tokens into sub-paragraphs.
+
+    Sub-paragraphs get IDs like {03}.p12.1, {03}.p12.2.
+    The original paragraph is replaced by its sub-paragraphs in the chapter.
+    Returns the modified book (mutated in place).
+    """
+    max_chars = max_tokens * _CHARS_PER_TOKEN
+
+    for chapter in book.chapters:
+        new_paragraphs: list[Paragraph] = []
+
+        for para in chapter.paragraphs:
+            if _estimate_tokens(para.text) <= max_tokens:
+                new_paragraphs.append(para)
+                continue
+
+            # Split this paragraph into sub-paragraphs
+            chunks = _split_text_at_sentences(para.text, max_chars)
+            if len(chunks) <= 1:
+                # Can't split further at sentence level
+                new_paragraphs.append(para)
+                continue
+
+            for sub_idx, chunk_text in enumerate(chunks, start=1):
+                sub_para = Paragraph(
+                    chapter_number=para.chapter_number,
+                    paragraph_number=para.paragraph_number,
+                    text=chunk_text,
+                    depth=para.depth,
+                    sub_number=sub_idx,
+                )
+                new_paragraphs.append(sub_para)
+
+        chapter.paragraphs = new_paragraphs
 
     return book

@@ -5,9 +5,13 @@ A CLI tool for structured philosophical book analysis. PPKE ingests markdown boo
 ## Features
 
 - **Structural Extraction** - Parses books into chapters and paragraphs, extracts claims, arguments, and concepts via LLM
+- **Sub-Paragraph Splitting** - Automatically splits long paragraphs into sub-paragraphs (`{03}.p12.1`, `{03}.p12.2`) when they exceed token limits
+- **Parallel Extraction** - Multi-threaded chapter extraction for faster ingestion of large books
 - **Coverage Validation** - Ensures 100% paragraph coverage with automatic re-read on gaps
+- **Interactive Re-Read** - User-triggered re-scan of specific chapters after ingestion
 - **Logical Architecture** - Maps argument chains and inferential connections across chapters
 - **Concept Indexing** - Tracks concept definitions, evolution, and cross-references
+- **Semantic Deduplication** - Master Concept Index groups semantically equivalent concepts across books using LLM matching (not just string matching)
 - **Pattern Detection** - Identifies rhetorical strategies, dialectical tensions, and recurring structures
 - **Cross-Book Synthesis** - Compares and contrasts ideas across multiple encoded books
 - **Single-Book Querying** - Ask questions about any ingested book with verbatim evidence
@@ -42,6 +46,8 @@ If you just run `ppke` without any command on a fresh install, the setup wizard 
 ppke ingest book.md --title "Being and Time" --author "Heidegger" --year 1927
 ```
 
+Long paragraphs are automatically split into sub-paragraphs. Chapters are extracted in parallel for faster processing.
+
 ### 4. Query
 
 ```bash
@@ -50,6 +56,12 @@ ppke query --book "Book_Being_and_Time_Heidegger_1927" --question "What is Dasei
 
 # Across all books
 ppke cross-query --question "How do these authors differ on free will?"
+```
+
+### 5. Re-Read Specific Chapters
+
+```bash
+ppke re-read --book "Book_Being_and_Time_Heidegger_1927" --chapters "1,3,5"
 ```
 
 ## Commands
@@ -61,6 +73,7 @@ ppke cross-query --question "How do these authors differ on free will?"
 | `ppke parse <file>` | Dry-run parse (shows structure, no LLM calls) |
 | `ppke query` | Query a single ingested book |
 | `ppke cross-query` | Query across all ingested books |
+| `ppke re-read` | Re-extract specific chapters from an ingested book |
 | `ppke config` | View or update configuration |
 
 ## Configuration
@@ -107,6 +120,14 @@ Config file: `~/.ppke/config.json`
 | `--double-pass` | Enable double-pass extraction for verification |
 | `-v, --verbose` | Verbose logging |
 
+### Advanced Config Options
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `max_paragraph_tokens` | 2000 | Split paragraphs exceeding this token count |
+| `max_workers` | 4 | Parallel extraction threads |
+| `paragraphs_per_batch` | 5 | Paragraphs sent per LLM call |
+
 ## Project Structure
 
 ```
@@ -115,12 +136,12 @@ ppke/
 ├── config.py            # Configuration & .env management
 ├── parser/
 │   ├── models.py        # Data models (Book, Chapter, Paragraph, etc.)
-│   └── markdown.py      # Markdown file parsing
+│   └── markdown.py      # Markdown parsing + sub-paragraph splitting
 ├── llm/
 │   ├── client.py        # Unified Anthropic/OpenAI client
 │   └── prompts.py       # Prompt templates for all pipeline stages
 ├── pipeline/
-│   ├── orchestrator.py  # Master ingestion controller
+│   ├── orchestrator.py  # Master controller (parallel extraction, re-read)
 │   ├── extractor.py     # Structural extraction (Skill 1)
 │   ├── validator.py     # Coverage validation (Skill 2)
 │   ├── logical_map.py   # Logical architecture (Skill 3)
@@ -128,7 +149,7 @@ ppke/
 │   ├── patterns.py      # Pattern detection (Skill 5)
 │   └── synthesizer.py   # Cross-book synthesis (Skill 6)
 ├── output/
-│   ├── writer.py        # File generation for vault
+│   ├── writer.py        # File generation + semantic deduplication
 │   └── templates.py     # Output templates
 └── tests/
     ├── test_parser.py
@@ -142,7 +163,7 @@ Each ingested book creates a folder in the vault:
 ```
 ~/KnowledgeBase/
 ├── 00_PROJECT_SETTINGS.md      # Global config
-├── MASTER_CONCEPT_INDEX.md     # Cross-book concepts
+├── MASTER_CONCEPT_INDEX.md     # Cross-book concepts (semantically deduplicated)
 ├── QA_RESULTS.md               # Coverage status
 ├── PLAYBOOK.md                 # Usage guide
 └── Book_Being_and_Time_Heidegger_1927/

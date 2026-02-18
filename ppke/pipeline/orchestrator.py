@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
 
 from ppke.config import Config
 from ppke.llm.client import LLMClient
 from ppke.llm.prompts import AUTHOR_MODEL_SYSTEM, AUTHOR_MODEL_USER
-from ppke.output.writer import write_all_book_files, write_global_files
+from ppke.output.writer import load_extractions_json, write_all_book_files, write_global_files
+from ppke.parser.markdown import split_long_paragraphs
 from ppke.parser.models import Book, Chapter, CoverageReport, ExtractionResult
 from ppke.pipeline.concepts import build_concept_index
 from ppke.pipeline.extractor import extract_chapter
@@ -24,6 +27,7 @@ from ppke.pipeline.validator import (
 
 logger = logging.getLogger(__name__)
 
+_progress_lock = threading.Lock()
 
 ProgressCallback = Callable[[str, str], None]
 
@@ -148,30 +152,87 @@ def ingest_book(
     client = LLMClient(config.llm)
 
     def _progress(stage: str, detail: str = ""):
-        if progress_callback:
-            progress_callback(stage, detail)
-        logger.info("[%s] %s", stage, detail)
+        with _progress_lock:
+            if progress_callback:
+                progress_callback(stage, detail)
+            logger.info("[%s] %s", stage, detail)
 
-    # ── Stage 1: Structural extraction (first pass) ──
-    _progress("extraction", f"Pass 1: Processing {len(book.chapters)} chapters")
+    # ── Stage 0: Split long paragraphs into sub-paragraphs ──
+    split_count_before = book.total_paragraphs
+    split_long_paragraphs(book, max_tokens=config.llm.max_paragraph_tokens)
+    split_count_after = book.total_paragraphs
+    if split_count_after > split_count_before:
+        _progress(
+            "split",
+            f"Split long paragraphs: {split_count_before} -> {split_count_after} "
+            f"({split_count_after - split_count_before} sub-paragraphs created)",
+        )
+
+    # ── Stage 1: Structural extraction (first pass, parallel) ──
+    max_workers = config.llm.max_workers
+    _progress(
+        "extraction",
+        f"Pass 1: Processing {len(book.chapters)} chapters "
+        f"(max {max_workers} parallel workers)",
+    )
     all_extractions: list[ExtractionResult] = []
 
-    for chapter in book.chapters:
-        _progress(
-            "extraction",
-            f"Chapter {chapter.number:02d}: {chapter.title} "
-            f"({chapter.paragraph_count} paragraphs)",
-        )
+    if max_workers > 1 and len(book.chapters) > 1:
+        # Parallel extraction using thread pool
+        # Key by index (not chapter number) to handle duplicate chapter numbers
+        chapter_results_map: dict[int, list[ExtractionResult]] = {}
 
-        chapter_results = _extract_with_retry(
-            client=client,
-            chapter=chapter,
-            book_title=book.title,
-            author=book.author,
-            batch_size=config.llm.paragraphs_per_batch,
-            progress=_progress,
-        )
-        all_extractions.extend(chapter_results)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {}
+            for idx, chapter in enumerate(book.chapters):
+                _progress(
+                    "extraction",
+                    f"Submitting Chapter {chapter.number:02d}: {chapter.title} "
+                    f"({chapter.paragraph_count} paragraphs)",
+                )
+                future = executor.submit(
+                    _extract_with_retry,
+                    client=client,
+                    chapter=chapter,
+                    book_title=book.title,
+                    author=book.author,
+                    batch_size=config.llm.paragraphs_per_batch,
+                    progress=_progress,
+                )
+                futures[future] = idx
+
+            for future in as_completed(futures):
+                idx = futures[future]
+                ch = book.chapters[idx]
+                try:
+                    chapter_results_map[idx] = future.result()
+                    _progress("extraction", f"Chapter {ch.number:02d} complete")
+                except Exception as e:
+                    logger.error(
+                        "Chapter %02d extraction failed: %s", ch.number, e
+                    )
+                    chapter_results_map[idx] = []
+
+        # Reassemble in chapter order
+        for idx in range(len(book.chapters)):
+            all_extractions.extend(chapter_results_map.get(idx, []))
+    else:
+        # Sequential extraction (single worker or single chapter)
+        for chapter in book.chapters:
+            _progress(
+                "extraction",
+                f"Chapter {chapter.number:02d}: {chapter.title} "
+                f"({chapter.paragraph_count} paragraphs)",
+            )
+            chapter_results = _extract_with_retry(
+                client=client,
+                chapter=chapter,
+                book_title=book.title,
+                author=book.author,
+                batch_size=config.llm.paragraphs_per_batch,
+                progress=_progress,
+            )
+            all_extractions.extend(chapter_results)
 
     # ── Stage 2: Double-pass (if enabled) ──
     if config.double_pass:
@@ -204,6 +265,8 @@ def ingest_book(
                 merged.append(p2)
             elif p1:
                 merged.append(p1)
+            else:
+                logger.warning("Paragraph %s missing from both passes", pid)
 
         all_extractions = merged
         _progress("double_pass", "Double-pass merge complete")
@@ -268,4 +331,146 @@ def ingest_book(
     write_global_files(config.vault_path, config)
 
     _progress("complete", f"Book ingested: {book_dir}")
+    return book_dir
+
+
+def reread_chapters(
+    book_dir: Path,
+    chapter_numbers: list[int],
+    config: Config,
+    progress_callback: ProgressCallback | None = None,
+) -> Path:
+    """Re-extract specific chapters from an already-ingested book.
+
+    Reads the original source file, re-parses it, re-extracts only the
+    requested chapters, merges with existing extractions, and rewrites
+    all output files.
+
+    Args:
+        book_dir: Path to the book's folder in the vault.
+        chapter_numbers: Chapter numbers to re-extract.
+        config: PPKE configuration.
+        progress_callback: Optional callable for progress updates.
+
+    Returns:
+        Path to the book directory.
+    """
+    import yaml
+
+    from ppke.parser.markdown import parse_markdown_book
+
+    def _progress(stage: str, detail: str = ""):
+        if progress_callback:
+            progress_callback(stage, detail)
+        logger.info("[%s] %s", stage, detail)
+
+    # Load metadata
+    meta_path = book_dir / "meta.yml"
+    if not meta_path.exists():
+        raise FileNotFoundError(f"No meta.yml found in {book_dir}")
+    meta = yaml.safe_load(meta_path.read_text()) or {}
+
+    source_path = meta.get("source_path")
+    if not source_path or not Path(source_path).exists():
+        raise FileNotFoundError(
+            f"Source file not found: {source_path}. "
+            "Re-read requires the original markdown file."
+        )
+
+    book_title = meta.get("title", "Unknown")
+    author = meta.get("author", "Unknown")
+    year = meta.get("year")
+
+    _progress("re-read", f"Re-parsing source: {source_path}")
+    book = parse_markdown_book(source_path, book_title, author, year)
+    split_long_paragraphs(book, max_tokens=config.llm.max_paragraph_tokens)
+
+    # Filter to requested chapters
+    target_chapters = [
+        ch for ch in book.chapters if ch.number in chapter_numbers
+    ]
+    if not target_chapters:
+        _progress("re-read", f"No matching chapters found for: {chapter_numbers}")
+        return book_dir
+
+    _progress(
+        "re-read",
+        f"Re-extracting {len(target_chapters)} chapters: "
+        f"{[ch.number for ch in target_chapters]}",
+    )
+
+    client = LLMClient(config.llm)
+
+    # Load existing extractions from disk (no LLM calls for non-target chapters)
+    _progress("re-read", "Loading existing extraction data from disk")
+    saved_extractions = load_extractions_json(book_dir)
+    saved_map = {ext.paragraph_id: ext for ext in saved_extractions}
+
+    # Collect paragraph IDs from chapters being re-read
+    reread_pids: set[str] = set()
+    for ch in target_chapters:
+        for p in ch.paragraphs:
+            reread_pids.add(p.paragraph_id)
+
+    # Re-extract only the target chapters via LLM
+    new_extractions: list[ExtractionResult] = []
+    for chapter in target_chapters:
+        _progress(
+            "re-read",
+            f"Chapter {chapter.number:02d}: {chapter.title} "
+            f"({chapter.paragraph_count} paragraphs)",
+        )
+        chapter_results = _extract_with_retry(
+            client=client,
+            chapter=chapter,
+            book_title=book_title,
+            author=author,
+            batch_size=config.llm.paragraphs_per_batch,
+            progress=_progress,
+        )
+        new_extractions.extend(chapter_results)
+
+    # Merge: new results for re-read paragraphs, saved results for everything else
+    new_map = {ext.paragraph_id: ext for ext in new_extractions}
+    all_extractions: list[ExtractionResult] = []
+    for pid in book.all_paragraph_ids:
+        if pid in reread_pids:
+            ext = new_map.get(pid)
+        else:
+            ext = saved_map.get(pid)
+        if ext:
+            all_extractions.append(ext)
+
+    _progress(
+        "re-read",
+        f"Merged: {len(new_extractions)} re-extracted + "
+        f"{len(all_extractions) - len(new_extractions)} from disk",
+    )
+
+    # Re-run the analysis pipeline
+    _progress("re-read", "Re-running analysis pipeline")
+    coverage = validate_coverage(book, all_extractions)
+    coverage.re_read_pass_completed = True
+
+    logical_map = build_logical_map(client, all_extractions, book_title, author)
+    concept_data = build_concept_index(client, all_extractions, book_title, author)
+    pattern_data = detect_patterns(client, all_extractions, book_title, author)
+    author_model = _build_author_model(
+        client, book, logical_map, concept_data, pattern_data
+    )
+
+    _progress("re-read", "Writing updated files")
+    write_all_book_files(
+        vault_path=config.vault_path,
+        book=book,
+        extractions=all_extractions,
+        logical_map=logical_map,
+        concept_data=concept_data,
+        author_model=author_model,
+        coverage=coverage,
+        human_operator=meta.get("human_operator", ""),
+    )
+    write_global_files(config.vault_path, config)
+
+    _progress("re-read", f"Re-read complete for chapters {chapter_numbers}")
     return book_dir

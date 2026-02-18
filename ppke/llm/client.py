@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from typing import Any
 
 from ppke.config import LLMConfig
@@ -12,27 +13,35 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    """Configurable LLM client wrapping Anthropic and OpenAI APIs."""
+    """Configurable LLM client wrapping Anthropic and OpenAI APIs.
+
+    Thread-safe: lazy client initialization is protected by a lock.
+    """
 
     def __init__(self, config: LLMConfig):
         self.config = config
         self._anthropic_client = None
         self._openai_client = None
+        self._lock = threading.Lock()
 
-    def _get_anthropic(self):
+    def _get_anthropic(self) -> Any:
         if self._anthropic_client is None:
-            import anthropic
-            self._anthropic_client = anthropic.Anthropic(
-                api_key=self.config.anthropic_api_key
-            )
+            with self._lock:
+                if self._anthropic_client is None:
+                    import anthropic
+                    self._anthropic_client = anthropic.Anthropic(
+                        api_key=self.config.anthropic_api_key
+                    )
         return self._anthropic_client
 
-    def _get_openai(self):
+    def _get_openai(self) -> Any:
         if self._openai_client is None:
-            import openai
-            self._openai_client = openai.OpenAI(
-                api_key=self.config.openai_api_key
-            )
+            with self._lock:
+                if self._openai_client is None:
+                    import openai
+                    self._openai_client = openai.OpenAI(
+                        api_key=self.config.openai_api_key
+                    )
         return self._openai_client
 
     def complete(
@@ -86,7 +95,10 @@ class LLMClient:
             kwargs["response_format"] = {"type": "json_object"}
 
         response = client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        if content is None:
+            raise ValueError("OpenAI returned empty content")
+        return content
 
     def complete_json(self, system_prompt: str, user_prompt: str) -> dict:
         """Send a prompt expecting JSON response. Parses and returns dict."""
@@ -99,7 +111,6 @@ class LLMClient:
         text = raw.strip()
         if text.startswith("```"):
             lines = text.split("\n")
-            # Remove first and last lines (```json and ```)
             json_lines = []
             inside = False
             for line in lines:
@@ -112,4 +123,9 @@ class LLMClient:
                     json_lines.append(line)
             text = "\n".join(json_lines)
 
-        return json.loads(text)
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"LLM returned invalid JSON: {text[:300]}..."
+            ) from e

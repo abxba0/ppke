@@ -49,6 +49,8 @@ def _load_book_analysis(book_dir: Path) -> dict[str, Any] | None:
 
 def discover_books(vault_path: Path) -> list[dict[str, Any]]:
     """Find all encoded books in the vault."""
+    if not vault_path.exists():
+        return []
     books = []
     for d in sorted(vault_path.iterdir()):
         if d.is_dir() and d.name.startswith("Book_"):
