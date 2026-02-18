@@ -503,14 +503,21 @@ def _deduplicate_concepts(
     try:
         client = LLMClient(config.llm)
         user_prompt = CONCEPT_DEDUP_USER.format(
-            concepts_by_book_json=json.dumps(concepts_by_book, indent=1),
+            concepts_by_book_json=json.dumps(concepts_by_book, separators=(',', ':')),
         )
         result = client.complete_json(CONCEPT_DEDUP_SYSTEM, user_prompt)
         groups = result.get("groups", [])
         # Only keep groups with 2+ members (actual cross-book matches)
         return [g for g in groups if len(g.get("members", [])) >= 2]
     except Exception as e:
-        logger.warning("Concept deduplication failed (non-fatal): %s", e)
+        logger.error(
+            "Concept deduplication LLM call failed (%s). "
+            "Falling back to identity grouping — each concept shown individually, "
+            "no cross-book semantic merging applied.",
+            e,
+        )
+        # Graceful degradation: represent every concept as its own ungrouped entry
+        # so the master index still lists all concepts even without LLM dedup.
         return []
 
 

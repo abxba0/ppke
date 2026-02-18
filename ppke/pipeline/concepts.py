@@ -20,19 +20,21 @@ def _extraction_to_concept_input(results: list[ExtractionResult]) -> str:
     """Build input focusing on concepts and their paragraph contexts.
 
     Full verbatim text is preserved — no truncation. The caller is responsible
-    for chunking to stay within token limits.
+    for chunking to stay within token limits. Empty fields are omitted to
+    reduce token usage without losing content.
     """
     items = []
     for r in results:
         if r.defined_concepts or r.explicit_claims:
-            items.append({
-                "paragraph_id": r.paragraph_id,
-                "topic": r.topic_sentence,
-                "concepts": r.defined_concepts,
-                "claims": r.explicit_claims,
-                "original_text": r.original_text,
-            })
-    return json.dumps(items, indent=1)
+            item: dict = {"paragraph_id": r.paragraph_id, "original_text": r.original_text}
+            if r.topic_sentence:
+                item["topic"] = r.topic_sentence
+            if r.defined_concepts:
+                item["concepts"] = r.defined_concepts
+            if r.explicit_claims:
+                item["claims"] = r.explicit_claims
+            items.append(item)
+    return json.dumps(items, separators=(',', ':'))
 
 
 def _merge_concept_results(results: list[dict[str, Any]]) -> dict[str, Any]:

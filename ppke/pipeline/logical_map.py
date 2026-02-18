@@ -17,20 +17,25 @@ def _extraction_to_summary(results: list[ExtractionResult]) -> str:
     """Convert extraction results to a condensed JSON summary for the LLM.
 
     We don't send full text - just the structured extractions to stay within limits.
+    Empty fields are omitted to reduce token usage without losing content.
     """
     items = []
     for r in results:
-        item: dict[str, Any] = {
-            "paragraph_id": r.paragraph_id,
-            "topic_sentence": r.topic_sentence,
-            "function": r.function_in_argument,
-            "claims": r.explicit_claims,
-            "assumptions": r.implicit_assumptions,
-            "logical_steps": r.logical_steps,
-            "concepts": r.defined_concepts,
-        }
+        item: dict[str, Any] = {"paragraph_id": r.paragraph_id}
+        if r.topic_sentence:
+            item["topic_sentence"] = r.topic_sentence
+        if r.function_in_argument:
+            item["function"] = r.function_in_argument
+        if r.explicit_claims:
+            item["claims"] = r.explicit_claims
+        if r.implicit_assumptions:
+            item["assumptions"] = r.implicit_assumptions
+        if r.logical_steps:
+            item["logical_steps"] = r.logical_steps
+        if r.defined_concepts:
+            item["concepts"] = r.defined_concepts
         items.append(item)
-    return json.dumps(items, indent=1)
+    return json.dumps(items, separators=(',', ':'))
 
 
 def build_logical_map(

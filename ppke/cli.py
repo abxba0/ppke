@@ -778,9 +778,13 @@ def stats(vault_path: Path | None):
         report_path = bd / "05_Coverage_Report.md"
         if report_path.exists():
             content = report_path.read_text()
+            # Primary: bold-formatted markdown  "**processed_paragraphs_count:** 42"
             match = re.search(r"processed_paragraphs_count:\*\*\s*(\d+)", content)
             if not match:
-                match = re.search(r"processed_paragraphs_count.+?(\d+)", content)
+                # Fallback: YAML-style  "processed_paragraphs_count: 42"
+                # Anchored to end-of-line so we don't match stray numbers later.
+                match = re.search(r"processed_paragraphs_count[:\s]+(\d+)\s*$",
+                                  content, re.MULTILINE)
             if match:
                 total_processed += int(match.group(1))
 
@@ -907,9 +911,10 @@ def search(text: str, vault_path: Path | None, book: str | None, max_results: in
                 ("claim", claims),
                 ("concept", concepts),
             ]:
-                if query_lower in field_text.lower():
-                    # Build a snippet around the match
-                    idx = field_text.lower().index(query_lower)
+                field_lower = field_text.lower()
+                if query_lower in field_lower:
+                    # Build a snippet around the match (use cached lowercase)
+                    idx = field_lower.index(query_lower)
                     start = max(0, idx - 40)
                     end = min(len(field_text), idx + len(text) + 40)
                     snippet = field_text[start:end]

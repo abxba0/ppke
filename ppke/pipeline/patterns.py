@@ -19,20 +19,25 @@ _PATTERN_CHUNK_SIZE = 30
 def _extraction_to_pattern_input(results: list[ExtractionResult]) -> str:
     """Build input focusing on tones, claims, and structural data.
 
-    Full verbatim text is preserved — no truncation.
+    All paragraphs are included (needed for emotional arc tracking).
+    Full verbatim text is preserved — no truncation. Empty fields are
+    omitted to reduce token usage without losing content.
     """
     items = []
     for r in results:
-        items.append({
-            "paragraph_id": r.paragraph_id,
-            "topic": r.topic_sentence,
-            "function": r.function_in_argument,
-            "tone": r.emotional_tone,
-            "claims": r.explicit_claims,
-            "assumptions": r.implicit_assumptions,
-            "original_text": r.original_text,
-        })
-    return json.dumps(items, indent=1)
+        item: dict = {"paragraph_id": r.paragraph_id, "original_text": r.original_text}
+        if r.topic_sentence:
+            item["topic"] = r.topic_sentence
+        if r.function_in_argument:
+            item["function"] = r.function_in_argument
+        if r.emotional_tone:
+            item["tone"] = r.emotional_tone
+        if r.explicit_claims:
+            item["claims"] = r.explicit_claims
+        if r.implicit_assumptions:
+            item["assumptions"] = r.implicit_assumptions
+        items.append(item)
+    return json.dumps(items, separators=(',', ':'))
 
 
 def _merge_pattern_results(results: list[dict[str, Any]]) -> dict[str, Any]:

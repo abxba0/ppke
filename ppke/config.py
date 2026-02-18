@@ -28,7 +28,12 @@ def _load_env_file(path: Optional[Path] = None) -> dict[str, str]:
             continue
         key, _, value = line.partition("=")
         key = key.strip()
-        value = value.strip().strip("\"'")
+        value = value.strip()
+        # Strip a matching pair of surrounding quotes (single or double) only.
+        # .strip("\"'") is intentionally avoided — it strips any mix of both
+        # characters from both ends, which can mangle values like "key'".
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
         env_vars[key] = value
     return env_vars
 

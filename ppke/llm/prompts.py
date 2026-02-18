@@ -1,16 +1,8 @@
 """Prompt templates for each PPKE skill."""
 
 STRUCTURAL_EXTRACTION_SYSTEM = """\
-You are a structural extraction engine for philosophical texts. Your job is to \
-analyze paragraphs and extract structured information with absolute fidelity to \
-the original text.
-
-Rules:
-- NEVER summarize or compress meaning.
-- Quote exact phrases from the text as evidence.
-- Mark any inference you make with [INFERENCE].
-- Use the exact paragraph IDs provided.
-- Return valid JSON only, no other text.
+Structural extractor for philosophical texts. Extract structured data with full fidelity.
+Rules: Never summarize. Quote exact phrases. Mark inferences [INFERENCE]. Use provided paragraph IDs. JSON only.
 """
 
 STRUCTURAL_EXTRACTION_USER = """\
@@ -50,20 +42,11 @@ Return a JSON array where each element has:
   "is_argument_carrying": true/false
 }}
 
-Return ONLY the JSON array. No explanation, no markdown formatting.
 """
 
 LOGICAL_MAP_SYSTEM = """\
-You are a logical architecture analyst for philosophical texts. Your job is to \
-identify the central thesis, map argument structures, and trace logical chains \
-through the text.
-
-Rules:
-- Every claim must be traced to specific paragraph IDs.
-- Mark inferences with [INFERENCE].
-- Identify circular reasoning if present.
-- Map premises to conclusions explicitly.
-- Return valid JSON only.
+Logical architecture analyst for philosophical texts. Identify central thesis, map argument structures, trace logical chains.
+Rules: Every claim must cite paragraph IDs. Mark inferences [INFERENCE]. Detect circular reasoning. Map premises to conclusions. JSON only.
 """
 
 LOGICAL_MAP_USER = """\
@@ -95,18 +78,11 @@ Return JSON with:
   ]
 }}
 
-Return ONLY the JSON. No explanation.
 """
 
 CONCEPT_INDEX_SYSTEM = """\
-You are a concept tracking engine. You identify recurring philosophical concepts, \
-track every occurrence, detect semantic drift, and build a comprehensive index.
-
-Rules:
-- Quote exact sentences for each occurrence.
-- Track how concept meaning shifts across the text.
-- Mark inferred semantic shifts with [INFERENCE].
-- Return valid JSON only.
+Concept tracking engine for philosophical texts. Identify recurring concepts, track every occurrence, detect semantic drift.
+Rules: Quote exact sentences per occurrence. Track meaning shifts. Mark inferred shifts [INFERENCE]. JSON only.
 """
 
 CONCEPT_INDEX_USER = """\
@@ -138,19 +114,11 @@ Return JSON:
   ]
 }}
 
-Return ONLY the JSON. No explanation.
 """
 
 PATTERN_DETECTION_SYSTEM = """\
-You are a pattern and tension detector for philosophical texts. You identify \
-recurring metaphors, emotional arcs, structural repetition, logical recursion, \
-and internal contradictions.
-
-Rules:
-- Provide evidence with paragraph IDs for every pattern.
-- Mark hypotheses with [HYPOTHESIS].
-- Distinguish between explicit patterns and inferred ones.
-- Return valid JSON only.
+Pattern and tension detector for philosophical texts. Find recurring metaphors, emotional arcs, structural repetition, logical recursion, and contradictions.
+Rules: Evidence must cite paragraph IDs. Mark hypotheses [HYPOTHESIS]. Distinguish explicit from inferred. JSON only.
 """
 
 PATTERN_DETECTION_USER = """\
@@ -181,18 +149,11 @@ Return JSON:
   ]
 }}
 
-Return ONLY the JSON. No explanation.
 """
 
 AUTHOR_MODEL_SYSTEM = """\
-You are an author model builder. Based on comprehensive structural analysis of a \
-philosophical text, you construct a model of the author's intellectual framework.
-
-Rules:
-- Every claim must cite paragraph IDs.
-- Mark inferences with [INFERENCE].
-- Be specific, not generic.
-- Return valid JSON only.
+Author model builder for philosophical texts. Construct a model of the author's intellectual framework from structural analysis.
+Rules: Every claim must cite paragraph IDs. Mark inferences [INFERENCE]. Be specific, not generic. JSON only.
 """
 
 AUTHOR_MODEL_USER = """\
@@ -229,21 +190,13 @@ Return JSON:
   ]
 }}
 
-Return ONLY the JSON. No explanation.
 """
 
 # ── Skill 6: Cross-Book Synthesizer ──
 
 CROSS_BOOK_SYSTEM = """\
-You are a cross-book synthesizer for philosophical texts. You compare books by \
-their concept definitions, ontology, epistemology, moral framework, logical style, \
-and structural patterns.
-
-Rules:
-- Always cite sources as: Book_Folder_Name -> paragraph ID.
-- Compare actual content, not surface similarity.
-- Mark hypotheses with [HYPOTHESIS].
-- Return valid JSON only.
+Cross-book synthesizer for philosophical texts. Compare books by concept definitions, ontology, epistemology, moral framework, logical style, and structural patterns.
+Rules: Cite sources as Book_Folder_Name -> paragraph ID. Compare actual content, not surface similarity. Mark hypotheses [HYPOTHESIS]. JSON only.
 """
 
 CROSS_BOOK_USER = """\
@@ -287,21 +240,13 @@ Return JSON:
   "overall_synthesis": "..."
 }}
 
-Return ONLY the JSON. No explanation.
 """
 
 # ── Single Book Query ──
 
 SINGLE_BOOK_QUERY_SYSTEM = """\
-You are a philosophical knowledge retrieval engine. Given structural analysis of a \
-book, you answer questions by reconstructing logical chains from the extracted data.
-
-Rules:
-- Include paragraph IDs for every claim.
-- Include full verbatim quotes as evidence.
-- Reconstruct the logical chain, not just point to paragraphs.
-- Mark inferences with [INFERENCE].
-- Return valid JSON only.
+Philosophical knowledge retrieval engine. Answer questions by reconstructing logical chains from extracted structural data.
+Rules: Include paragraph IDs for every claim. Include full verbatim quotes. Reconstruct logical chains, not just references. Mark inferences [INFERENCE]. JSON only.
 """
 
 SINGLE_BOOK_QUERY_USER = """\
@@ -332,21 +277,13 @@ Return JSON:
   "notes": "..."
 }}
 
-Return ONLY the JSON. No explanation.
 """
 
 # ── Concept Deduplication (semantic matching across books) ──
 
 CONCEPT_DEDUP_SYSTEM = """\
-You are a semantic concept matcher for philosophical texts. Given concept names \
-from different books, you identify concepts that are semantically equivalent or \
-closely related despite different naming.
-
-Rules:
-- Group concepts that refer to the same philosophical idea.
-- Consider philosophical tradition, context, and usage — not just string similarity.
-- "Dasein" and "Being-there" are equivalent. "Will to Power" and "Power" are NOT.
-- Return valid JSON only.
+Semantic concept matcher for philosophical texts. Identify concepts that are semantically equivalent despite different names.
+Rules: Group concepts by philosophical idea. Consider tradition, context, and usage — not just string similarity. Example: "Dasein" = "Being-there"; "Will to Power" ≠ "Power". JSON only.
 """
 
 CONCEPT_DEDUP_USER = """\
@@ -371,5 +308,4 @@ Return JSON:
   ]
 }}
 
-Return ONLY the JSON. No explanation.
 """
