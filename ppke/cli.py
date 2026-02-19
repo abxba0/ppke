@@ -9,7 +9,14 @@ from pathlib import Path
 import click
 
 from ppke import __version__
-from ppke.config import Config, is_first_run, save_env_file
+from ppke.config import (
+    Config,
+    PROVIDER_DEFAULTS,
+    PROVIDER_ENV_VARS,
+    SUPPORTED_PROVIDERS,
+    is_first_run,
+    save_env_file,
+)
 
 
 def _setup_logging(verbose: bool):
@@ -44,9 +51,7 @@ def _require_api_key(config: Config):
     """Exit with error if API key is missing."""
     if not config.llm.active_api_key:
         provider_name = config.llm.provider
-        env_var = (
-            "ANTHROPIC_API_KEY" if provider_name == "anthropic" else "OPENAI_API_KEY"
-        )
+        env_var = PROVIDER_ENV_VARS.get(provider_name, "API_KEY")
         click.echo(
             f"Error: No API key found for {provider_name}. "
             f"Set {env_var} environment variable.",
@@ -119,46 +124,34 @@ def init():
     click.echo()
 
     # 1. Choose provider
+    click.echo("Supported providers: " + ", ".join(SUPPORTED_PROVIDERS))
     provider = click.prompt(
         "LLM provider",
-        type=click.Choice(["anthropic", "openai"], case_sensitive=False),
+        type=click.Choice(SUPPORTED_PROVIDERS, case_sensitive=False),
         default="anthropic",
     )
 
     # 2. Choose model
-    if provider == "anthropic":
-        default_model = "claude-sonnet-4-20250514"
-        click.echo(f"\nDefault model: {default_model}")
-        model = click.prompt("Model name", default=default_model)
-    else:
-        default_model = "gpt-4o"
-        click.echo(f"\nDefault model: {default_model}")
-        model = click.prompt("Model name", default=default_model)
+    default_model = PROVIDER_DEFAULTS[provider]
+    click.echo(f"\nDefault model: {default_model}")
+    model = click.prompt("Model name", default=default_model)
 
     # 3. API key for chosen provider
     env_vars: dict[str, str] = {}
-    if provider == "anthropic":
-        click.echo("\nYou need an Anthropic API key.")
-        click.echo("Get one at: https://console.anthropic.com/settings/keys")
-        key = click.prompt("ANTHROPIC_API_KEY", hide_input=True)
-        env_vars["ANTHROPIC_API_KEY"] = key
-    else:
-        click.echo("\nYou need an OpenAI API key.")
-        click.echo("Get one at: https://platform.openai.com/api-keys")
-        key = click.prompt("OPENAI_API_KEY", hide_input=True)
-        env_vars["OPENAI_API_KEY"] = key
-
-    # 4. Optionally set the other provider key too
-    other = "openai" if provider == "anthropic" else "anthropic"
-    if click.confirm(f"\nAlso set an API key for {other}?", default=False):
-        if other == "anthropic":
-            click.echo("Get one at: https://console.anthropic.com/settings/keys")
-            other_key = click.prompt("ANTHROPIC_API_KEY", hide_input=True)
-            env_vars["ANTHROPIC_API_KEY"] = other_key
-        else:
-            click.echo("Get one at: https://platform.openai.com/api-keys")
-            other_key = click.prompt("OPENAI_API_KEY", hide_input=True)
-            env_vars["OPENAI_API_KEY"] = other_key
+    env_var_name = PROVIDER_ENV_VARS[provider]
+    _PROVIDER_KEY_URLS = {
+        "anthropic": "https://console.anthropic.com/settings/keys",
+        "openai": "https://platform.openai.com/api-keys",
+        "deepseek": "https://platform.deepseek.com/api_keys",
+        "gemini": "https://aistudio.google.com/app/apikey",
+        "openrouter": "https://openrouter.ai/keys",
+    }
+    click.echo(f"\nYou need a {provider} API key.")
+    url = _PROVIDER_KEY_URLS.get(provider)
+    if url:
+        click.echo(f"Get one at: {url}")
+    key = click.prompt(env_var_name, hide_input=True)
+    env_vars[env_var_name] = key
 
     # 5. Vault path
     default_vault = str(Path.home() / "KnowledgeBase")
@@ -219,7 +212,7 @@ def init():
 @click.option("--year", default=None, help="Publication year")
 @click.option(
     "--provider",
-    type=click.Choice(["anthropic", "openai"]),
+    type=click.Choice(SUPPORTED_PROVIDERS),
     default=None,
     help="LLM provider (overrides config)",
 )
@@ -334,7 +327,7 @@ def parse(filepath: Path, title: str, author: str):
 @click.option("--question", required=True, help="Question to answer from the book")
 @click.option(
     "--provider",
-    type=click.Choice(["anthropic", "openai"]),
+    type=click.Choice(SUPPORTED_PROVIDERS),
     default=None,
     help="LLM provider",
 )
@@ -452,7 +445,7 @@ def query(
 @click.option("--question", required=True, help="Question to answer across books")
 @click.option(
     "--provider",
-    type=click.Choice(["anthropic", "openai"]),
+    type=click.Choice(SUPPORTED_PROVIDERS),
     default=None,
     help="LLM provider",
 )
@@ -557,7 +550,7 @@ def cross_query(
 )
 @click.option(
     "--provider",
-    type=click.Choice(["anthropic", "openai"]),
+    type=click.Choice(SUPPORTED_PROVIDERS),
     default=None,
     help="LLM provider",
 )
@@ -629,7 +622,7 @@ def re_read(
 @main.command()
 @click.option(
     "--provider",
-    type=click.Choice(["anthropic", "openai"]),
+    type=click.Choice(SUPPORTED_PROVIDERS),
     default=None,
     help="LLM provider",
 )

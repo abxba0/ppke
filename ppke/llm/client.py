@@ -1,4 +1,4 @@
-"""Unified LLM client supporting Anthropic and OpenAI."""
+"""Unified LLM client supporting Anthropic, OpenAI, DeepSeek, Gemini, and OpenRouter."""
 
 from __future__ import annotations
 
@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 # Retry settings for rate-limit (429) and transient server errors (5xx)
 _MAX_RETRIES = 4
 _BACKOFF_BASE_SECONDS = 2  # 2s, 4s, 8s, 16s
+
+# DeepSeek API base URL (OpenAI-compatible)
+_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+
+# OpenRouter API base URL (OpenAI-compatible)
+_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 def _is_retryable(exc: Exception) -> bool:
@@ -34,7 +40,7 @@ def _is_retryable(exc: Exception) -> bool:
 
 
 class LLMClient:
-    """Configurable LLM client wrapping Anthropic and OpenAI APIs.
+    """Configurable LLM client wrapping Anthropic, OpenAI, DeepSeek, Gemini, and OpenRouter.
 
     Thread-safe: lazy client initialization is protected by a lock.
     """
@@ -43,6 +49,9 @@ class LLMClient:
         self.config = config
         self._anthropic_client = None
         self._openai_client = None
+        self._deepseek_client = None
+        self._gemini_client = None
+        self._openrouter_client = None
         self._lock = threading.Lock()
 
     def _get_anthropic(self) -> Any:
@@ -65,6 +74,40 @@ class LLMClient:
                     )
         return self._openai_client
 
+    def _get_deepseek(self) -> Any:
+        """Return a lazily-initialized DeepSeek client (OpenAI-compatible)."""
+        if self._deepseek_client is None:
+            with self._lock:
+                if self._deepseek_client is None:
+                    import openai
+                    self._deepseek_client = openai.OpenAI(
+                        api_key=self.config.deepseek_api_key,
+                        base_url=_DEEPSEEK_BASE_URL,
+                    )
+        return self._deepseek_client
+
+    def _get_gemini(self) -> Any:
+        """Return a lazily-initialized Gemini generative model."""
+        if self._gemini_client is None:
+            with self._lock:
+                if self._gemini_client is None:
+                    import google.generativeai as genai  # type: ignore[import]
+                    genai.configure(api_key=self.config.gemini_api_key)
+                    self._gemini_client = genai.GenerativeModel(self.config.model)
+        return self._gemini_client
+
+    def _get_openrouter(self) -> Any:
+        """Return a lazily-initialized OpenRouter client (OpenAI-compatible)."""
+        if self._openrouter_client is None:
+            with self._lock:
+                if self._openrouter_client is None:
+                    import openai
+                    self._openrouter_client = openai.OpenAI(
+                        api_key=self.config.openrouter_api_key,
+                        base_url=_OPENROUTER_BASE_URL,
+                    )
+        return self._openrouter_client
+
     def complete(
         self,
         system_prompt: str,
@@ -79,7 +122,7 @@ class LLMClient:
         Args:
             system_prompt: System-level instructions.
             user_prompt: The user message / content to process.
-            response_format: "text" or "json" (for OpenAI JSON mode).
+            response_format: "text" or "json" (for JSON mode where supported).
 
         Returns:
             The model's response as a string.
@@ -91,6 +134,16 @@ class LLMClient:
                     return self._complete_anthropic(system_prompt, user_prompt)
                 elif self.config.provider == "openai":
                     return self._complete_openai(
+                        system_prompt, user_prompt, response_format
+                    )
+                elif self.config.provider == "deepseek":
+                    return self._complete_deepseek(
+                        system_prompt, user_prompt, response_format
+                    )
+                elif self.config.provider == "gemini":
+                    return self._complete_gemini(system_prompt, user_prompt)
+                elif self.config.provider == "openrouter":
+                    return self._complete_openrouter(
                         system_prompt, user_prompt, response_format
                     )
                 else:
@@ -141,9 +194,78 @@ class LLMClient:
             raise ValueError("OpenAI returned empty content")
         return content
 
+    def _complete_deepseek(
+        self, system_prompt: str, user_prompt: str, response_format: str
+    ) -> str:
+        """Call DeepSeek API (OpenAI-compatible interface)."""
+        client = self._get_deepseek()
+        kwargs: dict[str, Any] = {
+            "model": self.config.model,
+            "max_tokens": self.config.max_tokens,
+            "temperature": self.config.temperature,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        if response_format == "json":
+            kwargs["response_format"] = {"type": "json_object"}
+
+        response = client.chat.completions.create(**kwargs)
+        content = response.choices[0].message.content
+        if content is None:
+            raise ValueError("DeepSeek returned empty content")
+        return content
+
+    def _complete_gemini(self, system_prompt: str, user_prompt: str) -> str:
+        """Call Google Gemini API.
+
+        Gemini combines system and user prompts into a single message with
+        system instructions prepended.
+        """
+        model = self._get_gemini()
+        # Gemini GenerativeModel supports system_instruction at construction
+        # but we merge them here for simplicity since the model is cached.
+        combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+        import google.generativeai as genai  # type: ignore[import]
+        generation_config = genai.GenerationConfig(
+            max_output_tokens=self.config.max_tokens,
+            temperature=self.config.temperature,
+        )
+        response = model.generate_content(
+            combined_prompt,
+            generation_config=generation_config,
+        )
+        if not response.text:
+            raise ValueError("Gemini returned empty content")
+        return response.text
+
+    def _complete_openrouter(
+        self, system_prompt: str, user_prompt: str, response_format: str
+    ) -> str:
+        """Call OpenRouter API (OpenAI-compatible interface)."""
+        client = self._get_openrouter()
+        kwargs: dict[str, Any] = {
+            "model": self.config.model,
+            "max_tokens": self.config.max_tokens,
+            "temperature": self.config.temperature,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        if response_format == "json":
+            kwargs["response_format"] = {"type": "json_object"}
+
+        response = client.chat.completions.create(**kwargs)
+        content = response.choices[0].message.content
+        if content is None:
+            raise ValueError("OpenRouter returned empty content")
+        return content
+
     def complete_json(self, system_prompt: str, user_prompt: str) -> dict:
         """Send a prompt expecting JSON response. Parses and returns dict."""
-        if self.config.provider == "openai":
+        if self.config.provider in ("openai", "deepseek", "openrouter"):
             raw = self.complete(system_prompt, user_prompt, response_format="json")
         else:
             raw = self.complete(system_prompt, user_prompt)

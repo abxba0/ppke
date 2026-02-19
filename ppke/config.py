@@ -13,6 +13,17 @@ DEFAULT_CONFIG_PATH = Path.home() / ".ppke" / "config.json"
 DEFAULT_ENV_PATH = Path.home() / ".ppke" / ".env"
 DEFAULT_VAULT_PATH = Path.home() / "KnowledgeBase"
 
+# All supported providers and their default models
+PROVIDER_DEFAULTS = {
+    "anthropic": "claude-sonnet-4-20250514",
+    "openai": "gpt-4o",
+    "deepseek": "deepseek-chat",
+    "gemini": "gemini-1.5-pro",
+    "openrouter": "openai/gpt-4o",
+}
+
+SUPPORTED_PROVIDERS = list(PROVIDER_DEFAULTS.keys())
+
 
 def _load_env_file(path: Optional[Path] = None) -> dict[str, str]:
     """Load key=value pairs from a .env file."""
@@ -54,14 +65,27 @@ def is_first_run() -> bool:
     return not DEFAULT_CONFIG_PATH.exists()
 
 
+# Map provider name -> environment variable name for its API key
+PROVIDER_ENV_VARS: dict[str, str] = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+
+
 @dataclass
 class LLMConfig:
     """LLM provider configuration."""
 
-    provider: str = "anthropic"  # "anthropic" or "openai"
+    provider: str = "anthropic"
     model: str = "claude-sonnet-4-20250514"
     anthropic_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
+    deepseek_api_key: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
     max_tokens: int = 4096
     temperature: float = 0.2
     paragraphs_per_batch: int = 5
@@ -81,12 +105,32 @@ class LLMConfig:
                 os.environ.get("OPENAI_API_KEY")
                 or dot_env.get("OPENAI_API_KEY")
             )
+        if self.deepseek_api_key is None:
+            self.deepseek_api_key = (
+                os.environ.get("DEEPSEEK_API_KEY")
+                or dot_env.get("DEEPSEEK_API_KEY")
+            )
+        if self.gemini_api_key is None:
+            self.gemini_api_key = (
+                os.environ.get("GEMINI_API_KEY")
+                or dot_env.get("GEMINI_API_KEY")
+            )
+        if self.openrouter_api_key is None:
+            self.openrouter_api_key = (
+                os.environ.get("OPENROUTER_API_KEY")
+                or dot_env.get("OPENROUTER_API_KEY")
+            )
 
     @property
     def active_api_key(self) -> Optional[str]:
-        if self.provider == "anthropic":
-            return self.anthropic_api_key
-        return self.openai_api_key
+        """Return the API key for the currently active provider."""
+        return {
+            "anthropic": self.anthropic_api_key,
+            "openai": self.openai_api_key,
+            "deepseek": self.deepseek_api_key,
+            "gemini": self.gemini_api_key,
+            "openrouter": self.openrouter_api_key,
+        }.get(self.provider)
 
 
 @dataclass
