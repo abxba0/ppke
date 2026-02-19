@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import logging
 import sys
+from io import StringIO as _SIO
 from pathlib import Path
 
 import click
+from rich.console import Console as _RichConsole
+from rich.markup import escape as _escape
+from rich.panel import Panel as _Panel
+from rich.rule import Rule as _Rule
+from rich.table import Table as _Table
+from rich.text import Text as _Text
 
 from ppke import __version__
 from ppke.config import (
@@ -87,6 +94,15 @@ def _safe_book_dir(vault_path: Path, book: str) -> Path:
     return candidate
 
 
+def _render(renderable, width: int = 110) -> str:
+    """Render a Rich renderable to a plain/colored string for click.echo."""
+    is_tty = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+    buf = _SIO()
+    c = _RichConsole(file=buf, no_color=not is_tty, width=width, highlight=False)
+    c.print(renderable)
+    return buf.getvalue().rstrip("\n")
+
+
 @click.group(invoke_without_command=True)
 @click.version_option(version=__version__)
 @click.pass_context
@@ -118,9 +134,7 @@ def init():
     Example:
         ppke init
     """
-    click.echo("=" * 50)
-    click.echo("  PPKE Setup Wizard")
-    click.echo("=" * 50)
+    click.echo(_render(_Rule("[bold blue]PPKE Setup Wizard[/bold blue]")))
     click.echo()
 
     # 1. Choose provider
@@ -184,19 +198,18 @@ def init():
     vault = Path(vault_path)
     vault.mkdir(parents=True, exist_ok=True)
 
+    cfg_table = _Table(show_header=False, box=None, padding=(0, 1))
+    cfg_table.add_column("Key", style="bold cyan")
+    cfg_table.add_column("Value")
+    cfg_table.add_row("Provider:", provider)
+    cfg_table.add_row("Model:", model)
+    cfg_table.add_row("Vault:", vault_path)
+    cfg_table.add_row("Batch size:", str(batch_size))
+    cfg_table.add_row("Secrets:", "~/.ppke/.env (chmod 600)")
     click.echo()
-    click.echo("=" * 50)
-    click.echo("  Setup complete!")
-    click.echo("=" * 50)
+    click.echo(_render(_Panel(cfg_table, title="[bold green]Setup complete![/bold green]", border_style="green")))
     click.echo()
-    click.echo("Your configuration:")
-    click.echo(f"  Provider:    {provider}")
-    click.echo(f"  Model:       {model}")
-    click.echo(f"  Vault:       {vault_path}")
-    click.echo(f"  Batch size:  {batch_size}")
-    click.echo(f"  Secrets:     ~/.ppke/.env (chmod 600)")
-    click.echo()
-    click.echo("Next steps:")
+    click.echo(_render(_Rule("Next steps")))
     click.echo("  ppke ingest book.md --title 'Book Title' --author 'Author Name'")
     click.echo("  ppke config --show")
     click.echo("  ppke --help")
@@ -271,7 +284,9 @@ def ingest(
     click.echo("Starting ingestion pipeline...")
 
     def progress_callback(stage: str, detail: str):
-        click.echo(f"  [{stage}] {detail}")
+        stage_t = _Text(f"[{stage}]", style="bold cyan")
+        line = _Text.assemble(stage_t, " ", detail)
+        click.echo("  " + _render(line))
 
     from ppke.pipeline.orchestrator import ingest_book
 
@@ -282,7 +297,7 @@ def ingest(
         resume=resume,
     )
 
-    click.echo(f"\nDone! Output written to: {book_dir}")
+    click.echo(_render(_Text(f"\nDone! Output written to: {book_dir}", style="bold green")))
 
 
 # ── parse command ──
@@ -309,14 +324,18 @@ def parse(filepath: Path, title: str, author: str):
     click.echo(f"Total paragraphs: {book.total_paragraphs}")
     click.echo()
 
+    table = _Table(title="Chapter Breakdown", border_style="dim")
+    table.add_column("Ch#", style="cyan", width=5, justify="right")
+    table.add_column("Title")
+    table.add_column("Paras", justify="right", width=6)
+    table.add_column("First Paragraph Preview")
     for chapter in book.chapters:
-        click.echo(f"  Chapter {chapter.number:02d}: {chapter.title}")
-        click.echo(f"    Paragraphs: {chapter.paragraph_count}")
+        preview = ""
         if chapter.paragraphs:
-            first = chapter.paragraphs[0]
-            preview = first.text[:80] + "..." if len(first.text) > 80 else first.text
-            click.echo(f"    First: [{first.paragraph_id}] {preview}")
-        click.echo()
+            p = chapter.paragraphs[0].text
+            preview = (p[:70] + "...") if len(p) > 70 else p
+        table.add_row(f"{chapter.number:02d}", chapter.title, str(chapter.paragraph_count), preview)
+    click.echo(_render(table))
 
 
 # ── query command (single book) ──
@@ -409,29 +428,41 @@ def query(
     try:
         result = client.complete_json(SINGLE_BOOK_QUERY_SYSTEM, user_prompt)
 
-        click.echo("## Answer")
-        click.echo(result.get("answer", "No answer generated."))
+        answer = result.get("answer", "No answer generated.")
+        click.echo(_render(_Panel(answer, title="[bold blue]Answer[/bold blue]", border_style="blue")))
         click.echo()
 
         quotes = result.get("verbatim_quotes", [])
         if quotes:
-            click.echo("## Evidence")
+            evid_table = _Table(title="Evidence", border_style="dim", show_header=True)
+            evid_table.add_column("Para ID", style="cyan", width=14)
+            evid_table.add_column("Quote")
             for q in quotes:
-                click.echo(f"  [{q.get('paragraph_id', '?')}] \"{q.get('quote', '')}\"")
+                evid_table.add_row(q.get("paragraph_id", "?"), f"\"{q.get('quote', '')}\"")
+            click.echo(_render(evid_table))
             click.echo()
 
         chain = result.get("logical_chain", [])
         if chain:
-            click.echo("## Logical Chain")
+            chain_table = _Table(title="Logical Chain", border_style="dim", show_header=True)
+            chain_table.add_column("#", width=3)
+            chain_table.add_column("Claim")
+            chain_table.add_column("Para ID", style="cyan", width=14)
+            chain_table.add_column("Note", width=12)
             for step in chain:
-                inference = " [INFERENCE]" if step.get("is_inference") else ""
-                click.echo(
-                    f"  {step.get('step', '?')}. {step.get('claim', '')}{inference} "
-                    f"({step.get('paragraph_id', '?')})"
+                note = _escape("[INFERENCE]") if step.get("is_inference") else ""
+                chain_table.add_row(
+                    str(step.get("step", "?")),
+                    step.get("claim", ""),
+                    step.get("paragraph_id", "?"),
+                    note,
                 )
+            click.echo(_render(chain_table))
             click.echo()
 
-        click.echo(f"Confidence: {result.get('confidence', 'unknown')}")
+        conf = result.get("confidence", "unknown")
+        conf_style = {"high": "bold green", "medium": "yellow", "low": "red"}.get(conf, "dim")
+        click.echo(_render(_Text(f"Confidence: {conf}", style=conf_style)))
 
     except Exception as e:
         click.echo(f"Error: Query failed: {e}", err=True)
@@ -505,37 +536,42 @@ def cross_query(
     # Display comparisons
     comparisons = result.get("comparisons", [])
     if comparisons:
-        click.echo("## Comparisons")
+        click.echo(_render(_Rule("[bold]Comparisons[/bold]")))
         for comp in comparisons:
-            click.echo(f"\n### {comp.get('dimension', 'Unknown')}")
-            click.echo(comp.get("description", ""))
-            per_book = comp.get("per_book", [])
-            for pb in per_book:
-                click.echo(f"  [{pb.get('book_folder', '?')}] {pb.get('position', '')}")
+            dim = comp.get("dimension", "Unknown")
+            comp_table = _Table(title=dim, border_style="dim", show_header=True)
+            comp_table.add_column("Book", style="cyan", width=25)
+            comp_table.add_column("Position")
+            for pb in comp.get("per_book", []):
+                comp_table.add_row(pb.get("book_folder", "?"), pb.get("position", ""))
+            click.echo(_render(comp_table))
             tensions = comp.get("tensions", [])
             if tensions:
-                click.echo("  Tensions:")
-                for t in tensions:
-                    click.echo(f"    - {t}")
+                click.echo("  Tensions: " + " | ".join(tensions))
         click.echo()
 
     # Display cross-links
     links = result.get("cross_links", [])
     if links:
-        click.echo("## Cross-Links")
+        click.echo(_render(_Rule("[bold]Cross-Links[/bold]")))
+        links_table = _Table(border_style="dim", show_header=True)
+        links_table.add_column("Concept", style="cyan", width=18)
+        links_table.add_column("Relationship", width=14)
+        links_table.add_column("Books", width=20)
+        links_table.add_column("Description")
         for link in links:
-            click.echo(
-                f"  {link.get('concept', '?')}: "
-                f"{link.get('relationship', '?')} across "
-                f"{', '.join(link.get('books', []))}"
+            links_table.add_row(
+                link.get("concept", "?"),
+                link.get("relationship", "?"),
+                ", ".join(link.get("books", [])),
+                link.get("description", ""),
             )
-            click.echo(f"    {link.get('description', '')}")
+        click.echo(_render(links_table))
         click.echo()
 
     overall = result.get("overall_synthesis", "")
     if overall:
-        click.echo("## Synthesis")
-        click.echo(overall)
+        click.echo(_render(_Panel(overall, title="[bold]Synthesis[/bold]", border_style="green")))
 
 
 # ── re-read command ──
@@ -652,15 +688,20 @@ def config(
     cfg = Config.load()
 
     if show or (not provider and not model and not vault_path and not batch_size):
-        click.echo(f"Provider:     {cfg.llm.provider}")
-        click.echo(f"Model:        {cfg.llm.model}")
-        click.echo(f"Vault path:   {cfg.vault_path}")
-        click.echo(f"Batch size:   {cfg.llm.paragraphs_per_batch}")
-        click.echo(f"Max para tokens: {cfg.llm.max_paragraph_tokens}")
-        click.echo(f"Max workers:  {cfg.llm.max_workers}")
-        click.echo(f"Selective:    {cfg.selective_depth}")
-        click.echo(f"Double pass:  {cfg.double_pass}")
-        click.echo(f"API key set:  {'yes' if cfg.llm.active_api_key else 'no'}")
+        tbl = _Table(show_header=False, box=None, padding=(0, 1))
+        tbl.add_column("Setting", style="bold")
+        tbl.add_column("Value")
+        tbl.add_row("Provider:", cfg.llm.provider)
+        tbl.add_row("Model:", cfg.llm.model)
+        tbl.add_row("Vault path:", str(cfg.vault_path))
+        tbl.add_row("Batch size:", str(cfg.llm.paragraphs_per_batch))
+        tbl.add_row("Max para tokens:", str(cfg.llm.max_paragraph_tokens))
+        tbl.add_row("Max workers:", str(cfg.llm.max_workers))
+        tbl.add_row("Selective:", str(cfg.selective_depth))
+        tbl.add_row("Double pass:", str(cfg.double_pass))
+        api_key_val = "yes" if cfg.llm.active_api_key else "no"
+        tbl.add_row("API key set:", api_key_val)
+        click.echo(_render(_Panel(tbl, title="[bold]PPKE Configuration[/bold]")))
         return
 
     if provider:
@@ -711,8 +752,14 @@ def list_books(vault_path: Path | None):
         click.echo(f"Vault: {vp}")
         return
 
-    click.echo(f"{'#':<4} {'Title':<35} {'Author':<20} {'Year':<6} {'Ch':<5} {'Para':<6} {'Status'}")
-    click.echo("-" * 100)
+    table = _Table(title=f"Knowledge Base — {vp}", border_style="blue")
+    table.add_column("#", width=4, style="dim", justify="right")
+    table.add_column("Title", width=35)
+    table.add_column("Author", width=20)
+    table.add_column("Year", width=6)
+    table.add_column("Ch", justify="right", width=4)
+    table.add_column("Para", justify="right", width=6)
+    table.add_column("Status", width=12)
 
     for i, bd in enumerate(book_dirs, 1):
         meta_path = bd / "meta.yml"
@@ -729,14 +776,15 @@ def list_books(vault_path: Path | None):
             author = year = "?"
             chapters = paragraphs = status = "?"
 
-        # Truncate long titles/authors
         title_disp = (title[:32] + "...") if len(title) > 35 else title
         author_disp = (author[:17] + "...") if len(author) > 20 else author
-        click.echo(
-            f"{i:<4} {title_disp:<35} {author_disp:<20} {year:<6} "
-            f"{chapters:<5} {paragraphs:<6} {status}"
+        status_style = "green" if status == "COMPLETE" else "red" if status == "INCOMPLETE" else "dim"
+        table.add_row(
+            str(i), title_disp, author_disp, year, chapters, paragraphs,
+            _Text(status, style=status_style),
         )
 
+    click.echo(_render(table))
     click.echo(f"\nTotal: {len(book_dirs)} book(s) in {vp}")
 
 
@@ -822,27 +870,28 @@ def stats(vault_path: Path | None):
                 re.findall(r"^### \d+\.", pattern_path.read_text(), re.MULTILINE)
             )
 
-    click.echo("=" * 40)
-    click.echo("  PPKE Vault Statistics")
-    click.echo("=" * 40)
-    click.echo()
-    click.echo(f"  Books:           {total_books}")
-    click.echo(f"  Chapters:        {total_chapters}")
-    click.echo(f"  Paragraphs:      {total_paragraphs}")
-    click.echo(f"  Processed:       {total_processed}")
-    click.echo(f"  Concepts:        {total_concepts}")
-    click.echo(f"  Patterns:        {total_patterns}")
-    click.echo()
-    click.echo(f"  Complete:        {complete_count}")
-    click.echo(f"  Incomplete:      {incomplete_count}")
     coverage_pct = (
         f"{total_processed / total_paragraphs * 100:.1f}%"
         if total_paragraphs > 0
         else "N/A"
     )
-    click.echo(f"  Coverage:        {coverage_pct}")
-    click.echo()
-    click.echo(f"  Vault:           {vp}")
+
+    stats_tbl = _Table(show_header=False, box=None, padding=(0, 1))
+    stats_tbl.add_column("Key", style="bold")
+    stats_tbl.add_column("Value", justify="right")
+    stats_tbl.add_row("Books:", str(total_books))
+    stats_tbl.add_row("Chapters:", str(total_chapters))
+    stats_tbl.add_row("Paragraphs:", str(total_paragraphs))
+    stats_tbl.add_row("Processed:", str(total_processed))
+    stats_tbl.add_row("Concepts:", str(total_concepts))
+    stats_tbl.add_row("Patterns:", str(total_patterns))
+    stats_tbl.add_row("", "")
+    stats_tbl.add_row("Complete:", str(complete_count))
+    stats_tbl.add_row("Incomplete:", str(incomplete_count))
+    stats_tbl.add_row("Coverage:", coverage_pct)
+    stats_tbl.add_row("", "")
+    stats_tbl.add_row("Vault:", str(vp))
+    click.echo(_render(_Panel(stats_tbl, title="[bold]PPKE Vault Statistics[/bold]")))
 
     # Check for pending checkpoints
     checkpoints = list(vp.glob(".checkpoint_*.json"))
@@ -954,11 +1003,17 @@ def search(text: str, vault_path: Path | None, book: str | None, max_results: in
         click.echo(f'No results found for "{text}".')
         return
 
-    click.echo(f'Search results for "{text}" ({len(hits)} hits):\n')
+    result_table = _Table(
+        title=f'Search: "{_escape(text)}" — {len(hits)} hit(s)',
+        border_style="dim",
+        show_header=True,
+    )
+    result_table.add_column("Book / Para ID", style="cyan", width=30)
+    result_table.add_column("Field", width=8)
+    result_table.add_column("Snippet")
     for book_name, pid, field, snippet in hits:
-        click.echo(f"  [{book_name}] {pid} ({field})")
-        click.echo(f"    {snippet}")
-        click.echo()
+        result_table.add_row(f"{book_name}\n{pid}", field, snippet)
+    click.echo(_render(result_table))
 
     if len(hits) >= max_results:
         click.echo(f"(showing first {max_results} results, use --max-results for more)")

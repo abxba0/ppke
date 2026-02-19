@@ -1225,7 +1225,8 @@ def test_config_show(tmp_path):
         result = runner.invoke(main, ["config", "--show"])
     assert result.exit_code == 0
     assert "deepseek" in result.output
-    assert "API key set:  yes" in result.output
+    assert "API key set" in result.output
+    assert "yes" in result.output
 
 
 def test_config_update_model(tmp_path):
