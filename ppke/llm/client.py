@@ -265,10 +265,10 @@ class LLMClient:
 
     def complete_json(self, system_prompt: str, user_prompt: str) -> dict:
         """Send a prompt expecting JSON response. Parses and returns dict."""
-        if self.config.provider in ("openai", "deepseek", "openrouter"):
-            raw = self.complete(system_prompt, user_prompt, response_format="json")
-        else:
-            raw = self.complete(system_prompt, user_prompt)
+        # Do not force OpenAI-style ``json_object`` mode here.
+        # Some pipeline stages (e.g., structural extraction) require a top-level
+        # JSON array, which json_object mode disallows.
+        raw = self.complete(system_prompt, user_prompt)
 
         # Extract JSON from response (handle markdown code blocks)
         text = raw.strip()

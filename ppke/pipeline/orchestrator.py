@@ -399,11 +399,21 @@ def ingest_book(
     _progress("validation", "Running full coverage validation")
     coverage = validate_coverage(book, all_extractions)
 
+    if config.double_pass:
+        coverage.re_read_pass_completed = True
+
     if coverage.verification_status == "INCOMPLETE":
+        missing_count = len(coverage.missing_paragraph_ids)
         _progress(
             "validation",
-            f"WARNING: {len(coverage.missing_paragraph_ids)} paragraphs missing: "
+            f"ERROR: {missing_count} paragraphs missing: "
             f"{coverage.missing_paragraph_ids}",
+        )
+        raise RuntimeError(
+            "Coverage validation failed "
+            f"({coverage.processed_paragraph_count}/{coverage.total_paragraphs} processed). "
+            "Ingestion aborted before writing final outputs. "
+            "Fix provider/API settings and re-run with --resume."
         )
     else:
         _progress("validation", "COMPLETE: All paragraphs processed successfully")
@@ -413,9 +423,6 @@ def ingest_book(
         f"Status: {coverage.verification_status} "
         f"({coverage.processed_paragraph_count}/{coverage.total_paragraphs})",
     )
-
-    if config.double_pass:
-        coverage.re_read_pass_completed = True
 
     # ── Stage 4: Logical architecture ──
     _progress("logical_map", "Building logical architecture")

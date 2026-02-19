@@ -292,12 +292,15 @@ def ingest(
 
     from ppke.pipeline.orchestrator import ingest_book
 
-    book_dir = ingest_book(
-        book, config,
-        progress_callback=progress_callback,
-        human_operator=operator,
-        resume=resume,
-    )
+    try:
+        book_dir = ingest_book(
+            book, config,
+            progress_callback=progress_callback,
+            human_operator=operator,
+            resume=resume,
+        )
+    except Exception as e:
+        raise click.ClickException(f"Ingestion failed: {e}") from e
 
     click.echo(_render(_Text(f"\nDone! Output written to: {book_dir}", style="bold green")))
 

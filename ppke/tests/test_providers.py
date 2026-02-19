@@ -342,8 +342,8 @@ def test_complete_unknown_provider_raises():
 # ── complete_json() provider routing ─────────────────────────────────────────
 
 
-def test_complete_json_deepseek_uses_json_mode():
-    """DeepSeek should request json response_format."""
+def test_complete_json_deepseek_parses_json_without_forced_mode():
+    """DeepSeek complete_json should parse JSON without forcing json_object mode."""
     client = _make_client("deepseek", deepseek_api_key="ds-key")
     mock_ds = MagicMock()
     mock_ds.chat.completions.create.return_value = _mock_openai_response('{"a": 1}')
@@ -352,11 +352,11 @@ def test_complete_json_deepseek_uses_json_mode():
     result = client.complete_json("system", "user")
     assert result == {"a": 1}
     call_kwargs = mock_ds.chat.completions.create.call_args[1]
-    assert call_kwargs.get("response_format") == {"type": "json_object"}
+    assert "response_format" not in call_kwargs
 
 
-def test_complete_json_openrouter_uses_json_mode():
-    """OpenRouter should request json response_format."""
+def test_complete_json_openrouter_parses_json_without_forced_mode():
+    """OpenRouter complete_json should parse JSON without forcing json_object mode."""
     client = _make_client("openrouter", openrouter_api_key="or-key")
     mock_or = MagicMock()
     mock_or.chat.completions.create.return_value = _mock_openai_response('{"b": 2}')
@@ -365,7 +365,7 @@ def test_complete_json_openrouter_uses_json_mode():
     result = client.complete_json("system", "user")
     assert result == {"b": 2}
     call_kwargs = mock_or.chat.completions.create.call_args[1]
-    assert call_kwargs.get("response_format") == {"type": "json_object"}
+    assert "response_format" not in call_kwargs
 
 
 def test_complete_json_gemini_does_not_use_json_mode():

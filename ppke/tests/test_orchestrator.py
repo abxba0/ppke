@@ -231,6 +231,65 @@ def test_ingest_book_sequential(tmp_path):
     assert (book_dir / "01_Raw_Structure.md").exists()
 
 
+def test_ingest_book_aborts_on_incomplete_coverage(tmp_path):
+    """Ingestion must fail-fast when coverage is INCOMPLETE."""
+    from ppke.pipeline.orchestrator import ingest_book
+
+    book = _make_book(n_chapters=1, n_para_each=1)
+    cfg = Config(
+        vault_path=tmp_path,
+        llm=LLMConfig(provider="anthropic", anthropic_api_key="key", max_workers=1),
+    )
+
+    incomplete = CoverageReport(
+        total_chapters=1,
+        total_paragraphs=1,
+        processed_paragraph_count=0,
+        missing_paragraph_ids=["{01}.p1"],
+        verification_status="INCOMPLETE",
+        ingest_date="2026-02-19",
+    )
+
+    with patch("ppke.pipeline.orchestrator.LLMClient") as MockClient, \
+         patch("ppke.pipeline.orchestrator.validate_coverage", return_value=incomplete), \
+         patch("ppke.pipeline.orchestrator.write_all_book_files") as mock_write:
+        mock_client = MagicMock()
+        MockClient.return_value = mock_client
+        mock_client.complete_json.return_value = [
+            {"paragraph_id": "{01}.p1", "topic_sentence": "T", "is_argument_carrying": True}
+        ]
+
+        with pytest.raises(RuntimeError, match="Coverage validation failed"):
+            ingest_book(book, cfg)
+
+    mock_write.assert_not_called()
+
+
+def test_ingest_cli_returns_click_error_on_pipeline_failure(tmp_path):
+    """CLI should report ingestion failures as clean Click errors."""
+    runner = CliRunner()
+    src = tmp_path / "book.md"
+    src.write_text("# Chapter 1\n\nSample paragraph.")
+
+    cfg = Config(
+        vault_path=tmp_path,
+        llm=LLMConfig(provider="anthropic", anthropic_api_key="key"),
+    )
+
+    mock_book = _make_book(n_chapters=1, n_para_each=1)
+
+    with patch("ppke.config.Config.load", return_value=cfg), \
+         patch("ppke.parser.markdown.parse_markdown_book", return_value=mock_book), \
+         patch("ppke.pipeline.orchestrator.ingest_book", side_effect=RuntimeError("Coverage validation failed")):
+        result = runner.invoke(
+            main,
+            ["ingest", str(src), "--title", "T", "--author", "A"],
+        )
+
+    assert result.exit_code != 0
+    assert "Error: Ingestion failed: Coverage validation failed" in result.output
+
+
 def test_ingest_book_with_resume_and_checkpoint(tmp_path):
     """Test ingest_book with --resume flag loading an existing checkpoint."""
     from ppke.pipeline.orchestrator import ingest_book, _save_checkpoint, _checkpoint_path
