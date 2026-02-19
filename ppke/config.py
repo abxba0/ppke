@@ -6,7 +6,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional  # noqa: F401 — kept for re-exports; use T | None below
 
 
 DEFAULT_CONFIG_PATH = Path.home() / ".ppke" / "config.json"
@@ -25,7 +25,7 @@ PROVIDER_DEFAULTS = {
 SUPPORTED_PROVIDERS = list(PROVIDER_DEFAULTS.keys())
 
 
-def _load_env_file(path: Optional[Path] = None) -> dict[str, str]:
+def _load_env_file(path: Path | None = None) -> dict[str, str]:
     """Load key=value pairs from a .env file."""
     path = path or DEFAULT_ENV_PATH
     env_vars: dict[str, str] = {}
@@ -49,8 +49,8 @@ def _load_env_file(path: Optional[Path] = None) -> dict[str, str]:
     return env_vars
 
 
-def save_env_file(env_vars: dict[str, str], path: Optional[Path] = None):
-    """Save key=value pairs to the .env file (merges with existing)."""
+def save_env_file(env_vars: dict[str, str], path: Path | None = None) -> None:
+    """Merge *env_vars* into the .env file and set permissions to 0o600."""
     path = path or DEFAULT_ENV_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     existing = _load_env_file(path)
@@ -81,11 +81,11 @@ class LLMConfig:
 
     provider: str = "anthropic"
     model: str = "claude-sonnet-4-20250514"
-    anthropic_api_key: Optional[str] = None
-    openai_api_key: Optional[str] = None
-    deepseek_api_key: Optional[str] = None
-    gemini_api_key: Optional[str] = None
-    openrouter_api_key: Optional[str] = None
+    anthropic_api_key: str | None = None
+    openai_api_key: str | None = None
+    deepseek_api_key: str | None = None
+    gemini_api_key: str | None = None
+    openrouter_api_key: str | None = None
     max_tokens: int = 4096
     temperature: float = 0.2
     paragraphs_per_batch: int = 5
@@ -122,7 +122,7 @@ class LLMConfig:
             )
 
     @property
-    def active_api_key(self) -> Optional[str]:
+    def active_api_key(self) -> str | None:
         """Return the API key for the currently active provider."""
         return {
             "anthropic": self.anthropic_api_key,
@@ -142,7 +142,7 @@ class Config:
     selective_depth: bool = True
     double_pass: bool = False
 
-    def save(self, path: Optional[Path] = None):
+    def save(self, path: Path | None = None) -> None:
         path = path or DEFAULT_CONFIG_PATH
         path.parent.mkdir(parents=True, exist_ok=True)
         data = {
@@ -162,7 +162,7 @@ class Config:
         path.write_text(json.dumps(data, indent=2))
 
     @classmethod
-    def load(cls, path: Optional[Path] = None) -> Config:
+    def load(cls, path: Path | None = None) -> Config:
         path = path or DEFAULT_CONFIG_PATH
         if not path.exists():
             return cls()

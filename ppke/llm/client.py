@@ -159,7 +159,7 @@ class LLMClient:
                     time.sleep(wait)
                     continue
                 raise
-        raise last_exc  # type: ignore[misc]
+        raise last_exc  # pragma: no cover  # type: ignore[misc]
 
     def _complete_anthropic(self, system_prompt: str, user_prompt: str) -> str:
         client = self._get_anthropic()

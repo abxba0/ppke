@@ -494,6 +494,11 @@ def reread_chapters(
             progress_callback(stage, detail)
         logger.info("[%s] %s", stage, detail)
 
+    if not chapter_numbers:
+        raise ValueError("chapter_numbers must not be empty")
+    if any(n < 1 for n in chapter_numbers):
+        raise ValueError(f"chapter_numbers must be positive integers, got {chapter_numbers}")
+
     # Load metadata
     meta_path = book_dir / "meta.yml"
     if not meta_path.exists():

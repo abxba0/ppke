@@ -25,6 +25,15 @@ from ppke.config import (
     save_env_file,
 )
 
+# URLs where users can obtain API keys for each provider
+_PROVIDER_KEY_URLS: dict[str, str] = {
+    "anthropic": "https://console.anthropic.com/settings/keys",
+    "openai": "https://platform.openai.com/api-keys",
+    "deepseek": "https://platform.deepseek.com/api_keys",
+    "gemini": "https://aistudio.google.com/app/apikey",
+    "openrouter": "https://openrouter.ai/keys",
+}
+
 
 def _setup_logging(verbose: bool):
     level = logging.DEBUG if verbose else logging.INFO
@@ -153,13 +162,6 @@ def init():
     # 3. API key for chosen provider
     env_vars: dict[str, str] = {}
     env_var_name = PROVIDER_ENV_VARS[provider]
-    _PROVIDER_KEY_URLS = {
-        "anthropic": "https://console.anthropic.com/settings/keys",
-        "openai": "https://platform.openai.com/api-keys",
-        "deepseek": "https://platform.deepseek.com/api_keys",
-        "gemini": "https://aistudio.google.com/app/apikey",
-        "openrouter": "https://openrouter.ai/keys",
-    }
     click.echo(f"\nYou need a {provider} API key.")
     url = _PROVIDER_KEY_URLS.get(provider)
     if url:
@@ -635,7 +637,9 @@ def re_read(
     click.echo(f"Re-reading chapters {chapter_numbers} from {book}")
 
     def progress_callback(stage: str, detail: str):
-        click.echo(f"  [{stage}] {detail}")
+        stage_t = _Text(f"[{stage}]", style="bold cyan")
+        line = _Text.assemble(stage_t, " ", detail)
+        click.echo("  " + _render(line))
 
     from ppke.pipeline.orchestrator import reread_chapters
 
@@ -646,7 +650,7 @@ def re_read(
             config=config,
             progress_callback=progress_callback,
         )
-        click.echo(f"\nRe-read complete! Updated files in: {book_dir}")
+        click.echo(_render(_Text(f"\nRe-read complete! Updated files in: {book_dir}", style="bold green")))
     except FileNotFoundError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -1019,5 +1023,5 @@ def search(text: str, vault_path: Path | None, book: str | None, max_results: in
         click.echo(f"(showing first {max_results} results, use --max-results for more)")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

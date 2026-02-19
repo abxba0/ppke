@@ -7,7 +7,7 @@ from datetime import date
 from ppke.parser.models import Book, CoverageReport, ExtractionResult
 
 # Sentinel indicating an extraction failed for a paragraph
-EXTRACTION_FAILED_MARKER = "[EXTRACTION FAILED]"
+EXTRACTION_FAILED_MARKER: str = "[EXTRACTION FAILED]"
 
 
 def validate_coverage(
