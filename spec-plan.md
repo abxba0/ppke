@@ -9,16 +9,16 @@ See `metapromptPPKE.md` for the full system specification.
 
 ```
 ppke/
-├── cli.py                 # Click CLI: ingest, parse, query, cross-query, config
+├── cli.py                 # Click CLI: ingest, parse, query, cross-query, re-read, config, list, stats, search
 ├── config.py              # Settings, API key management, vault path
 ├── parser/
-│   ├── markdown.py        # Heading-based chapter detection, paragraph splitting
+│   ├── markdown.py        # Heading-based chapter detection, paragraph splitting, sub-paragraph splitting
 │   └── models.py          # Book, Chapter, Paragraph, ExtractionResult, CoverageReport
 ├── llm/
-│   ├── client.py          # Unified Anthropic + OpenAI client
-│   └── prompts.py         # All prompt templates (7 prompts for 6 skills + queries)
+│   ├── client.py          # Unified Anthropic + OpenAI client, exponential backoff retry
+│   └── prompts.py         # All prompt templates (7 prompts for 6 skills + queries + dedup)
 ├── pipeline/
-│   ├── orchestrator.py    # Master Controller: runs full ingestion pipeline
+│   ├── orchestrator.py    # Master Controller: runs full ingestion pipeline, checkpoints, re-read
 │   ├── extractor.py       # Skill 1: Structural extraction (batched, per-paragraph)
 │   ├── validator.py       # Skill 2: Coverage validation (local counting, no LLM)
 │   ├── logical_map.py     # Skill 3: Logical architecture builder
@@ -26,11 +26,13 @@ ppke/
 │   ├── patterns.py        # Skill 5: Pattern & tension detector (chunked, no truncation)
 │   └── synthesizer.py     # Skill 6: Cross-book synthesizer
 ├── output/
-│   ├── writer.py          # Writes all per-book files + global vault files
-│   └── templates.py       # (Legacy, superseded by writer.py global file generation)
+│   └── writer.py          # Writes all per-book files + global vault files + semantic dedup
 └── tests/
-    ├── test_parser.py     # Parser unit tests
-    └── test_validator.py  # Validator unit tests
+    ├── test_parser.py       # Parser unit tests
+    ├── test_validator.py    # Validator unit tests
+    ├── test_splitter.py     # Sub-paragraph splitting tests
+    ├── test_new_features.py # Backoff, patterns, checkpoints, search, CLI
+    └── test_security.py     # Path traversal, input validation security tests
 ```
 
 ---
@@ -43,7 +45,7 @@ ppke/
 |---|-----------|--------|----------------|
 | 1 | NO SUMMARIZATION | DONE | All prompts enforce "NEVER summarize". No truncation in any pipeline stage. |
 | 2 | VERBATIM PRESERVATION | DONE | Full `original_text` passed to all skills. Chunking used instead of truncation. |
-| 3 | PARAGRAPH ID FORMAT `{CH}.p{P}` | DONE | `models.py:Paragraph.paragraph_id` property. |
+| 3 | PARAGRAPH ID FORMAT `{CH}.p{P}` | DONE | `models.py:Paragraph.paragraph_id` property. Sub-paragraphs: `{CH}.p{P}.{S}`. |
 | 4 | COVERAGE VALIDATION REQUIRED | DONE | `validator.py` — per-chapter + full-book validation. Failed extractions don't count as processed. |
 | 5 | QUALITY PRIORITY (completeness > efficiency) | DONE | Double-pass supported. Re-read retry on missing paragraphs. |
 | 6 | AI RE-READ PERMISSION | DONE | `orchestrator.py:_extract_with_retry()` re-reads raw text when coverage validator flags missing. |
@@ -71,8 +73,10 @@ ppke/
 | `03_Concept_Index.md` | DONE | `writer.py:write_concept_index()` |
 | `04_Author_Model.md` | DONE | `writer.py:write_author_model()` — all 7 sections |
 | `05_Coverage_Report.md` | DONE | `writer.py:write_coverage_report()` — exact spec format |
+| `06_Patterns.md` | DONE | `writer.py:write_patterns()` — grouped by type (metaphor, arc, repetition, recursion, contradiction) |
+| `extractions.json` | DONE | `writer.py:_save_extractions_json()` — raw data for re-read & search |
 | `00_PROJECT_SETTINGS.md` | DONE | `writer.py:write_global_files()` |
-| `MASTER_CONCEPT_INDEX.md` | DONE | `writer.py:write_global_files()` — aggregates from all books |
+| `MASTER_CONCEPT_INDEX.md` | DONE | `writer.py:write_global_files()` — aggregates from all books with LLM semantic deduplication |
 | `QA_RESULTS.md` | DONE | `writer.py:write_global_files()` — aggregated coverage status |
 | `PLAYBOOK.md` | DONE | `writer.py:write_global_files()` |
 
@@ -80,11 +84,15 @@ ppke/
 
 | Command | Status | CLI |
 |---------|--------|-----|
-| `ingest_book` | DONE | `ppke ingest <file> --title --author [--year] [--operator] [--double-pass]` |
+| `ingest_book` | DONE | `ppke ingest <file> --title --author [--year] [--operator] [--double-pass] [--resume]` |
 | `single_book_query` | DONE | `ppke query --book <folder> --question "..."` |
 | `cross_book_query` | DONE | `ppke cross-query --question "..."` |
 | Parse (dry run) | DONE | `ppke parse <file> --title --author` |
-| Config | DONE | `ppke config [--show] [--provider] [--model] [--vault-path]` |
+| Re-read specific chapters | DONE | `ppke re-read --book <folder> --chapters "1,3,5"` |
+| Config | DONE | `ppke config [--show] [--provider] [--model] [--vault-path] [--batch-size]` |
+| List books | DONE | `ppke list [--vault-path]` |
+| Stats | DONE | `ppke stats [--vault-path]` |
+| Search (no LLM) | DONE | `ppke search <text> [--book] [--max-results]` |
 
 ### Quality Features (Spec Sections 9-10)
 
@@ -93,6 +101,11 @@ ppke/
 | QUALITY_MAX mode | DONE | Default mode. Coverage validation + re-read retry. |
 | Double-pass extraction | DONE | `--double-pass` flag. Pass 2 results merged with pass 1. |
 | Re-read on missing sections | DONE | `_extract_with_retry()` — automatic per-chapter. |
+| Resumable ingestion (checkpoints) | DONE | `--resume` flag. Checkpoint saved after each chapter. |
+| Sub-paragraph splitting | DONE | Paragraphs > 2000 tokens split at sentence boundaries into `{CH}.p{P}.{S}` IDs. |
+| Parallel extraction | DONE | `ThreadPoolExecutor` with configurable `max_workers` (default 4). |
+| Exponential backoff retry | DONE | `LLMClient.complete()` retries 4x on 429/5xx with 2s/4s/8s/16s delays. |
+| Semantic concept deduplication | DONE | `writer.py:_deduplicate_concepts()` uses LLM to group equivalent concepts across books. |
 | Git version control | DONE | Project is git-tracked. |
 | `human_operator` in meta.yml | DONE | `--operator` flag on `ppke ingest`. |
 | No deletion policy | DONE | System only creates/updates files, never deletes. |
@@ -110,8 +123,8 @@ ppke/
 
 ### Acceptance Conditions (Spec Section 13)
 
-A book is fully encoded only when all 5 files are written AND `verification_status: COMPLETE`.
-The validator now correctly rejects extraction failures — a failed extraction does not count as "processed."
+A book is fully encoded only when all 7 files are written AND `verification_status: COMPLETE`.
+The validator correctly rejects extraction failures — a failed extraction does not count as "processed."
 
 ---
 
@@ -119,26 +132,27 @@ The validator now correctly rejects extraction failures — a failed extraction 
 
 ```
 ppke ingest book.md --title "X" --author "Y"
-    │
-    ├── 1. Parse markdown → Book(chapters, paragraphs, IDs)
-    │
-    ├── 2. For each chapter:
-    │       ├── Extract paragraphs in batches of 5 (LLM)
-    │       ├── Validate chapter coverage (local)
-    │       └── Re-extract missing paragraphs if needed (LLM re-read)
-    │
-    ├── 3. [Optional] Double-pass: re-extract everything, merge best results
-    │
-    ├── 4. Validate full book coverage (local)
-    │       └── verification_status = COMPLETE only if 0 missing
-    │
-    ├── 5. Build logical map (LLM)
-    ├── 6. Build concept index (LLM, chunked)
-    ├── 7. Detect patterns (LLM, chunked)
-    ├── 8. Build author model (LLM)
-    │
-    ├── 9. Write per-book files (meta.yml + 5 markdown files)
-    └── 10. Update global vault files (4 files)
+    |
+    +-- 0. Split long paragraphs into sub-paragraphs (>max_tokens tokens)
+    |
+    +-- 1. For each chapter (parallel, up to max_workers):
+    |       +-- Extract paragraphs in batches (LLM)
+    |       +-- Validate chapter coverage (local)
+    |       +-- Re-extract missing paragraphs if needed (LLM re-read)
+    |       +-- Save checkpoint (resumable on failure)
+    |
+    +-- 2. [Optional] Double-pass: re-extract everything, merge best results
+    |
+    +-- 3. Validate full book coverage (local)
+    |       +-- verification_status = COMPLETE only if 0 missing
+    |
+    +-- 4. Build logical map (LLM)
+    +-- 5. Build concept index (LLM, chunked)
+    +-- 6. Detect patterns (LLM, chunked)
+    +-- 7. Build author model (LLM)
+    |
+    +-- 8. Write per-book files (meta.yml + 6 markdown files + extractions.json)
+    +-- 9. Update global vault files (4 files, with LLM semantic dedup)
 ```
 
 ---
@@ -160,11 +174,18 @@ ppke config --vault-path ./KnowledgeBase
 
 ---
 
+## Security Notes
+
+- API keys stored in `~/.ppke/.env` (chmod 600), never in `config.json`.
+- `--book` argument validated against path traversal before any file access.
+- `source_path` from `meta.yml` resolved and validated as a regular file before re-read.
+- `--batch-size` must be >= 1 (enforced by CLI).
+- YAML loaded via `yaml.safe_load` everywhere (no code execution risk).
+- JSON loaded from local vault files only (no network fetch).
+
+---
+
 ## Future Work
 
-- [ ] Paragraph-level splitting for sub-paragraphs (`{03}.p12.1`, `{03}.p12.2`) when paragraphs exceed token limits
-- [ ] Async/parallel extraction for faster ingestion of large books
 - [ ] EPUB and PDF input format support
-- [ ] Interactive re-read mode (user-triggered re-scan of specific chapters)
-- [ ] Master Concept Index deduplication across books (semantic matching, not just string matching)
 - [ ] Export to other formats (JSON, CSV) for external analysis tools

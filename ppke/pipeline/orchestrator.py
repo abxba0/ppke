@@ -501,18 +501,32 @@ def reread_chapters(
     meta = yaml.safe_load(meta_path.read_text()) or {}
 
     source_path = meta.get("source_path")
-    if not source_path or not Path(source_path).exists():
+    if not source_path:
+        raise FileNotFoundError(
+            "No source_path recorded in meta.yml. "
+            "Re-read requires the original markdown file."
+        )
+    # Resolve to an absolute path and check the file exists.
+    # We do NOT restrict to any specific directory because the source markdown
+    # may legitimately live anywhere on the user's filesystem.  We do ensure
+    # the resolved path is the same file (no symlink tricks pointing at /dev/*).
+    source_resolved = Path(source_path).resolve()
+    if not source_resolved.exists():
         raise FileNotFoundError(
             f"Source file not found: {source_path}. "
             "Re-read requires the original markdown file."
+        )
+    if not source_resolved.is_file():
+        raise FileNotFoundError(
+            f"Source path is not a regular file: {source_path}."
         )
 
     book_title = meta.get("title", "Unknown")
     author = meta.get("author", "Unknown")
     year = meta.get("year")
 
-    _progress("re-read", f"Re-parsing source: {source_path}")
-    book = parse_markdown_book(source_path, book_title, author, year)
+    _progress("re-read", f"Re-parsing source: {source_resolved}")
+    book = parse_markdown_book(source_resolved, book_title, author, year)
     split_long_paragraphs(book, max_tokens=config.llm.max_paragraph_tokens)
 
     # Filter to requested chapters

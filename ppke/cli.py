@@ -55,6 +55,33 @@ def _require_api_key(config: Config):
         sys.exit(1)
 
 
+def _safe_book_dir(vault_path: Path, book: str) -> Path:
+    """Resolve book folder within vault, preventing path traversal.
+
+    Ensures the resolved path is a direct child of vault_path (not a
+    symlink escape or ``../`` traversal).  Exits with an error if the
+    book name is not safe.
+    """
+    # Resolve vault_path to an absolute canonical path first.
+    try:
+        vault_abs = vault_path.resolve(strict=False)
+    except Exception:
+        vault_abs = vault_path.absolute()
+
+    candidate = (vault_abs / book).resolve(strict=False)
+
+    try:
+        candidate.relative_to(vault_abs)
+    except ValueError:
+        click.echo(
+            f"Error: Book name '{book}' is not a valid folder name inside the vault.",
+            err=True,
+        )
+        sys.exit(1)
+
+    return candidate
+
+
 @click.group(invoke_without_command=True)
 @click.version_option(version=__version__)
 @click.pass_context
@@ -141,7 +168,7 @@ def init():
     # 6. Batch size
     batch_size = click.prompt(
         "\nParagraphs per LLM batch",
-        type=int,
+        type=click.IntRange(min=1),
         default=5,
     )
 
@@ -203,7 +230,7 @@ def init():
     default=None,
     help="Output vault path (overrides config)",
 )
-@click.option("--batch-size", type=int, default=None, help="Paragraphs per LLM batch")
+@click.option("--batch-size", type=click.IntRange(min=1), default=None, help="Paragraphs per LLM batch (min 1)")
 @click.option("--operator", default="", help="Human operator name for versioning")
 @click.option("--double-pass", is_flag=True, help="Enable double-pass extraction")
 @click.option("--resume", is_flag=True, help="Resume from last checkpoint if a previous run failed")
@@ -341,7 +368,7 @@ def query(
     config = _load_config_with_overrides(provider, model, vault_path)
     _require_api_key(config)
 
-    book_dir = config.vault_path / book
+    book_dir = _safe_book_dir(config.vault_path, book)
     if not book_dir.exists():
         click.echo(f"Error: Book folder not found: {book_dir}", err=True)
         if config.vault_path.exists():
@@ -564,7 +591,7 @@ def re_read(
     config = _load_config_with_overrides(provider, model, vault_path)
     _require_api_key(config)
 
-    book_dir = config.vault_path / book
+    book_dir = _safe_book_dir(config.vault_path, book)
     if not book_dir.exists():
         click.echo(f"Error: Book folder not found: {book_dir}", err=True)
         sys.exit(1)
@@ -613,7 +640,7 @@ def re_read(
     default=None,
     help="Output vault path",
 )
-@click.option("--batch-size", type=int, default=None, help="Paragraphs per LLM batch")
+@click.option("--batch-size", type=click.IntRange(min=1), default=None, help="Paragraphs per LLM batch (min 1)")
 @click.option("--show", is_flag=True, help="Show current config")
 def config(
     provider: str | None,
@@ -871,7 +898,7 @@ def search(text: str, vault_path: Path | None, book: str | None, max_results: in
 
     # Determine which book dirs to search
     if book:
-        book_dir = vp / book
+        book_dir = _safe_book_dir(vp, book)
         if not book_dir.exists():
             click.echo(f"Error: Book folder not found: {book_dir}", err=True)
             sys.exit(1)
