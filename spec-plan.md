@@ -9,8 +9,9 @@ See `metapromptPPKE.md` for the full system specification.
 
 ```
 ppke/
-├── cli.py                 # Click CLI: ingest, parse, query, cross-query, re-read, config, list, stats, search
+├── cli.py                 # Click CLI: ingest, parse, query, cross-query, re-read, config, list, stats, search, cheat, doctor, notebook, menu, tui
 ├── config.py              # Settings, API key management, vault path
+├── tui.py                 # Terminal dashboard (ppke tui)
 ├── parser/
 │   ├── markdown.py        # Heading-based chapter detection, paragraph splitting, sub-paragraph splitting
 │   └── models.py          # Book, Chapter, Paragraph, ExtractionResult, CoverageReport
@@ -28,11 +29,15 @@ ppke/
 ├── output/
 │   └── writer.py          # Writes all per-book files + global vault files + semantic dedup
 └── tests/
-    ├── test_parser.py       # Parser unit tests
-    ├── test_validator.py    # Validator unit tests
-    ├── test_splitter.py     # Sub-paragraph splitting tests
-    ├── test_new_features.py # Backoff, patterns, checkpoints, search, CLI
-    └── test_security.py     # Path traversal, input validation security tests
+    ├── test_parser.py             # Parser unit tests
+    ├── test_validator.py          # Validator unit tests
+    ├── test_splitter.py           # Sub-paragraph splitting tests
+    ├── test_new_features.py       # Backoff, patterns, checkpoints, search, CLI
+    ├── test_security.py           # Path traversal, input validation security tests
+    ├── test_coverage_boost.py     # Pipeline, writer, CLI comprehensive coverage
+    ├── test_providers.py          # Multi-provider LLM client tests
+    ├── test_loop2_coverage.py     # Orchestrator loop 2 branch coverage
+    └── test_usability_commands.py # cheat, doctor, notebook, menu, tui
 ```
 
 ---
@@ -79,6 +84,7 @@ ppke/
 | `MASTER_CONCEPT_INDEX.md` | DONE | `writer.py:write_global_files()` — aggregates from all books with LLM semantic deduplication |
 | `QA_RESULTS.md` | DONE | `writer.py:write_global_files()` — aggregated coverage status |
 | `PLAYBOOK.md` | DONE | `writer.py:write_global_files()` |
+| `RESEARCH_NOTEBOOK.md` | DONE | `cli.py:_append_to_notebook()` — per-query log appended after every `query`/`cross-query` call |
 
 ### Commands (Spec Section 5)
 
@@ -93,6 +99,11 @@ ppke/
 | List books | DONE | `ppke list [--vault-path]` |
 | Stats | DONE | `ppke stats [--vault-path]` |
 | Search (no LLM) | DONE | `ppke search <text> [--book] [--max-results]` |
+| Quick reference cheat sheet | DONE | `ppke cheat` |
+| Setup diagnostics | DONE | `ppke doctor [--vault-path]` |
+| Research notebook viewer | DONE | `ppke notebook [--tail N] [--clear] [--vault-path]` |
+| Interactive guided menu | DONE | `ppke menu` |
+| Terminal dashboard | DONE | `ppke tui [--vault-path]` |
 
 ### Quality Features (Spec Sections 9-10)
 
@@ -109,6 +120,7 @@ ppke/
 | Git version control | DONE | Project is git-tracked. |
 | `human_operator` in meta.yml | DONE | `--operator` flag on `ppke ingest`. |
 | No deletion policy | DONE | System only creates/updates files, never deletes. |
+| Research Notebook auto-logging | DONE | `cli.py:_append_to_notebook()` — appended after every `query`/`cross-query` call. |
 
 ### Prohibitions (Spec Section 12)
 

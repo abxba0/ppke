@@ -18,6 +18,11 @@ A CLI tool for structured philosophical book analysis. PPKE ingests markdown boo
 - **Cross-Book Synthesis** - Compares and contrasts ideas across multiple encoded books
 - **Single-Book Querying** - Ask questions about any ingested book with verbatim evidence
 - **Vault Management** - List books, view statistics, and search across all extractions locally
+- **Quick Reference** - `ppke cheat` prints a formatted cheat sheet of all 15 commands with descriptions and examples
+- **Setup Diagnostics** - `ppke doctor` checks API key, vault directory, incomplete ingestions, and pending checkpoints at a glance
+- **Research Notebook** - Queries and cross-queries are automatically logged to `RESEARCH_NOTEBOOK.md`; browse with `ppke notebook`
+- **Interactive Menu** - `ppke menu` guides you through command selection step by step, shows the equivalent CLI command, and optionally executes it
+- **Terminal Dashboard** - `ppke tui` provides a live browsable view of all books, quick search, and vault stats
 
 ## Quick Start
 
@@ -99,6 +104,11 @@ ppke re-read --book "Book_Being_and_Time_Heidegger_1927" --chapters "1,3,5"
 | `ppke stats` | Show vault-wide statistics (books, chapters, coverage) |
 | `ppke search <text>` | Full-text search across all extractions (no LLM) |
 | `ppke config` | View or update configuration |
+| `ppke cheat` | Print a quick-reference cheat sheet for all commands |
+| `ppke doctor` | Run diagnostic checks (API key, vault, checkpoints) |
+| `ppke notebook` | View or clear the auto-generated research log |
+| `ppke menu` | Interactive guided menu for running any command |
+| `ppke tui` | Launch an interactive terminal dashboard |
 
 ## Configuration
 
@@ -153,12 +163,61 @@ Config file: `~/.ppke/config.json`
 | `max_workers` | 4 | Parallel extraction threads |
 | `paragraphs_per_batch` | 5 | Paragraphs sent per LLM call |
 
+## Usability Tools
+
+### Quick Reference (`ppke cheat`)
+
+Prints a formatted table of all 15 PPKE commands with descriptions and usage examples.
+
+```bash
+ppke cheat
+```
+
+### Diagnostics (`ppke doctor`)
+
+Checks your setup and surfaces any problems: config file presence, API key for the active provider, vault directory accessibility, books with incomplete ingestion, and pending checkpoints.
+
+```bash
+ppke doctor
+ppke doctor --vault-path ~/my-vault
+```
+
+### Research Notebook (`ppke notebook`)
+
+`ppke query` and `ppke cross-query` automatically append each question, answer, and evidence quotes to `RESEARCH_NOTEBOOK.md` in the vault root. Use `ppke notebook` to browse, tail, or clear the log.
+
+```bash
+ppke notebook               # View full log
+ppke notebook --tail 5      # Show last 5 entries
+ppke notebook --clear       # Delete the log
+```
+
+### Interactive Menu (`ppke menu`)
+
+Numbered action menu. Select a command, answer prompts for its arguments, see the full equivalent CLI command in a panel, then optionally execute it directly.
+
+```bash
+ppke menu
+```
+
+### Terminal Dashboard (`ppke tui`)
+
+Interactive terminal dashboard. Browse all books in a summary table, view detailed metadata and file status for a single book, run quick local searches, and view vault-wide statistics — all from one interface.
+
+```bash
+ppke tui
+ppke tui --vault-path ~/my-vault
+```
+
+---
+
 ## Project Structure
 
 ```
 ppke/
-├── cli.py               # CLI entry point (Click)
+├── cli.py               # CLI entry point (Click) — all 15 commands
 ├── config.py            # Configuration & .env management
+├── tui.py               # Terminal dashboard (ppke tui)
 ├── parser/
 │   ├── models.py        # Data models (Book, Chapter, Paragraph, etc.)
 │   └── markdown.py      # Markdown parsing + sub-paragraph splitting
@@ -174,12 +233,17 @@ ppke/
 │   ├── patterns.py      # Pattern detection (Skill 5)
 │   └── synthesizer.py   # Cross-book synthesis (Skill 6)
 ├── output/
-│   ├── writer.py        # File generation + semantic deduplication
-│   └── templates.py     # Output templates
+│   └── writer.py        # File generation + semantic deduplication
 └── tests/
     ├── test_parser.py
     ├── test_validator.py
-    └── test_splitter.py
+    ├── test_splitter.py
+    ├── test_new_features.py
+    ├── test_security.py
+    ├── test_coverage_boost.py
+    ├── test_providers.py
+    ├── test_loop2_coverage.py
+    └── test_usability_commands.py  # cheat, doctor, notebook, menu, tui
 ```
 
 ## Output Structure
@@ -192,6 +256,7 @@ Each ingested book creates a folder in the vault:
 ├── MASTER_CONCEPT_INDEX.md     # Cross-book concepts (semantically deduplicated)
 ├── QA_RESULTS.md               # Coverage status
 ├── PLAYBOOK.md                 # Usage guide
+├── RESEARCH_NOTEBOOK.md        # Auto-generated query/answer log (ppke notebook)
 └── Book_Being_and_Time_Heidegger_1927/
     ├── meta.yml                # Book metadata
     ├── extractions.json        # Raw extraction data (for re-read & search)
