@@ -5,8 +5,12 @@ A CLI tool for structured philosophical book analysis. PPKE ingests markdown boo
 ## Features
 
 - **Structural Extraction** - Parses books into chapters and paragraphs, extracts claims, arguments, and concepts via LLM
+- **Two-Tier LLM Architecture** - Uses a configurable fast/cheap `small_model` (e.g. `gpt-4o-mini`, `claude-3-haiku`) for extraction (Skill 1) and the main model for deep analysis (Skills 3–7), reducing cost and latency
+- **Skip Logic** - Automatically skips boilerplate, page numbers, and single-word paragraphs before LLM extraction, saving tokens on non-informative content
 - **Sub-Paragraph Splitting** - Automatically splits long paragraphs into sub-paragraphs (`{03}.p12.1`, `{03}.p12.2`) when they exceed token limits
 - **Parallel Extraction** - Multi-threaded chapter extraction for faster ingestion of large books
+- **Parallel Analysis** - Logical architecture (Skill 3), Concept indexing (Skill 4), and Pattern detection (Skill 5) run concurrently via `ThreadPoolExecutor`, cutting wall-clock time for the analysis phase
+- **Prompt Caching** - Anthropic system prompts are marked with `cache_control: {"type": "ephemeral"}` to activate the Anthropic prompt cache (up to 5-min TTL, significant token savings on repeated calls). DeepSeek applies prefix caching by default.
 - **Resumable Ingestion** - Checkpoints saved after each chapter; resume from where you left off with `--resume` if ingestion fails
 - **Exponential Backoff** - Automatic retry with 2s/4s/8s/16s backoff on rate-limit (429) and server errors (5xx)
 - **Coverage Validation** - Ensures 100% paragraph coverage with automatic re-read on gaps
@@ -41,7 +45,7 @@ ppke init
 ```
 
 This will walk you through:
-- Choosing your LLM provider (Anthropic or OpenAI)
+- Choosing your LLM provider (Anthropic, OpenAI, DeepSeek, Gemini, or OpenRouter)
 - Entering your API key (stored securely in `~/.ppke/.env` with `chmod 600`)
 - Setting the knowledge base directory
 - Configuring batch size
@@ -132,7 +136,8 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 ```bash
 ppke config --show
-ppke config --provider openai --model gpt-4o
+ppke config --provider anthropic --model claude-sonnet-4-20250514
+ppke config --small-model claude-3-haiku-20240307   # two-tier: cheap model for extraction
 ppke config --vault-path ~/my-vault
 ppke config --batch-size 10
 ```
@@ -146,8 +151,8 @@ Config file: `~/.ppke/config.json`
 | `--title` | Book title (required) |
 | `--author` | Book author (required) |
 | `--year` | Publication year |
-| `--provider` | Override LLM provider (`anthropic` / `openai`) |
-| `--model` | Override model name |
+| `--provider` | Override LLM provider (`anthropic` / `openai` / `deepseek` / `gemini` / `openrouter`) |
+| `--model` | Override main model name |
 | `--vault-path` | Override output directory |
 | `--batch-size` | Paragraphs per LLM batch |
 | `--operator` | Human operator name for versioning |
@@ -159,9 +164,21 @@ Config file: `~/.ppke/config.json`
 
 | Setting | Default | Description |
 |---------|---------|-------------|
+| `model` | provider-specific | Main model used for deep analysis (Skills 3–7) |
+| `small_model` | provider-specific | Cheap/fast model for extraction (Skill 1). Defaults: `claude-3-haiku-20240307` (Anthropic), `gpt-4o-mini` (OpenAI), `deepseek-chat` (DeepSeek), `gemini-1.5-flash` (Gemini) |
 | `max_paragraph_tokens` | 2000 | Split paragraphs exceeding this token count |
-| `max_workers` | 4 | Parallel extraction threads |
+| `max_workers` | 4 | Parallel extraction threads (Skill 1) |
 | `paragraphs_per_batch` | 5 | Paragraphs sent per LLM call |
+
+### Cost Optimisation
+
+PPKE uses several mechanisms to reduce token cost and latency:
+
+1. **Two-Tier Models** — Set `small_model` to a cheaper model for extraction. The main `model` is reserved for logical mapping, concept indexing, and pattern detection.
+2. **Skip Logic** — Paragraphs consisting of a single word, bare page numbers (digits/roman numerals), or common boilerplate phrases (e.g. "All rights reserved", "ISBN", "Bibliography") are skipped entirely before any LLM call and given a `[LOW INFORMATION]` placeholder. This saves tokens on content that carries no philosophical argument.
+3. **Anthropic Prompt Caching** — All system prompts sent to Anthropic are tagged with `cache_control: {"type": "ephemeral"}`. Repeated calls with the same large system prompt hit the cache rather than re-encoding, saving input tokens (typically 5-10×).
+4. **DeepSeek Prefix Caching** — DeepSeek applies context-prefix caching automatically for repeated prefixes; no extra configuration is needed.
+5. **Parallel Analysis** — Skills 3 (Logical Map), 4 (Concept Index), and 5 (Pattern Detection) run simultaneously in a `ThreadPoolExecutor`, so the analysis phase takes roughly the time of the slowest skill rather than the sum.
 
 ## Usability Tools
 
@@ -211,29 +228,62 @@ ppke tui --vault-path ~/my-vault
 
 ---
 
+## Architecture & Pipeline
+
+PPKE processes a book through six sequential pipeline stages:
+
+```
+Stage 0: Sub-paragraph splitting (token limit management)
+Stage 1: Structural extraction  [small_model, parallel chapters, skip logic]
+Stage 2: Double-pass (optional) [small_model]
+Stage 3: Coverage validation    [pure logic, no LLM]
+Stage 4: Logical architecture ──┐
+Stage 5: Concept indexing       ├── parallel (ThreadPoolExecutor × 3)
+Stage 6: Pattern detection    ──┘
+Stage 7: Author model           [main model]
+Stage 8: Write all output files
+```
+
+**Skill mapping:**
+| Skill | Stage | Model tier | Notes |
+|-------|-------|-----------|-------|
+| Skill 1 – Extraction | Stage 1 | `small_model` | Per-chapter, parallelised; skip logic pre-filters low-info paras |
+| Skill 2 – Validation | Stage 3 | none (logic) | Pure coverage check, no LLM |
+| Skill 3 – Logical Map | Stage 4 | `model` | Runs in parallel with Skills 4 & 5 |
+| Skill 4 – Concept Index | Stage 5 | `model` | Runs in parallel with Skills 3 & 5 |
+| Skill 5 – Pattern Detection | Stage 6 | `model` | Runs in parallel with Skills 3 & 4 |
+| Skill 6 – Cross-Book Synthesis | `cross-query` command | `model` | On-demand |
+
 ## Project Structure
 
 ```
 ppke/
 ├── cli.py               # CLI entry point (Click) — all 15 commands
-├── config.py            # Configuration & .env management
+├── config.py            # Configuration & .env management (LLMConfig, small_model)
 ├── tui.py               # Terminal dashboard (ppke tui)
 ├── parser/
-│   ├── models.py        # Data models (Book, Chapter, Paragraph, etc.)
+│   ├── models.py        # Data models (Book, Chapter, Paragraph, ExtractionResult, etc.)
 │   └── markdown.py      # Markdown parsing + sub-paragraph splitting
 ├── llm/
-│   ├── client.py        # Unified Anthropic/OpenAI client (with retry/backoff)
+│   ├── client.py        # Unified LLM client (Anthropic/OpenAI/DeepSeek/Gemini/OpenRouter)
+│   │                    #   • model_override for two-tier architecture
+│   │                    #   • Anthropic prompt caching (cache_control: ephemeral)
+│   │                    #   • Exponential backoff retry (429 / 5xx)
 │   └── prompts.py       # Prompt templates for all pipeline stages
 ├── pipeline/
-│   ├── orchestrator.py  # Master controller (parallel, checkpoints, re-read)
-│   ├── extractor.py     # Structural extraction (Skill 1)
-│   ├── validator.py     # Coverage validation (Skill 2)
-│   ├── logical_map.py   # Logical architecture (Skill 3)
-│   ├── concepts.py      # Concept indexing (Skill 4)
-│   ├── patterns.py      # Pattern detection (Skill 5)
-│   └── synthesizer.py   # Cross-book synthesis (Skill 6)
+│   ├── orchestrator.py  # Master controller
+│   │                    #   • Skip logic (_is_low_information)
+│   │                    #   • Parallel extraction (ThreadPoolExecutor)
+│   │                    #   • Parallel analysis (Skills 3/4/5 concurrent)
+│   │                    #   • Checkpoint save/resume
+│   ├── extractor.py     # Skill 1: Structural extraction (model_override support)
+│   ├── validator.py     # Skill 2: Coverage validation (pure logic)
+│   ├── logical_map.py   # Skill 3: Logical architecture builder
+│   ├── concepts.py      # Skill 4: Concept indexer (chunked)
+│   ├── patterns.py      # Skill 5: Pattern & tension detector (chunked)
+│   └── synthesizer.py   # Skill 6: Cross-book synthesizer
 ├── output/
-│   └── writer.py        # File generation + semantic deduplication
+│   └── writer.py        # File generation + semantic concept deduplication
 └── tests/
     ├── test_parser.py
     ├── test_validator.py
@@ -243,6 +293,7 @@ ppke/
     ├── test_coverage_boost.py
     ├── test_providers.py
     ├── test_loop2_coverage.py
+    ├── test_orchestrator.py
     └── test_usability_commands.py  # cheat, doctor, notebook, menu, tui
 ```
 
@@ -271,7 +322,12 @@ Each ingested book creates a folder in the vault:
 ## Requirements
 
 - Python >= 3.10
-- An API key for [Anthropic](https://console.anthropic.com/settings/keys) or [OpenAI](https://platform.openai.com/api-keys)
+- An API key for at least one supported provider:
+  - [Anthropic](https://console.anthropic.com/settings/keys) — recommended (best caching support)
+  - [OpenAI](https://platform.openai.com/api-keys)
+  - [DeepSeek](https://platform.deepseek.com/)
+  - [Google Gemini](https://aistudio.google.com/app/apikey)
+  - [OpenRouter](https://openrouter.ai/keys) (multi-provider gateway)
 
 ## Development
 
@@ -283,3 +339,4 @@ pytest ppke/tests/
 ## License
 
 Private project.
+

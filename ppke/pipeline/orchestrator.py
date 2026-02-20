@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re as _re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -30,6 +31,59 @@ logger = logging.getLogger(__name__)
 _progress_lock = threading.Lock()
 
 ProgressCallback = Callable[[str, str], None]
+
+# ── Skip Logic ──
+
+# Regex matching strings that are just page numbers (digits, roman numerals)
+_PAGE_NUMBER_RE = _re.compile(r'^[ivxlcdmIVXLCDM\d]+$')
+
+# Maximum word count for a paragraph to be considered "low information"
+# Only single-word paragraphs are skipped per spec ("boilerplate, single words, page numbers")
+_LOW_INFO_MAX_WORDS = 1
+
+# Common boilerplate patterns (case-insensitive prefix/whole matches)
+_BOILERPLATE_PATTERNS = (
+    "all rights reserved",
+    "copyright",
+    "printed in",
+    "isbn",
+    "published by",
+    "first published",
+    "table of contents",
+    "acknowledgements",
+    "acknowledgments",
+    "bibliography",
+    "index",
+    "glossary",
+    "about the author",
+    "also by",
+)
+
+
+def _is_low_information(text: str) -> bool:
+    """Return True if *text* is a low-information paragraph that should be skipped.
+
+    Skipped paragraphs include:
+    - Very short text (≤ _LOW_INFO_MAX_WORDS words)
+    - Bare page numbers (digits or roman numerals only)
+    - Common boilerplate lines
+    """
+    stripped = text.strip()
+    if not stripped:
+        return True
+    words = stripped.split()
+    # Single token: check for page numbers (digits or roman numerals)
+    if len(words) == 1 and _PAGE_NUMBER_RE.match(stripped):
+        return True
+    # Very short paragraphs
+    if len(words) <= _LOW_INFO_MAX_WORDS:
+        return True
+    # Boilerplate prefix/whole match
+    lower = stripped.lower()
+    for pattern in _BOILERPLATE_PATTERNS:
+        if lower.startswith(pattern):
+            return True
+    return False
 
 
 # ── Checkpoint support ──
@@ -146,29 +200,60 @@ def _extract_with_retry(
     author: str,
     batch_size: int,
     progress: ProgressCallback | None,
+    model_override: str | None = None,
 ) -> list[ExtractionResult]:
     """Extract a chapter with automatic retry for missing/failed paragraphs.
 
     First pass extracts all paragraphs. If any are missing or failed,
     a re-read pass re-extracts only the missing ones from raw text.
+
+    Low-information paragraphs (boilerplate, page numbers, etc.) are skipped
+    by the LLM and assigned minimal placeholder results directly.
     """
+    # ── Skip Logic: filter out low-information paragraphs before LLM call ──
+    substantive: list = []
+    skipped_results: list[ExtractionResult] = []
+    for p in chapter.paragraphs:
+        if _is_low_information(p.text):
+            skipped_results.append(
+                ExtractionResult(
+                    paragraph_id=p.paragraph_id,
+                    original_text=p.text,
+                    topic_sentence="[LOW INFORMATION]",
+                    function_in_argument="boilerplate",
+                )
+            )
+        else:
+            substantive.append(p)
+
+    if not substantive:
+        return skipped_results
+
+    # Build a temporary chapter view with only substantive paragraphs
+    substantive_chapter = Chapter(
+        number=chapter.number,
+        title=chapter.title,
+        paragraphs=substantive,
+    )
+
     results = extract_chapter(
         client=client,
-        chapter=chapter,
+        chapter=substantive_chapter,
         book_title=book_title,
         author=author,
         batch_size=batch_size,
+        model_override=model_override,
     )
 
-    # Check for missing or failed extractions
+    # Check for missing or failed extractions (among substantive paragraphs only)
     is_complete, missing = validate_chapter_coverage(
         chapter.number,
-        [p.paragraph_id for p in chapter.paragraphs],
+        [p.paragraph_id for p in substantive],
         results,
     )
 
     if is_complete:
-        return results
+        return results + skipped_results
 
     if progress:
         progress(
@@ -183,7 +268,7 @@ def _extract_with_retry(
 
     # Build a sub-chapter with only the missing paragraphs
     missing_paras = [
-        p for p in chapter.paragraphs if p.paragraph_id in missing_set
+        p for p in substantive if p.paragraph_id in missing_set
     ]
     if missing_paras:
         retry_chapter = Chapter(
@@ -197,10 +282,11 @@ def _extract_with_retry(
             book_title=book_title,
             author=author,
             batch_size=batch_size,
+            model_override=model_override,
         )
         results.extend(retry_results)
 
-    return results
+    return results + skipped_results
 
 
 def ingest_book(
@@ -306,6 +392,7 @@ def ingest_book(
                     author=book.author,
                     batch_size=config.llm.paragraphs_per_batch,
                     progress=_progress,
+                    model_override=config.llm.effective_small_model,
                 )
                 futures[future] = idx
 
@@ -352,6 +439,7 @@ def ingest_book(
                 author=book.author,
                 batch_size=config.llm.paragraphs_per_batch,
                 progress=_progress,
+                model_override=config.llm.effective_small_model,
             )
             all_extractions.extend(chapter_results)
             completed_indices.append(idx)
@@ -374,6 +462,7 @@ def ingest_book(
                 book_title=book.title,
                 author=book.author,
                 batch_size=config.llm.paragraphs_per_batch,
+                model_override=config.llm.effective_small_model,
             )
             pass2_extractions.extend(chapter_results)
 
@@ -424,19 +513,43 @@ def ingest_book(
         f"({coverage.processed_paragraph_count}/{coverage.total_paragraphs})",
     )
 
-    # ── Stage 4: Logical architecture ──
-    _progress("logical_map", "Building logical architecture")
-    logical_map = build_logical_map(client, all_extractions, book.title, book.author)
+    # ── Stages 4/5/6: Logical architecture, Concept indexing, Pattern detection (parallel) ──
+    _progress("analysis", "Running logical map, concept index, and pattern detection in parallel")
+    logical_map: dict[str, Any] = {}
+    concept_data: dict[str, Any] = {}
+    pattern_data: dict[str, Any] = {}
 
-    # ── Stage 5: Concept indexing ──
-    _progress("concepts", "Building concept index")
-    concept_data = build_concept_index(
-        client, all_extractions, book.title, book.author
-    )
+    with ThreadPoolExecutor(max_workers=3) as analysis_executor:
+        future_logical = analysis_executor.submit(
+            build_logical_map, client, all_extractions, book.title, book.author
+        )
+        future_concepts = analysis_executor.submit(
+            build_concept_index, client, all_extractions, book.title, book.author
+        )
+        future_patterns = analysis_executor.submit(
+            detect_patterns, client, all_extractions, book.title, book.author
+        )
 
-    # ── Stage 6: Pattern detection ──
-    _progress("patterns", "Detecting patterns and tensions")
-    pattern_data = detect_patterns(client, all_extractions, book.title, book.author)
+        try:
+            logical_map = future_logical.result()
+            _progress("logical_map", "Logical architecture complete")
+        except Exception as e:
+            logger.error("Logical map failed: %s", e)
+            logical_map = {"error": str(e)}
+
+        try:
+            concept_data = future_concepts.result()
+            _progress("concepts", "Concept index complete")
+        except Exception as e:
+            logger.error("Concept index failed: %s", e)
+            concept_data = {"error": str(e)}
+
+        try:
+            pattern_data = future_patterns.result()
+            _progress("patterns", "Pattern detection complete")
+        except Exception as e:
+            logger.error("Pattern detection failed: %s", e)
+            pattern_data = {"error": str(e)}
 
     # ── Stage 7: Author model ──
     _progress("author_model", "Building author model")
@@ -583,6 +696,7 @@ def reread_chapters(
             author=author,
             batch_size=config.llm.paragraphs_per_batch,
             progress=_progress,
+            model_override=config.llm.effective_small_model,
         )
         new_extractions.extend(chapter_results)
 
@@ -609,14 +723,39 @@ def reread_chapters(
         f"Merged: {len(new_extractions)} re-extracted + {from_disk_count} from disk",
     )
 
-    # Re-run the analysis pipeline
+    # Re-run the analysis pipeline (parallel)
     _progress("re-read", "Re-running analysis pipeline")
     coverage = validate_coverage(book, all_extractions)
     coverage.re_read_pass_completed = True
 
-    logical_map = build_logical_map(client, all_extractions, book_title, author)
-    concept_data = build_concept_index(client, all_extractions, book_title, author)
-    pattern_data = detect_patterns(client, all_extractions, book_title, author)
+    with ThreadPoolExecutor(max_workers=3) as analysis_executor:
+        future_logical = analysis_executor.submit(
+            build_logical_map, client, all_extractions, book_title, author
+        )
+        future_concepts = analysis_executor.submit(
+            build_concept_index, client, all_extractions, book_title, author
+        )
+        future_patterns = analysis_executor.submit(
+            detect_patterns, client, all_extractions, book_title, author
+        )
+
+        try:
+            logical_map = future_logical.result()
+        except Exception as e:
+            logger.error("Logical map failed during re-read: %s", e)
+            logical_map = {"error": str(e)}
+
+        try:
+            concept_data = future_concepts.result()
+        except Exception as e:
+            logger.error("Concept index failed during re-read: %s", e)
+            concept_data = {"error": str(e)}
+
+        try:
+            pattern_data = future_patterns.result()
+        except Exception as e:
+            logger.error("Pattern detection failed during re-read: %s", e)
+            pattern_data = {"error": str(e)}
     author_model = _build_author_model(
         client, book, logical_map, concept_data, pattern_data
     )

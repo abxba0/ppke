@@ -685,7 +685,8 @@ def re_read(
     default=None,
     help="LLM provider",
 )
-@click.option("--model", default=None, help="Model name")
+@click.option("--model", default=None, help="Model name (main model for analysis stages)")
+@click.option("--small-model", default=None, help="Small/cheap model for extraction (Skill 1); defaults per provider")
 @click.option(
     "--vault-path",
     type=click.Path(path_type=Path),
@@ -697,6 +698,7 @@ def re_read(
 def config(
     provider: str | None,
     model: str | None,
+    small_model: str | None,
     vault_path: Path | None,
     batch_size: int | None,
     show: bool,
@@ -706,16 +708,18 @@ def config(
     Examples:
         ppke config --show
         ppke config --provider anthropic --model claude-sonnet-4-20250514
+        ppke config --small-model claude-3-haiku-20240307
         ppke config --vault-path ~/my-vault/KnowledgeBase
     """
     cfg = Config.load()
 
-    if show or (not provider and not model and not vault_path and not batch_size):
+    if show or (not provider and not model and not small_model and not vault_path and not batch_size):
         tbl = _Table(show_header=False, box=None, padding=(0, 1))
         tbl.add_column("Setting", style="bold")
         tbl.add_column("Value")
         tbl.add_row("Provider:", cfg.llm.provider)
         tbl.add_row("Model:", cfg.llm.model)
+        tbl.add_row("Small model:", cfg.llm.small_model or f"(default: {cfg.llm.effective_small_model})")
         tbl.add_row("Vault path:", str(cfg.vault_path))
         tbl.add_row("Batch size:", str(cfg.llm.paragraphs_per_batch))
         tbl.add_row("Max para tokens:", str(cfg.llm.max_paragraph_tokens))
@@ -731,6 +735,8 @@ def config(
         cfg.llm.provider = provider
     if model:
         cfg.llm.model = model
+    if small_model:
+        cfg.llm.small_model = small_model
     if vault_path:
         cfg.vault_path = vault_path
     if batch_size:

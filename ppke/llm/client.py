@@ -113,6 +113,7 @@ class LLMClient:
         system_prompt: str,
         user_prompt: str,
         response_format: str = "text",
+        model_override: str | None = None,
     ) -> str:
         """Send a prompt and return the response text.
 
@@ -123,6 +124,7 @@ class LLMClient:
             system_prompt: System-level instructions.
             user_prompt: The user message / content to process.
             response_format: "text" or "json" (for JSON mode where supported).
+            model_override: If provided, use this model instead of config.model.
 
         Returns:
             The model's response as a string.
@@ -131,20 +133,20 @@ class LLMClient:
         for attempt in range(_MAX_RETRIES + 1):
             try:
                 if self.config.provider == "anthropic":
-                    return self._complete_anthropic(system_prompt, user_prompt)
+                    return self._complete_anthropic(system_prompt, user_prompt, model_override)
                 elif self.config.provider == "openai":
                     return self._complete_openai(
-                        system_prompt, user_prompt, response_format
+                        system_prompt, user_prompt, response_format, model_override
                     )
                 elif self.config.provider == "deepseek":
                     return self._complete_deepseek(
-                        system_prompt, user_prompt, response_format
+                        system_prompt, user_prompt, response_format, model_override
                     )
                 elif self.config.provider == "gemini":
-                    return self._complete_gemini(system_prompt, user_prompt)
+                    return self._complete_gemini(system_prompt, user_prompt, model_override)
                 elif self.config.provider == "openrouter":
                     return self._complete_openrouter(
-                        system_prompt, user_prompt, response_format
+                        system_prompt, user_prompt, response_format, model_override
                     )
                 else:
                     raise ValueError(f"Unknown provider: {self.config.provider}")
@@ -161,23 +163,35 @@ class LLMClient:
                 raise
         raise last_exc  # pragma: no cover  # type: ignore[misc]
 
-    def _complete_anthropic(self, system_prompt: str, user_prompt: str) -> str:
+    def _complete_anthropic(
+        self, system_prompt: str, user_prompt: str, model_override: str | None = None
+    ) -> str:
         client = self._get_anthropic()
+        model = model_override or self.config.model
+        # Mark the system prompt for prompt caching (ephemeral cache, up to 5 min TTL)
+        system_content = [
+            {
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
         response = client.messages.create(
-            model=self.config.model,
+            model=model,
             max_tokens=self.config.max_tokens,
             temperature=self.config.temperature,
-            system=system_prompt,
+            system=system_content,
             messages=[{"role": "user", "content": user_prompt}],
         )
         return response.content[0].text
 
     def _complete_openai(
-        self, system_prompt: str, user_prompt: str, response_format: str
+        self, system_prompt: str, user_prompt: str, response_format: str,
+        model_override: str | None = None,
     ) -> str:
         client = self._get_openai()
         kwargs: dict[str, Any] = {
-            "model": self.config.model,
+            "model": model_override or self.config.model,
             "max_tokens": self.config.max_tokens,
             "temperature": self.config.temperature,
             "messages": [
@@ -195,12 +209,17 @@ class LLMClient:
         return content
 
     def _complete_deepseek(
-        self, system_prompt: str, user_prompt: str, response_format: str
+        self, system_prompt: str, user_prompt: str, response_format: str,
+        model_override: str | None = None,
     ) -> str:
-        """Call DeepSeek API (OpenAI-compatible interface)."""
+        """Call DeepSeek API (OpenAI-compatible interface).
+
+        DeepSeek automatically caches common prompt prefixes (Context Cache),
+        so no extra configuration is required for caching benefits.
+        """
         client = self._get_deepseek()
         kwargs: dict[str, Any] = {
-            "model": self.config.model,
+            "model": model_override or self.config.model,
             "max_tokens": self.config.max_tokens,
             "temperature": self.config.temperature,
             "messages": [
@@ -217,17 +236,25 @@ class LLMClient:
             raise ValueError("DeepSeek returned empty content")
         return content
 
-    def _complete_gemini(self, system_prompt: str, user_prompt: str) -> str:
+    def _complete_gemini(
+        self, system_prompt: str, user_prompt: str, model_override: str | None = None
+    ) -> str:
         """Call Google Gemini API.
 
         Gemini combines system and user prompts into a single message with
         system instructions prepended.
+        If *model_override* differs from config.model, a fresh model instance
+        is created for that call (the cached client is not reused for overrides).
         """
-        model = self._get_gemini()
-        # Gemini GenerativeModel supports system_instruction at construction
-        # but we merge them here for simplicity since the model is cached.
-        combined_prompt = f"{system_prompt}\n\n{user_prompt}"
         import google.generativeai as genai  # type: ignore[import]
+
+        if model_override and model_override != self.config.model:
+            # Two-tier: create a one-off model instance for the small model
+            model = genai.GenerativeModel(model_override)
+        else:
+            model = self._get_gemini()
+
+        combined_prompt = f"{system_prompt}\n\n{user_prompt}"
         generation_config = genai.GenerationConfig(
             max_output_tokens=self.config.max_tokens,
             temperature=self.config.temperature,
@@ -241,12 +268,13 @@ class LLMClient:
         return response.text
 
     def _complete_openrouter(
-        self, system_prompt: str, user_prompt: str, response_format: str
+        self, system_prompt: str, user_prompt: str, response_format: str,
+        model_override: str | None = None,
     ) -> str:
         """Call OpenRouter API (OpenAI-compatible interface)."""
         client = self._get_openrouter()
         kwargs: dict[str, Any] = {
-            "model": self.config.model,
+            "model": model_override or self.config.model,
             "max_tokens": self.config.max_tokens,
             "temperature": self.config.temperature,
             "messages": [
@@ -263,12 +291,17 @@ class LLMClient:
             raise ValueError("OpenRouter returned empty content")
         return content
 
-    def complete_json(self, system_prompt: str, user_prompt: str) -> dict:
+    def complete_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model_override: str | None = None,
+    ) -> dict:
         """Send a prompt expecting JSON response. Parses and returns dict."""
         # Do not force OpenAI-style ``json_object`` mode here.
         # Some pipeline stages (e.g., structural extraction) require a top-level
         # JSON array, which json_object mode disallows.
-        raw = self.complete(system_prompt, user_prompt)
+        raw = self.complete(system_prompt, user_prompt, model_override=model_override)
 
         # Extract JSON from response (handle markdown code blocks)
         text = raw.strip()

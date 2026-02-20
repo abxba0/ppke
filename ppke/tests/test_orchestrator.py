@@ -100,7 +100,7 @@ def test_extract_with_retry_complete_on_first_pass():
     from ppke.pipeline.orchestrator import _extract_with_retry
 
     ch = Chapter(number=1, title="Intro")
-    ch.paragraphs = [Paragraph(chapter_number=1, paragraph_number=1, text="Text")]
+    ch.paragraphs = [Paragraph(chapter_number=1, paragraph_number=1, text="This is substantive text.")]
 
     mock_client = MagicMock()
     with patch("ppke.pipeline.orchestrator.extract_chapter") as mock_extract, \
@@ -158,7 +158,7 @@ def test_extract_with_retry_with_progress_callback():
     from ppke.pipeline.orchestrator import _extract_with_retry
 
     ch = Chapter(number=1, title="Intro")
-    ch.paragraphs = [Paragraph(chapter_number=1, paragraph_number=1, text="T")]
+    ch.paragraphs = [Paragraph(chapter_number=1, paragraph_number=1, text="Substantive paragraph text here.")]
 
     mock_client = MagicMock()
     progress_log = []

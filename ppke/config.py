@@ -22,6 +22,15 @@ PROVIDER_DEFAULTS = {
     "openrouter": "openai/gpt-4o",
 }
 
+# Default small/cheap models per provider (used for Skill 1 & 2)
+PROVIDER_SMALL_MODEL_DEFAULTS = {
+    "anthropic": "claude-3-haiku-20240307",
+    "openai": "gpt-4o-mini",
+    "deepseek": "deepseek-chat",
+    "gemini": "gemini-1.5-flash",
+    "openrouter": "openai/gpt-4o-mini",
+}
+
 SUPPORTED_PROVIDERS = list(PROVIDER_DEFAULTS.keys())
 
 
@@ -81,6 +90,7 @@ class LLMConfig:
 
     provider: str = "anthropic"
     model: str = "claude-sonnet-4-20250514"
+    small_model: str | None = None  # Cheaper model for Skill 1 (Extraction); defaults per-provider
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
     deepseek_api_key: str | None = None
@@ -132,6 +142,13 @@ class LLMConfig:
             "openrouter": self.openrouter_api_key,
         }.get(self.provider)
 
+    @property
+    def effective_small_model(self) -> str:
+        """Return the small model to use, falling back to the provider default."""
+        if self.small_model:
+            return self.small_model
+        return PROVIDER_SMALL_MODEL_DEFAULTS.get(self.provider, self.model)
+
 
 @dataclass
 class Config:
@@ -150,6 +167,7 @@ class Config:
             "llm": {
                 "provider": self.llm.provider,
                 "model": self.llm.model,
+                "small_model": self.llm.small_model,
                 "max_tokens": self.llm.max_tokens,
                 "temperature": self.llm.temperature,
                 "paragraphs_per_batch": self.llm.paragraphs_per_batch,
@@ -173,6 +191,7 @@ class Config:
             llm=LLMConfig(
                 provider=llm_data.get("provider", "anthropic"),
                 model=llm_data.get("model", "claude-sonnet-4-20250514"),
+                small_model=llm_data.get("small_model", None),
                 max_tokens=llm_data.get("max_tokens", 4096),
                 temperature=llm_data.get("temperature", 0.2),
                 paragraphs_per_batch=llm_data.get("paragraphs_per_batch", 5),

@@ -73,10 +73,20 @@ def extract_chapter(
     book_title: str,
     author: str,
     batch_size: int = 5,
+    model_override: str | None = None,
 ) -> list[ExtractionResult]:
     """Extract structural data from all paragraphs in a chapter.
 
     Processes paragraphs in batches to stay within token limits.
+
+    Args:
+        client: LLM client to use.
+        chapter: Chapter to extract.
+        book_title: Title of the book.
+        author: Author of the book.
+        batch_size: Number of paragraphs per LLM call.
+        model_override: If provided, use this model instead of client's default
+            (supports two-tier architecture for cheaper extraction).
     """
     all_results: list[ExtractionResult] = []
 
@@ -101,7 +111,7 @@ def extract_chapter(
 
         try:
             response = client.complete_json(
-                STRUCTURAL_EXTRACTION_SYSTEM, user_prompt
+                STRUCTURAL_EXTRACTION_SYSTEM, user_prompt, model_override=model_override
             )
             # Response should be a list
             if isinstance(response, dict) and "paragraphs" in response:

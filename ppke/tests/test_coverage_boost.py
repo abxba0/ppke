@@ -90,7 +90,10 @@ def test_complete_anthropic_returns_text():
     mock_ant.messages.create.assert_called_once()
     kwargs = mock_ant.messages.create.call_args[1]
     assert kwargs["model"] == cfg.model
-    assert kwargs["system"] == "sys"
+    # system prompt is now passed as a cache_control block for prompt caching
+    assert isinstance(kwargs["system"], list)
+    assert kwargs["system"][0]["text"] == "sys"
+    assert kwargs["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert kwargs["messages"][0]["content"] == "usr"
 
 
