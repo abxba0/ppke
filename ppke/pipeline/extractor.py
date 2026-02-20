@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from ppke.llm.client import LLMClient
@@ -17,14 +18,43 @@ from ppke.parser.models import (
 
 logger = logging.getLogger(__name__)
 
+# ── Citation / footnote stripping ──
+
+# Common citation patterns found in philosophy texts
+_CITATION_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\[\^\d+\]"),                          # [^1], [^23]
+    re.compile(r"\(\s*(?:See|see|Cf\.|cf\.)\s+[^)]+\)"),  # (See Kant, 1781), (cf. Hegel)
+    re.compile(r"\(\s*[A-Z][a-z]+(?:,?\s+\d{4}[a-z]?)\s*\)"),  # (Kant, 1781), (Smith, 2020b)
+    re.compile(r"\(\s*(?:ibid|op\.\s*cit|loc\.\s*cit)\.?\s*\)", re.IGNORECASE),
+    re.compile(r"\[\d+\]"),                            # [1], [23]
+]
+
+
+def strip_citations(text: str) -> str:
+    """Remove common citation and footnote markers from *text*.
+
+    Keeps the prose intact while removing noise like ``[^1]``,
+    ``(See Kant, 1781)``, ``[23]``, etc.
+    """
+    result = text
+    for pattern in _CITATION_PATTERNS:
+        result = pattern.sub("", result)
+    # Collapse any double-spaces left behind
+    result = re.sub(r"  +", " ", result)
+    return result.strip()
+
 
 def _paragraphs_to_json(paragraphs: list[Paragraph]) -> str:
-    """Convert paragraphs to JSON for the LLM prompt."""
+    """Convert paragraphs to JSON for the LLM prompt.
+
+    Citation markers are stripped from the text before it reaches the LLM
+    to reduce noise, but the original text is preserved in ExtractionResult.
+    """
     items = []
     for p in paragraphs:
         items.append({
             "paragraph_id": p.paragraph_id,
-            "text": p.text,
+            "text": strip_citations(p.text),
         })
     return json.dumps(items, separators=(',', ':'))
 

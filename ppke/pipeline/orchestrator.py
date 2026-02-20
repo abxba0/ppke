@@ -15,7 +15,7 @@ from ppke.llm.client import LLMClient
 from ppke.llm.prompts import AUTHOR_MODEL_SYSTEM, AUTHOR_MODEL_USER
 from ppke.output.writer import load_extractions_json, write_all_book_files, write_global_files
 from ppke.parser.markdown import split_long_paragraphs
-from ppke.parser.models import Book, Chapter, CoverageReport, ExtractionResult
+from ppke.parser.models import Book, Chapter, CoverageReport, DepthLevel, ExtractionResult
 from ppke.pipeline.concepts import build_concept_index
 from ppke.pipeline.extractor import extract_chapter
 from ppke.pipeline.logical_map import build_logical_map
@@ -84,6 +84,20 @@ def _is_low_information(text: str) -> bool:
         if lower.startswith(pattern):
             return True
     return False
+
+
+# ── Stop-word chapter detection ──
+
+_SKIP_CHAPTER_TITLES: frozenset[str] = frozenset({
+    "bibliography", "index", "appendix", "appendices",
+    "references", "works cited", "glossary", "endnotes",
+    "notes", "further reading", "about the author",
+})
+
+
+def _is_skip_chapter(title: str) -> bool:
+    """Return True if the chapter title matches a non-content section."""
+    return title.strip().lower() in _SKIP_CHAPTER_TITLES
 
 
 # ── Checkpoint support ──
@@ -207,9 +221,27 @@ def _extract_with_retry(
     First pass extracts all paragraphs. If any are missing or failed,
     a re-read pass re-extracts only the missing ones from raw text.
 
-    Low-information paragraphs (boilerplate, page numbers, etc.) are skipped
-    by the LLM and assigned minimal placeholder results directly.
+    If the chapter title matches a non-content section (Bibliography, Index,
+    etc.) all paragraphs are marked SKIP without LLM calls. Otherwise,
+    low-information paragraphs (boilerplate, page numbers, etc.) are skipped
+    individually and assigned minimal placeholder results directly.
     """
+    # Stop-word chapter detection: skip non-content sections entirely
+    if _is_skip_chapter(chapter.title):
+        logger.info(
+            "Skipping non-content chapter %02d: %s", chapter.number, chapter.title
+        )
+        return [
+            ExtractionResult(
+                paragraph_id=p.paragraph_id,
+                original_text=p.text,
+                topic_sentence="[LOW INFORMATION]",
+                function_in_argument="non-content",
+                depth=DepthLevel.SKIP,
+            )
+            for p in chapter.paragraphs
+        ]
+
     # ── Skip Logic: filter out low-information paragraphs before LLM call ──
     substantive: list = []
     skipped_results: list[ExtractionResult] = []

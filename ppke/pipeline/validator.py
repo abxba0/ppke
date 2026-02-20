@@ -9,6 +9,9 @@ from ppke.parser.models import Book, CoverageReport, ExtractionResult
 # Sentinel indicating an extraction failed for a paragraph
 EXTRACTION_FAILED_MARKER: str = "[EXTRACTION FAILED]"
 
+# Sentinel for low-information paragraphs (pre-filtered, no LLM call)
+LOW_INFORMATION_MARKER: str = "[LOW INFORMATION]"
+
 
 def validate_coverage(
     book: Book,
@@ -16,9 +19,12 @@ def validate_coverage(
 ) -> CoverageReport:
     """Validate that all paragraphs in the book have been processed.
 
-    A paragraph is only considered "processed" if:
-    1. It has a matching ExtractionResult
-    2. That result was NOT a failure placeholder
+    A paragraph is considered "processed" if:
+    1. It has a matching ExtractionResult, AND
+    2. That result was NOT a failure placeholder.
+
+    Low-information paragraphs (``[LOW INFORMATION]``) count as processed
+    because they were intentionally skipped.
 
     This is pure local logic - no LLM calls needed.
     """
@@ -28,12 +34,15 @@ def validate_coverage(
     # Only count paragraphs that were genuinely extracted (not failed)
     processed_ids = set()
     failed_ids = []
+    low_info_count = 0
     for pid, result in result_map.items():
         if pid in expected_ids:
             if result.topic_sentence == EXTRACTION_FAILED_MARKER:
                 failed_ids.append(pid)
             else:
                 processed_ids.add(pid)
+                if result.topic_sentence == LOW_INFORMATION_MARKER:
+                    low_info_count += 1
 
     missing = sorted(expected_ids - processed_ids)
     extra = sorted(set(result_map.keys()) - expected_ids)
@@ -43,6 +52,8 @@ def validate_coverage(
         notes_parts.append(f"Extra IDs not in book: {extra}")
     if failed_ids:
         notes_parts.append(f"Extraction failed for: {sorted(failed_ids)}")
+    if low_info_count:
+        notes_parts.append(f"Low-information paragraphs skipped: {low_info_count}")
 
     report = CoverageReport(
         total_chapters=len(book.chapters),
@@ -68,6 +79,7 @@ def validate_chapter_coverage(
 
     Returns (is_complete, missing_ids).
     Failed extractions count as missing.
+    Low-information placeholders count as processed (intentionally skipped).
     """
     expected = set(chapter_paragraph_ids)
     processed = set()

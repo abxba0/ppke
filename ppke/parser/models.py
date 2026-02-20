@@ -13,6 +13,7 @@ class DepthLevel(Enum):
 
     FULL = "full"  # Argument-carrying paragraphs: deep annotation
     LIGHT = "light"  # Transitional/contextual: topic + function only
+    SKIP = "skip"  # Non-content sections (Bibliography, Index, Appendix)
 
 
 @dataclass
