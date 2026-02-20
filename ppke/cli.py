@@ -469,6 +469,15 @@ def query(
         conf_style = {"high": "bold green", "medium": "yellow", "low": "red"}.get(conf, "dim")
         click.echo(_render(_Text(f"Confidence: {conf}", style=conf_style)))
 
+        # Log to research notebook
+        try:
+            _append_to_notebook(
+                config.vault_path, question, answer,
+                book=book, quotes=quotes,
+            )
+        except Exception:
+            pass  # non-critical
+
     except Exception as e:
         click.echo(f"Error: Query failed: {e}", err=True)
         sys.exit(1)
@@ -577,6 +586,13 @@ def cross_query(
     overall = result.get("overall_synthesis", "")
     if overall:
         click.echo(_render(_Panel(overall, title="[bold]Synthesis[/bold]", border_style="green")))
+
+    # Log to research notebook
+    try:
+        summary = overall or "See comparisons above."
+        _append_to_notebook(config.vault_path, question, summary)
+    except Exception:
+        pass  # non-critical
 
 
 # ── re-read command ──
@@ -1024,6 +1040,418 @@ def search(text: str, vault_path: Path | None, book: str | None, max_results: in
 
     if len(hits) >= max_results:
         click.echo(f"(showing first {max_results} results, use --max-results for more)")
+
+
+# ── cheat command ──
+
+
+@main.command()
+def cheat():
+    """Print a quick-reference cheat sheet for all PPKE CLI commands.
+
+    Displays a formatted table with command syntax, description, and examples.
+
+    Example:
+        ppke cheat
+    """
+    table = _Table(title="PPKE Command Cheat Sheet", border_style="blue", show_lines=True)
+    table.add_column("Command", style="bold cyan", width=18)
+    table.add_column("Description", width=38)
+    table.add_column("Example", style="dim", width=50)
+
+    commands = [
+        ("ppke init", "First-time setup wizard", "ppke init"),
+        ("ppke ingest", "Ingest a markdown book into the KB", 'ppke ingest book.md --title "Being and Time" --author "Heidegger"'),
+        ("ppke parse", "Preview chapter/paragraph structure", 'ppke parse book.md --title "Republic" --author "Plato"'),
+        ("ppke query", "Query a single encoded book", 'ppke query --book "Book_Republic_Plato" --question "What is justice?"'),
+        ("ppke cross-query", "Query across all books", 'ppke cross-query --question "How do they differ on free will?"'),
+        ("ppke re-read", "Re-extract specific chapters", 'ppke re-read --book "Book_Republic_Plato" --chapters "1,3"'),
+        ("ppke config", "View or update configuration", "ppke config --show"),
+        ("ppke list", "List all ingested books", "ppke list"),
+        ("ppke stats", "Show vault-wide statistics", "ppke stats"),
+        ("ppke search", "Local text search (no LLM)", 'ppke search "Dasein" --max-results 10'),
+        ("ppke doctor", "Run diagnostic checks on setup", "ppke doctor"),
+        ("ppke notebook", "View or manage research log", "ppke notebook"),
+        ("ppke menu", "Interactive guided command menu", "ppke menu"),
+        ("ppke tui", "Launch terminal dashboard", "ppke tui"),
+        ("ppke cheat", "Show this cheat sheet", "ppke cheat"),
+    ]
+
+    for cmd, desc, example in commands:
+        table.add_row(cmd, desc, example)
+
+    click.echo(_render(table, width=120))
+    click.echo()
+    click.echo("  Tip: Use --help on any command for full options, e.g. ppke ingest --help")
+
+
+# ── doctor command ──
+
+
+@main.command()
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path to check",
+)
+def doctor(vault_path: Path | None):
+    """Run diagnostic checks on your PPKE setup.
+
+    Checks API key presence, vault directory accessibility, and flags
+    any incomplete ingestions or pending checkpoints.
+
+    Example:
+        ppke doctor
+    """
+    import yaml
+
+    cfg = Config.load()
+    vp = vault_path or cfg.vault_path
+
+    issues: list[str] = []
+    ok: list[str] = []
+
+    # 1. Check config file
+    from ppke.config import DEFAULT_CONFIG_PATH
+    if DEFAULT_CONFIG_PATH.exists():
+        ok.append("Config file found: ~/.ppke/config.json")
+    else:
+        issues.append("Config file missing. Run 'ppke init' to create one.")
+
+    # 2. Check API key
+    provider = cfg.llm.provider
+    env_var = PROVIDER_ENV_VARS.get(provider, "API_KEY")
+    if cfg.llm.active_api_key:
+        key = cfg.llm.active_api_key
+        masked = key[:4] + "..." + key[-4:] if len(key) > 8 else "***"
+        ok.append(f"API key set for {provider}: {masked}")
+    else:
+        issues.append(f"API key missing for {provider}. Set {env_var} or run 'ppke init'.")
+
+    # 3. Check vault directory
+    if vp.exists() and vp.is_dir():
+        ok.append(f"Vault directory accessible: {vp}")
+    elif vp.exists():
+        issues.append(f"Vault path exists but is not a directory: {vp}")
+    else:
+        issues.append(f"Vault directory not found: {vp}. Create it or run 'ppke init'.")
+
+    # 4. Check ingested books
+    incomplete_books: list[str] = []
+    complete_count = 0
+    if vp.exists():
+        book_dirs = sorted(
+            d for d in vp.iterdir() if d.is_dir() and d.name.startswith("Book_")
+        )
+        for bd in book_dirs:
+            meta_path = bd / "meta.yml"
+            if meta_path.exists():
+                meta = yaml.safe_load(meta_path.read_text()) or {}
+                status = meta.get("verification_status", "UNKNOWN")
+                if status != "COMPLETE":
+                    incomplete_books.append(f"{bd.name} (status: {status})")
+                else:
+                    complete_count += 1
+            else:
+                incomplete_books.append(f"{bd.name} (no meta.yml)")
+
+        if book_dirs:
+            ok.append(f"Books found: {len(book_dirs)} ({complete_count} complete)")
+        else:
+            issues.append("No books ingested yet. Run 'ppke ingest' to add a book.")
+
+        if incomplete_books:
+            for ib in incomplete_books:
+                issues.append(f"Incomplete ingestion: {ib}")
+
+        # 5. Check pending checkpoints
+        checkpoints = list(vp.glob(".checkpoint_*.json"))
+        if checkpoints:
+            for cp in checkpoints:
+                book_name = cp.stem.replace(".checkpoint_", "")
+                issues.append(
+                    f"Pending checkpoint: {book_name} (use 'ppke ingest --resume' to continue)"
+                )
+        else:
+            ok.append("No pending checkpoints.")
+
+    # 6. Check provider/model config
+    ok.append(f"Provider: {cfg.llm.provider}, Model: {cfg.llm.model}")
+
+    # Display results
+    result_table = _Table(show_header=False, box=None, padding=(0, 1))
+    result_table.add_column("Icon", width=3)
+    result_table.add_column("Detail")
+
+    for item in ok:
+        result_table.add_row(
+            _Text("OK", style="bold green"),
+            item,
+        )
+    for item in issues:
+        result_table.add_row(
+            _Text("!!", style="bold red"),
+            item,
+        )
+
+    title_style = "bold green" if not issues else "bold yellow"
+    title_text = "All checks passed!" if not issues else f"{len(issues)} issue(s) found"
+    click.echo(_render(_Panel(result_table, title=f"[{title_style}]PPKE Doctor — {title_text}[/{title_style}]", border_style="blue")))
+
+
+# ── notebook command ──
+
+
+_NOTEBOOK_FILENAME = "RESEARCH_NOTEBOOK.md"
+
+
+def _get_notebook_path(vault_path: Path) -> Path:
+    """Return the path to the research notebook in the vault."""
+    return vault_path / _NOTEBOOK_FILENAME
+
+
+def _append_to_notebook(
+    vault_path: Path,
+    question: str,
+    answer: str,
+    book: str | None = None,
+    quotes: list[dict] | None = None,
+):
+    """Append a query/answer entry to the research notebook."""
+    import datetime
+
+    notebook_path = _get_notebook_path(vault_path)
+
+    if not notebook_path.exists():
+        header = (
+            "# PPKE Research Notebook\n\n"
+            "Auto-generated research log. Each entry records a query, "
+            "its answer, and supporting evidence.\n\n---\n\n"
+        )
+        notebook_path.write_text(header)
+
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    scope = f"Book: {book}" if book else "Cross-book query"
+
+    entry_lines = [
+        f"## [{timestamp}] {scope}\n",
+        f"**Question:** {question}\n",
+        f"**Answer:**\n\n{answer}\n",
+    ]
+
+    if quotes:
+        entry_lines.append("**Evidence:**\n")
+        for q in quotes:
+            pid = q.get("paragraph_id", "?")
+            quote_text = q.get("quote", "")
+            entry_lines.append(f"- `{pid}`: \"{quote_text}\"\n")
+
+    entry_lines.append("\n---\n\n")
+
+    with open(notebook_path, "a") as f:
+        f.writelines(entry_lines)
+
+
+@main.command()
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path",
+)
+@click.option("--tail", type=int, default=None, help="Show last N entries")
+@click.option("--clear", is_flag=True, help="Delete the notebook file")
+def notebook(vault_path: Path | None, tail: int | None, clear: bool):
+    """View or manage the research notebook (query/answer log).
+
+    The notebook is automatically updated when you run queries. Use this
+    command to view, tail, or clear your research history.
+
+    Examples:
+        ppke notebook
+        ppke notebook --tail 5
+        ppke notebook --clear
+    """
+    cfg = Config.load()
+    vp = vault_path or cfg.vault_path
+    nb_path = _get_notebook_path(vp)
+
+    if clear:
+        if nb_path.exists():
+            nb_path.unlink()
+            click.echo("Research notebook cleared.")
+        else:
+            click.echo("No notebook to clear.")
+        return
+
+    if not nb_path.exists():
+        click.echo("No research notebook found yet.")
+        click.echo("Run a query or cross-query to start logging entries.")
+        click.echo(f"  Notebook location: {nb_path}")
+        return
+
+    content = nb_path.read_text()
+
+    if tail is not None:
+        # Split by entries (separated by ---) and take the last N
+        entries = [e.strip() for e in content.split("---") if e.strip()]
+        # First entry is the header
+        header = entries[0] if entries else ""
+        data_entries = entries[1:] if len(entries) > 1 else []
+        shown = data_entries[-tail:] if tail < len(data_entries) else data_entries
+        click.echo(f"Showing last {len(shown)} of {len(data_entries)} entries:\n")
+        for entry in shown:
+            click.echo(entry)
+            click.echo("\n---\n")
+    else:
+        click.echo(content)
+
+    click.echo(f"\nNotebook: {nb_path}")
+    click.echo(f"Size: {nb_path.stat().st_size:,} bytes")
+
+
+# ── menu command ──
+
+
+@main.command()
+def menu():
+    """Interactive guided menu for running PPKE commands.
+
+    Presents a numbered menu of actions, prompts for arguments,
+    shows the equivalent CLI command, and optionally executes it.
+
+    Example:
+        ppke menu
+    """
+    click.echo(_render(_Rule("[bold blue]PPKE Interactive Menu[/bold blue]")))
+    click.echo()
+
+    actions = [
+        ("Ingest a book", "ingest"),
+        ("Parse a book (dry run)", "parse"),
+        ("Query a single book", "query"),
+        ("Cross-query all books", "cross-query"),
+        ("Re-read chapters", "re-read"),
+        ("Search paragraphs", "search"),
+        ("List books", "list"),
+        ("Show statistics", "stats"),
+        ("Run doctor diagnostics", "doctor"),
+        ("View research notebook", "notebook"),
+        ("Show configuration", "config"),
+        ("Show cheat sheet", "cheat"),
+    ]
+
+    for i, (label, _) in enumerate(actions, 1):
+        click.echo(f"  {i:2d}. {label}")
+    click.echo(f"   0. Exit")
+    click.echo()
+
+    choice = click.prompt("Select an action", type=int)
+    if choice == 0:
+        click.echo("Bye!")
+        return
+
+    if choice < 1 or choice > len(actions):
+        click.echo("Invalid choice.")
+        return
+
+    label, cmd = actions[choice - 1]
+    click.echo()
+    click.echo(f"Selected: {label}")
+    click.echo()
+
+    # Build command based on selection
+    parts = ["ppke", cmd]
+
+    if cmd == "ingest":
+        filepath = click.prompt("Path to markdown file")
+        title = click.prompt("Book title")
+        author = click.prompt("Book author")
+        year = click.prompt("Publication year (optional, press Enter to skip)", default="", show_default=False)
+        resume = click.confirm("Resume from checkpoint?", default=False)
+        double_pass = click.confirm("Enable double-pass extraction?", default=False)
+
+        parts.extend([filepath, "--title", f'"{title}"', "--author", f'"{author}"'])
+        if year:
+            parts.extend(["--year", year])
+        if resume:
+            parts.append("--resume")
+        if double_pass:
+            parts.append("--double-pass")
+
+    elif cmd == "parse":
+        filepath = click.prompt("Path to markdown file")
+        title = click.prompt("Book title", default="Untitled")
+        author = click.prompt("Author", default="Unknown")
+        parts.extend([filepath, "--title", f'"{title}"', "--author", f'"{author}"'])
+
+    elif cmd == "query":
+        book = click.prompt("Book folder name")
+        question = click.prompt("Question")
+        parts.extend(["--book", f'"{book}"', "--question", f'"{question}"'])
+
+    elif cmd == "cross-query":
+        question = click.prompt("Question")
+        parts.extend(["--question", f'"{question}"'])
+
+    elif cmd == "re-read":
+        book = click.prompt("Book folder name")
+        chapters = click.prompt("Chapter numbers (comma-separated)")
+        parts.extend(["--book", f'"{book}"', "--chapters", f'"{chapters}"'])
+
+    elif cmd == "search":
+        text = click.prompt("Search text")
+        max_results = click.prompt("Max results", type=int, default=20)
+        parts.extend([f'"{text}"', "--max-results", str(max_results)])
+
+    # Commands that need no arguments: list, stats, doctor, notebook, config, cheat
+
+    click.echo()
+    full_cmd = " ".join(parts)
+    click.echo(_render(_Panel(full_cmd, title="[bold]Command[/bold]", border_style="cyan")))
+    click.echo()
+
+    if click.confirm("Execute this command now?", default=True):
+        click.echo()
+        # Invoke the appropriate subcommand via Click's context
+        ctx = click.get_current_context()
+        try:
+            ctx.invoke(main.commands[cmd])
+        except (SystemExit, click.ClickException):
+            pass
+        except TypeError:
+            # Command requires arguments we can't pass via ctx.invoke easily
+            # Fall back to suggesting manual execution
+            click.echo("This command requires arguments. Please run it manually:")
+            click.echo(f"  {full_cmd}")
+
+
+# ── tui command ──
+
+
+@main.command()
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path",
+)
+def tui(vault_path: Path | None):
+    """Launch an interactive terminal dashboard.
+
+    Browse books, view summaries, stats, and run quick searches
+    from a rich terminal interface.
+
+    Example:
+        ppke tui
+    """
+    from ppke.tui import run_dashboard
+
+    cfg = Config.load()
+    vp = vault_path or cfg.vault_path
+
+    run_dashboard(vp, cfg)
 
 
 if __name__ == "__main__":  # pragma: no cover
