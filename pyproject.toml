@@ -22,6 +22,24 @@ dev = [
     "pytest-asyncio>=0.21",
     "pytest-cov>=4.0",
 ]
+# Vector database layer (fast semantic search without LLM)
+vector = [
+    "chromadb>=0.4.0",
+]
+# Knowledge graph layer (concept-level graph reasoning)
+graph = [
+    "networkx>=3.0",
+]
+# Full async file I/O (recommended for large corpora)
+async = [
+    "aiofiles>=23.0",
+]
+# All optional extras at once
+all = [
+    "chromadb>=0.4.0",
+    "networkx>=3.0",
+    "aiofiles>=23.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["ppke/tests"]

@@ -25,6 +25,9 @@ from ppke.pipeline.validator import (
     validate_chapter_coverage,
     validate_coverage,
 )
+from ppke.progress.tracker import ProgressTracker
+from ppke.vectordb.store import VectorStore
+from ppke.graph.knowledge_graph import KnowledgeGraph
 
 logger = logging.getLogger(__name__)
 
@@ -327,6 +330,9 @@ def ingest_book(
     progress_callback: ProgressCallback | None = None,
     human_operator: str = "",
     resume: bool = False,
+    tracker: ProgressTracker | None = None,
+    vector_store: VectorStore | None = None,
+    knowledge_graph: KnowledgeGraph | None = None,
 ) -> Path:
     """Run the full ingestion pipeline for a book.
 
@@ -341,6 +347,8 @@ def ingest_book(
     6. Pattern detection
     7. Author model generation
     8. Write all output files (per-book + global vault files)
+    9. Index into vector store (if available)
+    10. Update knowledge graph (if available)
 
     Args:
         book: Parsed Book object.
@@ -348,6 +356,9 @@ def ingest_book(
         progress_callback: Optional callable(stage_name, detail) for progress updates.
         human_operator: Name of the human operator for meta.yml versioning.
         resume: If True, resume from last checkpoint instead of starting fresh.
+        tracker: Optional ProgressTracker for task/progress tracking.
+        vector_store: Optional VectorStore for semantic search indexing.
+        knowledge_graph: Optional KnowledgeGraph for graph-based reasoning.
 
     Returns:
         Path to the book's output directory.
@@ -359,6 +370,17 @@ def ingest_book(
             if progress_callback:
                 progress_callback(stage, detail)
             logger.info("[%s] %s", stage, detail)
+
+    # ── Progress tracker: register book ──
+    if tracker is not None:
+        tracker.register_book(
+            book_folder=book.folder_name,
+            title=book.title,
+            author=book.author,
+            total_chapters=len(book.chapters),
+            total_paragraphs=book.total_paragraphs,
+        )
+        tracker.start_book(book.folder_name)
 
     # ── Stage 0: Split long paragraphs into sub-paragraphs ──
     split_count_before = book.total_paragraphs
@@ -440,6 +462,13 @@ def ingest_book(
                         completed_indices.append(idx)
                         all_extractions.extend(results)
                         _save_checkpoint(cp_path, completed_indices, all_extractions)
+                        if tracker is not None:
+                            tracker.update_chapter(
+                                book.folder_name,
+                                ch.title,
+                                len(completed_indices),
+                                len(all_extractions),
+                            )
                     _progress("extraction", f"Chapter {ch.number:02d} complete (checkpoint saved)")
                 except Exception as e:
                     logger.error(
@@ -476,6 +505,13 @@ def ingest_book(
             all_extractions.extend(chapter_results)
             completed_indices.append(idx)
             _save_checkpoint(cp_path, completed_indices, all_extractions)
+            if tracker is not None:
+                tracker.update_chapter(
+                    book.folder_name,
+                    chapter.title,
+                    len(completed_indices),
+                    len(all_extractions),
+                )
             _progress("checkpoint", f"Chapter {chapter.number:02d} checkpoint saved")
 
     # ── Stage 2: Double-pass (if enabled) ──
@@ -607,10 +643,53 @@ def ingest_book(
     _progress("output", "Updating global vault files")
     write_global_files(config.vault_path, config)
 
+    # ── Stage 9: Index into vector store (semantic search layer) ──
+    if vector_store is not None and vector_store.available:
+        _progress("vector_index", f"Indexing '{book.title}' into vector store")
+        try:
+            import json as _json
+            ext_path = book_dir / "extractions.json"
+            ext_dicts: list[dict] = []
+            if ext_path.exists():
+                ext_dicts = _json.loads(ext_path.read_text())
+            indexed = vector_store.index_extractions(
+                book_folder=book.folder_name,
+                book_title=book.title,
+                author=book.author,
+                extractions=ext_dicts,
+            )
+            _progress("vector_index", f"Indexed {indexed} paragraphs into vector store")
+        except Exception as _e:
+            logger.warning("Vector store indexing failed (non-critical): %s", _e)
+
+    # ── Stage 10: Update knowledge graph ──
+    if knowledge_graph is not None:
+        _progress("graph", f"Updating knowledge graph for '{book.title}'")
+        try:
+            import json as _json
+            ext_path = book_dir / "extractions.json"
+            ext_dicts = []
+            if ext_path.exists():
+                ext_dicts = _json.loads(ext_path.read_text())
+            edges = knowledge_graph.add_book_extractions(
+                book_folder=book.folder_name,
+                book_title=book.title,
+                author=book.author,
+                extractions=ext_dicts,
+            )
+            knowledge_graph.save()
+            _progress("graph", f"Knowledge graph updated ({edges} edges added)")
+        except Exception as _e:
+            logger.warning("Knowledge graph update failed (non-critical): %s", _e)
+
     # Clean up checkpoint file on success
     if cp_path.exists():
         cp_path.unlink()
         _progress("cleanup", "Checkpoint file removed (ingestion complete)")
+
+    # ── Mark book complete in progress tracker ──
+    if tracker is not None:
+        tracker.complete_book(book.folder_name)
 
     _progress("complete", f"Book ingested: {book_dir}")
     return book_dir

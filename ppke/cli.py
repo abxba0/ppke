@@ -291,6 +291,13 @@ def ingest(
         click.echo("  " + _render(line))
 
     from ppke.pipeline.orchestrator import ingest_book
+    from ppke.progress.tracker import ProgressTracker
+    from ppke.vectordb.store import VectorStore
+    from ppke.graph.knowledge_graph import KnowledgeGraph
+
+    tracker = ProgressTracker()
+    vector_store = VectorStore(config.vault_path)
+    knowledge_graph = KnowledgeGraph(config.vault_path)
 
     try:
         book_dir = ingest_book(
@@ -298,8 +305,13 @@ def ingest(
             progress_callback=progress_callback,
             human_operator=operator,
             resume=resume,
+            tracker=tracker,
+            vector_store=vector_store,
+            knowledge_graph=knowledge_graph,
         )
     except Exception as e:
+        if tracker.get_book(book.folder_name):
+            tracker.fail_book(book.folder_name, str(e))
         raise click.ClickException(f"Ingestion failed: {e}") from e
 
     click.echo(_render(_Text(f"\nDone! Output written to: {book_dir}", style="bold green")))
@@ -1068,14 +1080,20 @@ def cheat():
     commands = [
         ("ppke init", "First-time setup wizard", "ppke init"),
         ("ppke ingest", "Ingest a markdown book into the KB", 'ppke ingest book.md --title "Being and Time" --author "Heidegger"'),
+        ("ppke async-ingest", "Async ingestion (asyncio pipeline)", 'ppke async-ingest book.md --title "Critique" --author "Kant"'),
         ("ppke parse", "Preview chapter/paragraph structure", 'ppke parse book.md --title "Republic" --author "Plato"'),
         ("ppke query", "Query a single encoded book", 'ppke query --book "Book_Republic_Plato" --question "What is justice?"'),
         ("ppke cross-query", "Query across all books", 'ppke cross-query --question "How do they differ on free will?"'),
         ("ppke re-read", "Re-extract specific chapters", 'ppke re-read --book "Book_Republic_Plato" --chapters "1,3"'),
         ("ppke config", "View or update configuration", "ppke config --show"),
+        ("ppke status", "Show ingestion progress dashboard", "ppke status"),
         ("ppke list", "List all ingested books", "ppke list"),
         ("ppke stats", "Show vault-wide statistics", "ppke stats"),
         ("ppke search", "Local text search (no LLM)", 'ppke search "Dasein" --max-results 10'),
+        ("ppke vector-search", "Semantic search via vector DB", 'ppke vector-search "nature of consciousness"'),
+        ("ppke graph-query", "Query the knowledge graph", 'ppke graph-query "Dasein" --depth 2'),
+        ("ppke graph-stats", "Knowledge graph statistics", "ppke graph-stats"),
+        ("ppke graph-build", "Build/rebuild knowledge graph", "ppke graph-build"),
         ("ppke doctor", "Run diagnostic checks on setup", "ppke doctor"),
         ("ppke notebook", "View or manage research log", "ppke notebook"),
         ("ppke menu", "Interactive guided command menu", "ppke menu"),
@@ -1458,6 +1476,504 @@ def tui(vault_path: Path | None):
     vp = vault_path or cfg.vault_path
 
     run_dashboard(vp, cfg)
+
+
+# ── status command ──
+
+
+@main.command()
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path",
+)
+@click.option("--clear-done", is_flag=True, help="Remove completed books from the tracker")
+def status(vault_path: Path | None, clear_done: bool):
+    """Show ingestion progress for all tracked books.
+
+    Displays a live dashboard of queued, in-progress, completed, and failed
+    ingestion jobs with chapter and paragraph completion percentages.
+
+    Examples:
+        ppke status
+        ppke status --clear-done
+    """
+    from ppke.progress.tracker import ProgressTracker
+
+    tracker = ProgressTracker()
+
+    if clear_done:
+        removed = tracker.clear_completed()
+        click.echo(f"Removed {removed} completed book(s) from progress tracker.")
+        return
+
+    summary = tracker.summary()
+    all_books = tracker.get_all()
+
+    if not all_books:
+        click.echo("No ingestion jobs tracked yet.")
+        click.echo("Run 'ppke ingest' to start tracking progress.")
+        return
+
+    # Summary panel
+    sum_tbl = _Table(show_header=False, box=None, padding=(0, 1))
+    sum_tbl.add_column("Key", style="bold")
+    sum_tbl.add_column("Value", justify="right")
+    sum_tbl.add_row("Total jobs:", str(summary["total"]))
+    sum_tbl.add_row("Queued:", str(summary["queued"]))
+    sum_tbl.add_row("In progress:", str(summary["in_progress"]))
+    sum_tbl.add_row("Complete:", str(summary["complete"]))
+    sum_tbl.add_row("Failed:", str(summary["failed"]))
+    sum_tbl.add_row("", "")
+    ch_pct = (
+        f"{summary['completed_chapters'] / summary['total_chapters'] * 100:.1f}%"
+        if summary["total_chapters"] > 0 else "N/A"
+    )
+    sum_tbl.add_row("Chapters:", f"{summary['completed_chapters']}/{summary['total_chapters']} ({ch_pct})")
+    para_pct = (
+        f"{summary['completed_paragraphs'] / summary['total_paragraphs'] * 100:.1f}%"
+        if summary["total_paragraphs"] > 0 else "N/A"
+    )
+    sum_tbl.add_row("Paragraphs:", f"{summary['completed_paragraphs']}/{summary['total_paragraphs']} ({para_pct})")
+    click.echo(_render(_Panel(sum_tbl, title="[bold]PPKE Ingestion Progress[/bold]")))
+    click.echo()
+
+    # Per-book table
+    book_tbl = _Table(title="Books", border_style="blue", show_header=True)
+    book_tbl.add_column("Book", width=32)
+    book_tbl.add_column("Author", width=18)
+    book_tbl.add_column("Status", width=12)
+    book_tbl.add_column("Chapters", justify="right", width=12)
+    book_tbl.add_column("Paragraphs", justify="right", width=14)
+    book_tbl.add_column("Current Chapter", width=28)
+
+    status_styles = {
+        "complete": "bold green",
+        "in_progress": "bold cyan",
+        "queued": "dim",
+        "failed": "bold red",
+    }
+
+    for bp in sorted(all_books.values(), key=lambda b: b.started_at or ""):
+        style = status_styles.get(bp.status, "dim")
+        ch_str = f"{bp.completed_chapters}/{bp.total_chapters}"
+        para_str = f"{bp.completed_paragraphs}/{bp.total_paragraphs}"
+        current = bp.current_chapter or ("-" if bp.status != "failed" else (bp.error or "error")[:28])
+        book_tbl.add_row(
+            (bp.title[:29] + "...") if len(bp.title) > 32 else bp.title,
+            (bp.author[:15] + "...") if len(bp.author) > 18 else bp.author,
+            _Text(bp.status, style=style),
+            ch_str,
+            para_str,
+            current,
+        )
+
+    click.echo(_render(book_tbl))
+    click.echo()
+    click.echo("  Tip: Use 'ppke status --clear-done' to remove completed entries.")
+
+
+# ── vector-search command ──
+
+
+@main.command("vector-search")
+@click.argument("query")
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path",
+)
+@click.option("--book", default=None, help="Restrict search to a specific book folder")
+@click.option(
+    "--n-results", type=int, default=10, help="Number of results to return (default: 10)"
+)
+@click.option("--rebuild", is_flag=True, help="Rebuild the entire vector index from scratch")
+def vector_search(
+    query: str,
+    vault_path: Path | None,
+    book: str | None,
+    n_results: int,
+    rebuild: bool,
+):
+    """Semantic (vector) search across all indexed paragraphs.
+
+    Uses ChromaDB embeddings for millisecond concept recall without any LLM
+    calls. Finds paragraphs semantically similar to the query even when
+    exact keywords do not match.
+
+    Requires: pip install chromadb  (or: pip install "ppke[vector]")
+
+    Examples:
+        ppke vector-search "the nature of consciousness"
+        ppke vector-search "free will" --book "Book_Republic_Plato"
+        ppke vector-search "time" --n-results 20
+        ppke vector-search "" --rebuild   # rebuild the index
+    """
+    cfg = Config.load()
+    vp = vault_path or cfg.vault_path
+
+    from ppke.vectordb.store import VectorStore
+
+    store = VectorStore(vp)
+
+    if not store.available:
+        click.echo(
+            "Vector search unavailable: chromadb is not installed.\n"
+            "Install it with:  pip install chromadb\n"
+            "Or:               pip install 'ppke[vector]'",
+            err=True,
+        )
+        sys.exit(1)
+
+    if rebuild:
+        click.echo("Rebuilding vector index from vault...")
+        results = store.rebuild_index(vp)
+        total = sum(results.values())
+        click.echo(f"Rebuilt index: {len(results)} books, {total} vectors.")
+        if not query:
+            return
+
+    if not query:
+        click.echo(f"Vector store contains {store.count()} indexed vectors.")
+        return
+
+    if book:
+        book_filter = _safe_book_dir(vp, book).name
+    else:
+        book_filter = None
+
+    hits = store.search(query, n_results=n_results, book_filter=book_filter)
+
+    if not hits:
+        click.echo(f'No vector search results for "{query}".')
+        if store.count() == 0:
+            click.echo(
+                "Hint: The vector index is empty. "
+                "Run 'ppke vector-search --rebuild' or re-ingest your books."
+            )
+        return
+
+    result_tbl = _Table(
+        title=f'Vector Search: "{_escape(query)}" — {len(hits)} result(s)',
+        border_style="dim",
+        show_header=True,
+    )
+    result_tbl.add_column("Book / Para ID", style="cyan", width=30)
+    result_tbl.add_column("Dist", width=7, justify="right")
+    result_tbl.add_column("Snippet")
+    for hit in hits:
+        snippet = hit["document"]
+        if len(snippet) > 90:
+            snippet = snippet[:90] + "..."
+        result_tbl.add_row(
+            f"{hit['book_folder']}\n{hit['paragraph_id']}",
+            str(hit["distance"]),
+            snippet,
+        )
+    click.echo(_render(result_tbl))
+
+
+# ── async-ingest command ──
+
+
+@main.command("async-ingest")
+@click.argument("filepath", type=click.Path(exists=True, path_type=Path))
+@click.option("--title", required=True, help="Book title")
+@click.option("--author", required=True, help="Book author")
+@click.option("--year", default=None, help="Publication year")
+@click.option(
+    "--provider",
+    type=click.Choice(SUPPORTED_PROVIDERS),
+    default=None,
+    help="LLM provider (overrides config)",
+)
+@click.option("--model", default=None, help="Model name (overrides config)")
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output vault path (overrides config)",
+)
+@click.option("--batch-size", type=click.IntRange(min=1), default=None, help="Paragraphs per LLM batch")
+@click.option("--operator", default="", help="Human operator name for versioning")
+@click.option("--double-pass", is_flag=True, help="Enable double-pass extraction")
+@click.option("--resume", is_flag=True, help="Resume from last checkpoint")
+@click.option("-v", "--verbose", is_flag=True, help="Verbose logging")
+def async_ingest(
+    filepath: Path,
+    title: str,
+    author: str,
+    year: str | None,
+    provider: str | None,
+    model: str | None,
+    vault_path: Path | None,
+    batch_size: int | None,
+    operator: str,
+    double_pass: bool,
+    resume: bool,
+    verbose: bool,
+):
+    """Ingest a book using the async (asyncio-based) pipeline.
+
+    Same as 'ppke ingest' but uses asyncio.gather for concurrent chapter
+    extraction and analysis stages, maximising throughput on large books.
+    Integrates with the progress tracker, vector store, and knowledge graph.
+
+    Examples:
+        ppke async-ingest book.md --title "Being and Time" --author "Heidegger"
+        ppke async-ingest book.md --title "Republic" --author "Plato" --resume
+    """
+    _setup_logging(verbose)
+
+    config = _load_config_with_overrides(provider, model, vault_path, batch_size)
+    if double_pass:
+        config.double_pass = True
+    _require_api_key(config)
+
+    click.echo(f"Parsing {filepath}...")
+    from ppke.parser.markdown import parse_markdown_book
+
+    book = parse_markdown_book(filepath, title, author, year)
+    click.echo(
+        f"Parsed: {len(book.chapters)} chapters, {book.total_paragraphs} paragraphs"
+    )
+
+    click.echo("Starting async ingestion pipeline...")
+
+    def progress_callback(stage: str, detail: str):
+        stage_t = _Text(f"[{stage}]", style="bold cyan")
+        line = _Text.assemble(stage_t, " ", detail)
+        click.echo("  " + _render(line))
+
+    from ppke.pipeline.async_orchestrator import run_ingest_async
+    from ppke.progress.tracker import ProgressTracker
+    from ppke.vectordb.store import VectorStore
+    from ppke.graph.knowledge_graph import KnowledgeGraph
+
+    tracker = ProgressTracker()
+    vector_store = VectorStore(config.vault_path)
+    kg = KnowledgeGraph(config.vault_path)
+
+    try:
+        book_dir = run_ingest_async(
+            book=book,
+            config=config,
+            progress_callback=progress_callback,
+            human_operator=operator,
+            resume=resume,
+        )
+        # Post-ingestion: update vector store and graph
+        import json as _json
+        ext_path = book_dir / "extractions.json"
+        ext_dicts = []
+        if ext_path.exists():
+            ext_dicts = _json.loads(ext_path.read_text())
+
+        tracker.register_book(book.folder_name, title, author,
+                               total_chapters=len(book.chapters),
+                               total_paragraphs=book.total_paragraphs)
+        tracker.complete_book(book.folder_name)
+
+        if vector_store.available and ext_dicts:
+            indexed = vector_store.index_extractions(book.folder_name, title, author, ext_dicts)
+            click.echo(f"  Indexed {indexed} paragraphs into vector store.")
+
+        if ext_dicts:
+            edges = kg.add_book_extractions(book.folder_name, title, author, ext_dicts)
+            kg.save()
+            click.echo(f"  Knowledge graph updated ({edges} edges added).")
+
+    except Exception as e:
+        raise click.ClickException(f"Async ingestion failed: {e}") from e
+
+    click.echo(_render(_Text(f"\nDone! Output written to: {book_dir}", style="bold green")))
+
+
+# ── graph-query command ──
+
+
+@main.command("graph-query")
+@click.argument("concept")
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path",
+)
+@click.option("--depth", type=int, default=2, help="Graph traversal depth (default: 2)")
+@click.option("--provenance", is_flag=True, help="Show per-paragraph provenance instead of concept expansion")
+def graph_query(concept: str, vault_path: Path | None, depth: int, provenance: bool):
+    """Query the knowledge graph for a concept.
+
+    Without --provenance: expands *concept* to all related concepts within
+    *depth* hops, showing which books mention each.
+
+    With --provenance: shows every book and paragraph that mentions *concept*
+    directly.
+
+    Examples:
+        ppke graph-query "Dasein"
+        ppke graph-query "free will" --depth 3
+        ppke graph-query "consciousness" --provenance
+    """
+    cfg = Config.load()
+    vp = vault_path or cfg.vault_path
+
+    from ppke.graph.knowledge_graph import KnowledgeGraph
+
+    kg = KnowledgeGraph(vp)
+
+    if kg.stats()["concepts"] == 0:
+        click.echo(
+            "Knowledge graph is empty. "
+            "Run 'ppke graph-build' to build it from your vault.",
+            err=True,
+        )
+        sys.exit(1)
+
+    if provenance:
+        results = kg.concept_provenance(concept)
+        if not results:
+            click.echo(f'No provenance found for concept: "{concept}"')
+            return
+
+        prov_tbl = _Table(
+            title=f'Provenance: "{_escape(concept)}" — {len(results)} paragraph(s)',
+            border_style="blue",
+        )
+        prov_tbl.add_column("Book", style="cyan", width=35)
+        prov_tbl.add_column("Paragraph ID", width=16)
+        prov_tbl.add_column("Relation", width=14)
+        for r in results:
+            prov_tbl.add_row(r["book_folder"], r["paragraph_id"], r["relation"])
+        click.echo(_render(prov_tbl))
+    else:
+        books = kg.books_mentioning(concept)
+        if books:
+            click.echo(f'Books mentioning "{concept}": {", ".join(books)}')
+            click.echo()
+
+        results = kg.expand_concept(concept, depth=depth)
+        if not results:
+            click.echo(f'No related concepts found for: "{concept}"')
+            return
+
+        exp_tbl = _Table(
+            title=f'Concept expansion: "{_escape(concept)}" (depth={depth}) — {len(results)} result(s)',
+            border_style="green",
+        )
+        exp_tbl.add_column("Related Concept", style="cyan", width=30)
+        exp_tbl.add_column("Relation", width=16)
+        exp_tbl.add_column("Books", width=40)
+        for r in results:
+            exp_tbl.add_row(
+                r["label"],
+                r["relation"],
+                ", ".join(r["books"][:3]) + ("…" if len(r["books"]) > 3 else ""),
+            )
+        click.echo(_render(exp_tbl))
+
+
+# ── graph-stats command ──
+
+
+@main.command("graph-stats")
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path",
+)
+def graph_stats(vault_path: Path | None):
+    """Show knowledge graph statistics.
+
+    Displays node/edge counts broken down by type (books, concepts, paragraphs).
+
+    Example:
+        ppke graph-stats
+    """
+    cfg = Config.load()
+    vp = vault_path or cfg.vault_path
+
+    from ppke.graph.knowledge_graph import KnowledgeGraph
+
+    kg = KnowledgeGraph(vp)
+    s = kg.stats()
+
+    tbl = _Table(show_header=False, box=None, padding=(0, 1))
+    tbl.add_column("Key", style="bold")
+    tbl.add_column("Value", justify="right")
+    tbl.add_row("Books:", str(s["books"]))
+    tbl.add_row("Concepts:", str(s["concepts"]))
+    tbl.add_row("Paragraphs:", str(s["paragraphs"]))
+    tbl.add_row("Edges:", str(s["edges"]))
+    if s["networkx_available"]:
+        tbl.add_row("Connected components:", str(s["weakly_connected_components"]))
+    tbl.add_row("", "")
+    tbl.add_row("NetworkX available:", "yes" if s["networkx_available"] else "no (install: pip install networkx)")
+    tbl.add_row("Graph file:", str(vp / "knowledge_graph.json"))
+    click.echo(_render(_Panel(tbl, title="[bold]PPKE Knowledge Graph Statistics[/bold]")))
+
+
+# ── graph-build command ──
+
+
+@main.command("graph-build")
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path",
+)
+@click.option("--reset", is_flag=True, help="Delete existing graph before rebuilding")
+def graph_build(vault_path: Path | None, reset: bool):
+    """Build or rebuild the knowledge graph from all vault books.
+
+    Reads every extractions.json in the vault and constructs the concept-level
+    graph. Run this once after first ingestion, or after major re-reads.
+
+    Examples:
+        ppke graph-build
+        ppke graph-build --reset   # rebuild from scratch
+    """
+    cfg = Config.load()
+    vp = vault_path or cfg.vault_path
+
+    if not vp.exists():
+        click.echo(f"Vault not found: {vp}", err=True)
+        sys.exit(1)
+
+    from ppke.graph.knowledge_graph import KnowledgeGraph
+
+    if reset:
+        graph_file = vp / "knowledge_graph.json"
+        if graph_file.exists():
+            graph_file.unlink()
+            click.echo("Existing graph deleted.")
+        kg = KnowledgeGraph(vp)
+    else:
+        kg = KnowledgeGraph(vp)
+
+    click.echo("Building knowledge graph from vault...")
+    results = kg.build_from_vault(vp)
+    kg.save()
+
+    total_edges = sum(results.values())
+    tbl = _Table(title="Knowledge Graph Build Results", border_style="green")
+    tbl.add_column("Book", style="cyan")
+    tbl.add_column("Edges Added", justify="right", width=12)
+    for book_folder, edges in sorted(results.items()):
+        tbl.add_row(book_folder, str(edges))
+    click.echo(_render(tbl))
+    click.echo()
+
+    s = kg.stats()
+    click.echo(
+        f"Graph saved to {vp / 'knowledge_graph.json'} — "
+        f"{s['concepts']} concepts, {s['edges']} total edges across {s['books']} books."
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover
