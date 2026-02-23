@@ -2205,5 +2205,163 @@ def promote_plugin(plugin_name: str, force: bool):
     click.echo(f"Plugin is now available as an official template at: {official_path}")
 
 
+# ── template command group ──
+
+
+@main.group("template")
+def template():
+    """
+    Manage PPKE templates (install, uninstall, upgrade).
+
+    Templates extend PPKE with domain-specific analysis capabilities.
+    """
+    pass
+
+
+@template.command("install")
+@click.argument("source")
+@click.option("--force", is_flag=True, help="Overwrite existing template")
+def template_install(source: str, force: bool):
+    """
+    Install a template from GitHub or local path.
+
+    SOURCE can be:
+    - GitHub URL: https://github.com/user/ppke-template-name
+    - Local path: ./my-template/ or ~/templates/my-template/
+
+    Examples:
+        ppke template install https://github.com/user/ppke-template-legal
+        ppke template install ./my-custom-template/
+        ppke template install ~/Downloads/scientific-template/ --force
+    """
+    from ppke.templates.installer import (
+        install_from_github,
+        install_from_local,
+        TemplateInstallError
+    )
+
+    try:
+        # Determine if source is GitHub URL or local path
+        if source.startswith('http://') or source.startswith('https://'):
+            # GitHub URL
+            template_name = install_from_github(source, force=force)
+        else:
+            # Local path
+            local_path = Path(source).expanduser().resolve()
+            template_name = install_from_local(local_path, force=force)
+
+        # Success message already printed by installer module
+
+    except TemplateInstallError as e:
+        click.echo(f"\nInstallation failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"\nUnexpected error: {e}", err=True)
+        sys.exit(1)
+
+
+@template.command("uninstall")
+@click.argument("template_name")
+@click.option("--force", is_flag=True, help="Skip confirmation prompt")
+def template_uninstall(template_name: str, force: bool):
+    """
+    Uninstall a custom template.
+
+    Official templates cannot be uninstalled.
+
+    Examples:
+        ppke template uninstall my_domain
+        ppke template uninstall scientific_research --force
+    """
+    from ppke.templates.installer import uninstall_template, TemplateInstallError
+
+    try:
+        success = uninstall_template(template_name, force=force)
+        # Success message already printed by uninstall_template function
+    except TemplateInstallError as e:
+        click.echo(f"\nUninstallation failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"\nUnexpected error: {e}", err=True)
+        sys.exit(1)
+
+
+@template.command("upgrade")
+@click.argument("template_name")
+def template_upgrade(template_name: str):
+    """
+    Upgrade an installed template to the latest version.
+
+    Only works for templates installed from GitHub.
+    For locally-installed templates, reinstall with --force.
+
+    Examples:
+        ppke template upgrade legal
+        ppke template upgrade my_domain
+    """
+    from ppke.templates.installer import upgrade_template, TemplateInstallError
+
+    try:
+        upgrade_template(template_name)
+    except TemplateInstallError as e:
+        click.echo(f"\n❌ Upgrade failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"\n❌ Unexpected error: {e}", err=True)
+        sys.exit(1)
+
+
+@template.command("list")
+def template_list():
+    """
+    List all installed templates with metadata.
+
+    Shows:
+    - Template name
+    - Version
+    - Tier (official/custom)
+    - Installation source
+    - Author
+
+    Examples:
+        ppke template list
+    """
+    from ppke.templates.installer import list_installed_templates
+
+    templates = list_installed_templates()
+
+    if not templates:
+        click.echo("No templates installed.")
+        return
+
+    # Group by tier
+    official = [t for t in templates if t['tier'] == 'official']
+    custom = [t for t in templates if t['tier'] == 'custom']
+
+    # Display official templates
+    if official:
+        click.echo("\nOfficial Templates (Tier 1):")
+        click.echo("-" * 80)
+        for t in official:
+            click.echo(f"  {t['name']:<20} v{t['version']:<10} by {t['author']}")
+            if t['description']:
+                click.echo(f"    {t['description']}")
+            click.echo()
+
+    # Display custom templates
+    if custom:
+        click.echo("\nCustom Templates (Tier 2):")
+        click.echo("-" * 80)
+        for t in custom:
+            source = t.get('source', 'unknown')
+            click.echo(f"  {t['name']:<20} v{t['version']:<10} by {t['author']}")
+            if t['description']:
+                click.echo(f"    {t['description']}")
+            click.echo(f"    Source: {source}")
+            click.echo()
+
+    click.echo(f"\nTotal: {len(templates)} templates ({len(official)} official, {len(custom)} custom)")
+
+
 if __name__ == "__main__":  # pragma: no cover
     main()
