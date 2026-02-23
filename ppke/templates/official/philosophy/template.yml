@@ -1,0 +1,57 @@
+# Philosophy Template - 100% backward compatible with PPKE v1.x
+
+name: philosophy
+version: "2.0.0"
+tier: official
+author: PPKE Core Team
+description: "Philosophical text analysis with argument mapping and concept tracking"
+
+# Pipeline stages (executed in order)
+stages:
+  - id: extraction
+    name: "Structural Extraction"
+    module: ppke.pipeline.stages.extractor
+    prompt: extraction
+
+  - id: logical_map
+    name: "Logical Architecture"
+    module: ppke.pipeline.stages.analyzer
+    prompt: logical_map
+    output_file: "02_Logical_Map.md"
+
+  - id: concepts
+    name: "Concept Indexing"
+    module: ppke.pipeline.stages.concepts
+    prompt: concepts
+    output_file: "03_Concept_Index.md"
+
+  - id: patterns
+    name: "Pattern Detection"
+    module: ppke.pipeline.stages.patterns
+    prompt: patterns
+    output_file: "06_Patterns.md"
+
+# Skip logic (chapters to skip during ingestion)
+skip_chapters:
+  - bibliography
+  - index
+  - appendix
+  - appendices
+  - references
+  - works cited
+  - glossary
+  - endnotes
+  - notes
+  - further reading
+
+# Output configuration
+outputs:
+  folder_format: "Book_{title}_{author}_{year}"
+  files:
+    - "meta.yml"
+    - "01_Raw_Structure.md"
+    - "02_Logical_Map.md"
+    - "03_Concept_Index.md"
+    - "05_Coverage_Report.md"
+    - "06_Patterns.md"
+    - "extractions.json"

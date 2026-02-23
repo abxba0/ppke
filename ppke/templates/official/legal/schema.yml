@@ -1,0 +1,37 @@
+# Legal Extraction Schema
+
+extraction_model:
+  name: LegalExtraction
+  base: BaseExtraction
+  description: "Pydantic model for legal document extraction"
+
+  fields:
+    - name: legal_standard
+      type: str
+      description: "Legal standard applied (e.g., 'strict scrutiny', 'rational basis', 'preponderance of evidence')"
+      default: ""
+
+    - name: case_references
+      type: list[str]
+      description: "Case citations referenced (e.g., 'Brown v. Board of Education', 'Roe v. Wade')"
+      default: []
+
+    - name: statutory_citations
+      type: list[str]
+      description: "Statutory law citations (e.g., '42 U.S.C. § 1983', 'Title VII')"
+      default: []
+
+    - name: holding
+      type: str
+      description: "Main legal holding or conclusion (if present)"
+      default: ""
+
+    - name: legal_reasoning
+      type: list[str]
+      description: "Step-by-step legal reasoning"
+      default: []
+
+    - name: distinguishing_factors
+      type: list[str]
+      description: "Factors that distinguish this case/argument from others"
+      default: []

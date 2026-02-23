@@ -217,6 +217,70 @@ def init():
     click.echo("  ppke --help")
 
 
+# ── list-domains command ──
+
+
+@main.command("list-domains")
+def list_domains():
+    """List all available domain templates.
+
+    Shows both official (Tier 1) and custom (Tier 2) domain templates
+    with their versions and descriptions.
+
+    Example:
+        ppke list-domains
+    """
+    from ppke.templates import list_templates
+
+    console = _RichConsole()
+
+    try:
+        templates = list_templates()
+
+        if not templates:
+            console.print("[yellow]No domain templates found.[/yellow]")
+            console.print("\nTemplates should be located in:")
+            console.print("  - Official: ppke/templates/official/")
+            console.print("  - Custom: ~/.ppke/plugins/")
+            return
+
+        console.print("\n[bold cyan]Available Domain Templates[/bold cyan]\n")
+
+        # Group by tier
+        official = [(name, tier, desc) for name, tier, desc in templates if tier == 'official']
+        custom = [(name, tier, desc) for name, tier, desc in templates if tier == 'custom']
+        errors = [(name, tier, desc) for name, tier, desc in templates if tier == 'error']
+
+        # Display official templates
+        if official:
+            console.print("[bold green]Official Templates (Tier 1)[/bold green]")
+            for name, tier, desc in official:
+                console.print(f"  [cyan]{name:20s}[/cyan] {desc}")
+            console.print()
+
+        # Display custom templates
+        if custom:
+            console.print("[bold yellow]Custom Templates (Tier 2)[/bold yellow]")
+            for name, tier, desc in custom:
+                console.print(f"  [yellow]{name:20s}[/yellow] {desc}")
+            console.print()
+
+        # Display errors
+        if errors:
+            console.print("[bold red]Failed to Load[/bold red]")
+            for name, tier, desc in errors:
+                console.print(f"  [red]{name:20s}[/red] {desc}")
+            console.print()
+
+        console.print(f"[dim]Total: {len(templates)} template(s)[/dim]")
+        console.print("\n[dim]Usage: ppke ingest book.md --domain <name> ...[/dim]\n")
+
+    except Exception as e:
+        console.print(f"[red]Error listing templates: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+
 # ── ingest command ──
 
 
@@ -225,6 +289,7 @@ def init():
 @click.option("--title", required=True, help="Book title")
 @click.option("--author", required=True, help="Book author")
 @click.option("--year", default=None, help="Publication year")
+@click.option("--domain", default="philosophy", help="Domain template (default: philosophy)")
 @click.option(
     "--provider",
     type=click.Choice(SUPPORTED_PROVIDERS),
@@ -248,6 +313,7 @@ def ingest(
     title: str,
     author: str,
     year: str | None,
+    domain: str,
     provider: str | None,
     model: str | None,
     vault_path: Path | None,
@@ -264,6 +330,7 @@ def ingest(
 
     Examples:
         ppke ingest book.md --title "Being and Time" --author "Heidegger" --year 1927
+        ppke ingest book.md --title "Being and Time" --author "Heidegger" --domain legal
         ppke ingest book.md --title "Being and Time" --author "Heidegger" --resume
     """
     _setup_logging(verbose)
@@ -1683,6 +1750,7 @@ def vector_search(
 @click.option("--title", required=True, help="Book title")
 @click.option("--author", required=True, help="Book author")
 @click.option("--year", default=None, help="Publication year")
+@click.option("--domain", default="philosophy", help="Domain template (default: philosophy)")
 @click.option(
     "--provider",
     type=click.Choice(SUPPORTED_PROVIDERS),
@@ -1706,6 +1774,7 @@ def async_ingest(
     title: str,
     author: str,
     year: str | None,
+    domain: str,
     provider: str | None,
     model: str | None,
     vault_path: Path | None,
@@ -1974,6 +2043,166 @@ def graph_build(vault_path: Path | None, reset: bool):
         f"Graph saved to {vp / 'knowledge_graph.json'} — "
         f"{s['concepts']} concepts, {s['edges']} total edges across {s['books']} books."
     )
+
+
+# ── validate-plugin command ──
+
+
+@main.command("validate-plugin")
+@click.argument('plugin_path', type=click.Path(exists=True, path_type=Path))
+def validate_plugin(plugin_path: Path):
+    """Validate a custom plugin structure and security.
+
+    Checks:
+    - Required files present (template.yml, schema.yml, prompts.yml)
+    - YAML syntax is valid
+    - Schema fields are correctly typed
+    - No security issues (dangerous code patterns)
+    - Prompts are well-formed
+
+    Examples:
+        ppke validate-plugin ~/.ppke/plugins/my_domain
+        ppke validate-plugin ./my_custom_plugin/
+    """
+    from ppke.templates.loader import load_template
+    from ppke.templates.validator import validate_template
+
+    plugin_dir = plugin_path.resolve()
+    plugin_name = plugin_dir.name
+
+    click.echo(f"Validating plugin: {plugin_name}")
+    click.echo(f"Location: {plugin_dir}\n")
+
+    try:
+        # Attempt to load template
+        template = load_template(plugin_name)
+
+        # Basic validation passed
+        click.echo(f"OK - Plugin '{plugin_name}' loaded successfully\n")
+
+        # Show metadata
+        click.echo("Plugin Metadata:")
+        click.echo(f"  Name:        {template.name}")
+        click.echo(f"  Version:     {template.version}")
+        click.echo(f"  Tier:        {template.tier}")
+        click.echo(f"  Author:      {template.author}")
+        click.echo(f"  Description: {template.description}")
+        click.echo(f"  Stages:      {len(template.stages)}")
+        click.echo(f"  Prompts:     {len(template.prompts)}")
+        click.echo()
+
+        # Validate structure (raises ValueError if invalid, prints warnings)
+        validate_template(template)
+
+        click.echo()
+        click.echo("OK - Validation complete!")
+
+    except FileNotFoundError as e:
+        click.echo(f"ERROR: Plugin validation failed: {e}", err=True)
+        click.echo("\nMake sure the plugin directory contains:")
+        click.echo("  - template.yml")
+        click.echo("  - schema.yml")
+        click.echo("  - prompts.yml")
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"ERROR: Plugin validation failed: {e}", err=True)
+        sys.exit(1)
+
+
+# ── promote-plugin command ──
+
+
+@main.command("promote-plugin")
+@click.argument('plugin_name')
+@click.option('--force', is_flag=True, help='Skip confirmation prompt')
+def promote_plugin(plugin_name: str, force: bool):
+    """Promote a Tier 2 (custom) plugin to Tier 1 (official).
+
+    This command is for maintainers only. It moves a custom plugin from
+    ~/.ppke/plugins/ to ppke/templates/official/ and updates the registry.
+
+    Prerequisites:
+    - Plugin exists in ~/.ppke/plugins/
+    - Plugin passes validation
+    - Plugin tier is 'custom' in template.yml
+
+    Examples:
+        ppke promote-plugin scientific_research
+        ppke promote-plugin my_domain --force
+    """
+    import shutil
+    from ppke.templates.loader import load_template
+    from ppke.templates.registry import register_plugin
+
+    # Determine paths
+    from pathlib import Path
+    custom_path = Path.home() / ".ppke" / "plugins" / plugin_name
+    official_path = Path(__file__).parent / "templates" / "official" / plugin_name
+
+    # Check if plugin exists in custom
+    if not custom_path.exists():
+        click.echo(f"ERROR: Plugin '{plugin_name}' not found in custom plugins", err=True)
+        click.echo(f"Expected location: {custom_path}")
+        sys.exit(1)
+
+    # Load and validate
+    try:
+        template = load_template(plugin_name)
+    except Exception as e:
+        click.echo(f"ERROR: Failed to load plugin: {e}", err=True)
+        sys.exit(1)
+
+    # Check tier
+    if template.tier != 'custom':
+        click.echo(f"ERROR: Plugin tier is '{template.tier}', expected 'custom'", err=True)
+        click.echo("Promotion is only for Tier 2 (custom) plugins.")
+        sys.exit(1)
+
+    # Check if already exists in official
+    if official_path.exists():
+        click.echo(f"ERROR: Plugin already exists in official templates: {official_path}", err=True)
+        sys.exit(1)
+
+    # Confirm
+    if not force:
+        click.echo(f"About to promote '{plugin_name}' to Tier 1 (official):")
+        click.echo(f"  From: {custom_path}")
+        click.echo(f"  To: {official_path}")
+        click.echo()
+        if not click.confirm("Continue with promotion?"):
+            click.echo("Cancelled.")
+            return
+
+    # Copy to official
+    try:
+        shutil.copytree(custom_path, official_path)
+        click.echo(f"OK - Copied plugin to: {official_path}")
+    except Exception as e:
+        click.echo(f"ERROR: Failed to copy plugin: {e}", err=True)
+        sys.exit(1)
+
+    # Update template.yml tier field
+    template_yml = official_path / "template.yml"
+    if template_yml.exists():
+        content = template_yml.read_text()
+        updated_content = content.replace("tier: custom", "tier: official")
+        template_yml.write_text(updated_content)
+        click.echo("OK - Updated tier to 'official' in template.yml")
+
+    # Update registry
+    register_plugin(
+        name=template.name,
+        tier='official',
+        version=template.version,
+        source='promoted',
+        author=template.author,
+        description=template.description
+    )
+    click.echo("OK - Updated plugin registry")
+
+    click.echo()
+    click.echo(f"OK - Successfully promoted '{plugin_name}' to Tier 1 (official)!")
+    click.echo(f"Plugin is now available as an official template at: {official_path}")
 
 
 if __name__ == "__main__":  # pragma: no cover

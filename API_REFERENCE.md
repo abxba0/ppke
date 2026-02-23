@@ -1,0 +1,839 @@
+# PPKE v2.0 API Reference
+
+**Version:** 2.0.0
+**Last Updated:** 2026-02-21
+**Audience:** Template Developers, Advanced Users, API Consumers
+
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Core Interfaces](#core-interfaces)
+3. [Template API](#template-api)
+4. [Configuration API](#configuration-api)
+5. [Pipeline API](#pipeline-api)
+6. [LLM Client API](#llm-client-api)
+7. [Parser API](#parser-api)
+8. [Data Models](#data-models)
+9. [Exceptions](#exceptions)
+10. [Type Definitions](#type-definitions)
+
+---
+
+## Overview
+
+This document provides comprehensive API documentation for PPKE v2.0, focusing on interfaces for template developers and advanced users building on top of PPKE.
+
+**Stability Guarantees:**
+- 🟢 **Stable:** Public APIs with backward compatibility guarantees
+- 🟡 **Experimental:** May change in minor versions
+- 🔴 **Internal:** No guarantees, may change anytime
+
+---
+
+## Core Interfaces
+
+### DomainTemplate (Abstract Base Class) 🟢
+
+**Module:** `ppke.templates.base`
+
+The core interface that all domain templates must implement.
+
+```python
+from abc import ABC, abstractmethod
+from pydantic import BaseModel
+from pathlib import Path
+from typing import Any
+
+class DomainTemplate(ABC):
+    """Base class for all domain-specific templates."""
+```
+
+#### Properties
+
+##### `name` 🟢
+```python
+@property
+@abstractmethod
+def name(self) -> str:
+    """
+    Unique template identifier (lowercase, hyphenated).
+
+    Returns:
+        str: Template name (e.g., "philosophy", "legal-contracts")
+
+    Example:
+        >>> template.name
+        'philosophy'
+    """
+```
+
+##### `version` 🟢
+```python
+@property
+@abstractmethod
+def version(self) -> str:
+    """
+    Template version (semantic versioning).
+
+    Returns:
+        str: Version string (e.g., "1.2.3")
+
+    Example:
+        >>> template.version
+        '2.0.0'
+    """
+```
+
+##### `description` 🟢
+```python
+@property
+@abstractmethod
+def description(self) -> str:
+    """
+    Human-readable template description.
+
+    Returns:
+        str: Short description for `ppke template list`
+
+    Example:
+        >>> template.description
+        'Deep analysis of philosophical texts'
+    """
+```
+
+#### Methods
+
+##### `get_prompts()` 🟢
+```python
+@abstractmethod
+def get_prompts(self) -> dict[str, str]:
+    """
+    Return prompt templates for all 7 skills.
+
+    Returns:
+        dict[str, str]: Mapping of skill names to prompt templates.
+            Required keys:
+                - structural_extraction
+                - logical_map
+                - concept_index
+                - author_model
+                - pattern_detection
+                - cross_book_synthesis
+                - qa_validation
+
+    Prompts may contain placeholders:
+        - {paragraphs}: Batch of paragraphs to analyze
+        - {title}: Book title
+        - {author}: Book author
+        - {summaries}: Previously extracted summaries
+        - {extractions}: Full extraction results
+
+    Example:
+        >>> prompts = template.get_prompts()
+        >>> print(prompts['structural_extraction'])
+        'Analyze the following paragraphs...{paragraphs}'
+    """
+```
+
+##### `get_extraction_schema()` 🟢
+```python
+@abstractmethod
+def get_extraction_schema(self) -> type[BaseModel]:
+    """
+    Return Pydantic model for Skill 1 extraction results.
+
+    The schema must include at minimum:
+        - paragraph_id: str
+        - summary: str
+        - key_terms: list[str]
+
+    Additional domain-specific fields are encouraged.
+
+    Returns:
+        type[BaseModel]: Pydantic model class
+
+    Example:
+        >>> schema = template.get_extraction_schema()
+        >>> result = schema(
+        ...     paragraph_id="{01}.p1.0",
+        ...     summary="Test summary",
+        ...     key_terms=["term1"]
+        ... )
+        >>> result.paragraph_id
+        '{01}.p1.0'
+    """
+```
+
+##### `get_output_config()` 🟢
+```python
+@abstractmethod
+def get_output_config(self) -> dict[str, Any]:
+    """
+    Define output file structure.
+
+    Returns:
+        dict: Configuration with structure:
+            {
+                "files": [
+                    {
+                        "filename": str,  # Required
+                        "sections": list[str],  # Optional
+                        "format": str  # Optional, default: "markdown"
+                    },
+                    ...
+                ],
+                # Global options (optional)
+                "include_metadata": bool,  # Default: True
+                "include_citations": bool,  # Default: True
+            }
+
+    Example:
+        >>> config = template.get_output_config()
+        >>> config['files'][0]
+        {'filename': '01_Structure.md', 'sections': ['Overview']}
+    """
+```
+
+##### `post_process_extraction()` 🟡 (Optional)
+```python
+def post_process_extraction(self, result: BaseModel) -> BaseModel:
+    """
+    Optional: Custom post-processing of extraction results.
+
+    Use cases:
+        - Normalize terms or citations
+        - Validate field consistency
+        - Enrich data with external sources
+
+    Args:
+        result: Extraction result from LLM
+
+    Returns:
+        BaseModel: Processed extraction result
+
+    Default: No-op (returns input unchanged)
+
+    Example:
+        >>> def post_process_extraction(self, result):
+        ...     # Normalize case citations
+        ...     result.citations = [c.upper() for c in result.citations]
+        ...     return result
+    """
+    return result
+```
+
+##### `validate_output()` 🟡 (Optional)
+```python
+def validate_output(self, output_dir: Path) -> list[str]:
+    """
+    Optional: Custom output validation.
+
+    Args:
+        output_dir: Directory containing output files
+
+    Returns:
+        list[str]: Validation errors (empty list = success)
+
+    Example:
+        >>> errors = template.validate_output(Path("./output"))
+        >>> errors
+        ['Missing required file: 01_Structure.md']
+    """
+    return []
+```
+
+---
+
+## Template API
+
+### TemplateRegistry 🟢
+
+**Module:** `ppke.templates.registry`
+
+Discovers and manages domain templates.
+
+```python
+class TemplateRegistry:
+    """Discovers and loads domain templates."""
+
+    def __init__(self):
+        """Initialize registry and discover templates."""
+        self._templates: dict[str, DomainTemplate] = {}
+        self._cache: dict[str, DomainTemplate] = {}
+        self.discover()
+```
+
+#### Methods
+
+##### `discover()` 🟢
+```python
+def discover(self) -> None:
+    """
+    Discover templates from official and custom directories.
+
+    Searches:
+        - Official: ppke/templates/official/
+        - Custom:   ~/.ppke/templates/custom/
+
+    Raises:
+        TemplateLoadError: If template fails to load
+    """
+```
+
+##### `get_template()` 🟢
+```python
+def get_template(self, name: str) -> DomainTemplate:
+    """
+    Load a template by name (with caching).
+
+    Args:
+        name: Template identifier
+
+    Returns:
+        DomainTemplate: Loaded template instance
+
+    Raises:
+        TemplateNotFoundError: If template doesn't exist
+
+    Example:
+        >>> registry = TemplateRegistry()
+        >>> template = registry.get_template("philosophy")
+        >>> template.name
+        'philosophy'
+    """
+```
+
+##### `list_templates()` 🟢
+```python
+def list_templates(self) -> list[dict]:
+    """
+    Return list of all available templates with metadata.
+
+    Returns:
+        list[dict]: Template info dictionaries with keys:
+            - name: str
+            - version: str
+            - description: str
+            - tier: "official" | "custom"
+
+    Example:
+        >>> registry.list_templates()
+        [
+            {
+                'name': 'philosophy',
+                'version': '2.0.0',
+                'description': 'Philosophical text analysis',
+                'tier': 'official'
+            },
+            ...
+        ]
+    """
+```
+
+---
+
+## Configuration API
+
+### PPKEConfig 🟢
+
+**Module:** `ppke.config`
+
+Master configuration for PPKE.
+
+```python
+from dataclasses import dataclass
+from pathlib import Path
+
+@dataclass
+class PPKEConfig:
+    """Master configuration for PPKE v2.0."""
+
+    llm: LLMConfig
+    vault_path: Path
+    template_name: str = "philosophy"
+    enable_vector_db: bool = False
+    enable_graph: bool = False
+    enable_cache: bool = True
+```
+
+#### Class Methods
+
+##### `load()` 🟢
+```python
+@classmethod
+def load(cls, config_path: Path = Path.home() / ".ppke" / "config.json") -> "PPKEConfig":
+    """
+    Load configuration from JSON file.
+
+    Args:
+        config_path: Path to config file (default: ~/.ppke/config.json)
+
+    Returns:
+        PPKEConfig: Loaded configuration
+
+    Raises:
+        ConfigNotFoundError: If config file doesn't exist
+        ConfigValidationError: If config is invalid
+
+    Example:
+        >>> config = PPKEConfig.load()
+        >>> config.template_name
+        'philosophy'
+    """
+```
+
+#### Instance Methods
+
+##### `get_template()` 🟢
+```python
+def get_template(self) -> DomainTemplate:
+    """
+    Lazy load the active template from registry.
+
+    Returns:
+        DomainTemplate: Active template instance
+
+    Example:
+        >>> config = PPKEConfig.load()
+        >>> template = config.get_template()
+        >>> template.name
+        'philosophy'
+    """
+```
+
+##### `save()` 🟢
+```python
+def save(self, config_path: Path | None = None) -> None:
+    """
+    Save configuration to JSON file.
+
+    Args:
+        config_path: Path to save config (default: ~/.ppke/config.json)
+
+    Example:
+        >>> config.template_name = "legal"
+        >>> config.save()
+    """
+```
+
+### LLMConfig 🟢
+
+**Module:** `ppke.config`
+
+Configuration for LLM providers.
+
+```python
+@dataclass
+class LLMConfig:
+    """LLM provider configuration."""
+
+    provider: str = "anthropic"  # anthropic|openai|deepseek|gemini|openrouter
+    model: str = "claude-sonnet-4-20250514"
+    small_model: str | None = None  # Two-tier: cheap model for extraction
+    max_tokens: int = 4096
+    temperature: float = 0.2
+    paragraphs_per_batch: int = 5
+    max_paragraph_tokens: int = 2000
+    max_workers: int = 4
+```
+
+---
+
+## Pipeline API
+
+### PipelineOrchestrator 🟢
+
+**Module:** `ppke.pipeline.orchestrator`
+
+Manages the 7-skill processing pipeline.
+
+```python
+class PipelineOrchestrator:
+    """Manages the 7-skill processing pipeline."""
+
+    def __init__(self, config: PPKEConfig):
+        """
+        Initialize orchestrator with configuration.
+
+        Args:
+            config: PPKE configuration
+        """
+        self.config = config
+        self.template = config.get_template()
+        self.llm_client = LLMClient(config.llm)
+        self.progress_tracker = ProgressTracker(config.vault_path)
+```
+
+#### Methods
+
+##### `ingest()` 🟢
+```python
+async def ingest(self, filepath: Path) -> None:
+    """
+    Run full ingestion pipeline.
+
+    Pipeline stages:
+        1. Parse document
+        2. Skill 1: Structural extraction (parallel)
+        3. Skills 2-7: Advanced analysis (concurrent)
+        4. Coverage validation
+        5. Output generation
+
+    Args:
+        filepath: Path to document to ingest
+
+    Raises:
+        DocumentParseError: If document parsing fails
+        LLMError: If LLM calls fail
+        OutputError: If output generation fails
+
+    Example:
+        >>> orchestrator = PipelineOrchestrator(config)
+        >>> await orchestrator.ingest(Path("~/Documents/book.md"))
+    """
+```
+
+---
+
+## LLM Client API
+
+### LLMClient 🟢
+
+**Module:** `ppke.llm.client`
+
+Provider-agnostic LLM client.
+
+```python
+class LLMClient:
+    """Provider-agnostic LLM client with unified interface."""
+
+    def __init__(self, config: LLMConfig):
+        """
+        Initialize LLM client.
+
+        Args:
+            config: LLM configuration
+        """
+```
+
+#### Methods
+
+##### `generate()` 🟢
+```python
+async def generate(
+    self,
+    prompt: str,
+    system: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    response_format: type[BaseModel] | None = None,
+) -> str | BaseModel:
+    """
+    Generate completion from LLM.
+
+    Args:
+        prompt: User prompt
+        system: System prompt (optional)
+        temperature: Sampling temperature (optional, uses config default)
+        max_tokens: Max tokens (optional, uses config default)
+        response_format: Pydantic model for structured output (optional)
+
+    Returns:
+        str: Text response (if response_format is None)
+        BaseModel: Structured response (if response_format provided)
+
+    Raises:
+        LLMError: If API call fails
+        ValidationError: If structured output doesn't match schema
+
+    Example:
+        >>> client = LLMClient(config)
+        >>> response = await client.generate("Explain Dasein")
+        >>> print(response)
+        'Dasein is Heidegger's term for...'
+
+        >>> # Structured output
+        >>> response = await client.generate(
+        ...     "Extract concepts",
+        ...     response_format=ExtractionResult
+        ... )
+        >>> response.key_terms
+        ['Dasein', 'Being-in-the-world']
+    """
+```
+
+---
+
+## Parser API
+
+### MarkdownParser 🟢
+
+**Module:** `ppke.parser.markdown`
+
+Domain-agnostic Markdown document parser.
+
+```python
+class MarkdownParser:
+    """Domain-agnostic Markdown document parser."""
+
+    def parse(self, filepath: Path) -> Book:
+        """
+        Parse Markdown into structured Book/Chapter/Paragraph hierarchy.
+
+        Args:
+            filepath: Path to Markdown file
+
+        Returns:
+            Book: Structured representation
+
+        Raises:
+            FileNotFoundError: If file doesn't exist
+            ParseError: If parsing fails
+
+        Example:
+            >>> parser = MarkdownParser()
+            >>> book = parser.parse(Path("book.md"))
+            >>> book.title
+            'Being and Time'
+            >>> len(book.chapters)
+            10
+        """
+```
+
+---
+
+## Data Models
+
+### Book 🟢
+
+**Module:** `ppke.parser.models`
+
+```python
+@dataclass
+class Book:
+    """Structured representation of a book."""
+
+    title: str
+    author: str
+    filepath: Path
+    chapters: list[Chapter]
+    metadata: dict
+
+    def all_paragraphs(self) -> list[Paragraph]:
+        """Return all paragraphs across all chapters."""
+```
+
+### Chapter 🟢
+
+```python
+@dataclass
+class Chapter:
+    """Chapter in a book."""
+
+    number: int
+    title: str
+    paragraphs: list[Paragraph]
+```
+
+### Paragraph 🟢
+
+```python
+@dataclass
+class Paragraph:
+    """Single paragraph with metadata."""
+
+    id: str  # Format: "{CH}.p{P}.{S}"
+    chapter_number: int
+    paragraph_number: int
+    sub_paragraph: int
+    text: str
+    token_count: int
+```
+
+---
+
+## Exceptions
+
+### PPKE Exception Hierarchy 🟢
+
+**Module:** `ppke.exceptions`
+
+```python
+class PPKEError(Exception):
+    """Base exception for all PPKE errors."""
+
+class TemplateError(PPKEError):
+    """Base for template-related errors."""
+
+class TemplateNotFoundError(TemplateError):
+    """Template not found in registry."""
+
+class TemplateLoadError(TemplateError):
+    """Template failed to load."""
+
+class TemplateValidationError(TemplateError):
+    """Template validation failed."""
+
+class ConfigError(PPKEError):
+    """Base for configuration errors."""
+
+class ConfigNotFoundError(ConfigError):
+    """Config file not found."""
+
+class ConfigValidationError(ConfigError):
+    """Config validation failed."""
+
+class LLMError(PPKEError):
+    """Base for LLM-related errors."""
+
+class LLMAPIError(LLMError):
+    """LLM API call failed."""
+
+class LLMRateLimitError(LLMError):
+    """LLM rate limit exceeded."""
+
+class ParseError(PPKEError):
+    """Document parsing failed."""
+
+class OutputError(PPKEError):
+    """Output generation failed."""
+```
+
+---
+
+## Type Definitions
+
+### Common Type Aliases 🟢
+
+**Module:** `ppke.types`
+
+```python
+from typing import TypeAlias
+from pathlib import Path
+
+# File paths
+FilePath: TypeAlias = str | Path
+
+# LLM providers
+LLMProvider: TypeAlias = Literal["anthropic", "openai", "deepseek", "gemini", "openrouter"]
+
+# Template tiers
+TemplateTier: TypeAlias = Literal["official", "custom"]
+
+# Skill names
+SkillName: TypeAlias = Literal[
+    "structural_extraction",
+    "logical_map",
+    "concept_index",
+    "author_model",
+    "pattern_detection",
+    "cross_book_synthesis",
+    "qa_validation",
+]
+```
+
+---
+
+## Example Usage
+
+### Creating a Custom Template
+
+```python
+from ppke.templates.base import DomainTemplate
+from pydantic import BaseModel, Field
+
+class MyExtractionResult(BaseModel):
+    paragraph_id: str
+    summary: str
+    key_terms: list[str]
+    custom_field: str = Field(default="", description="Domain-specific field")
+
+class MyTemplate(DomainTemplate):
+    @property
+    def name(self) -> str:
+        return "my-domain"
+
+    @property
+    def version(self) -> str:
+        return "1.0.0"
+
+    @property
+    def description(self) -> str:
+        return "My domain template"
+
+    def get_prompts(self) -> dict[str, str]:
+        return {
+            "structural_extraction": "Extract from: {paragraphs}",
+            # ... 6 more skills
+        }
+
+    def get_extraction_schema(self) -> type[BaseModel]:
+        return MyExtractionResult
+
+    def get_output_config(self) -> dict[str, Any]:
+        return {
+            "files": [
+                {"filename": "01_Output.md", "sections": ["Overview"]}
+            ]
+        }
+```
+
+### Using the Pipeline Programmatically
+
+```python
+import asyncio
+from pathlib import Path
+from ppke.config import PPKEConfig
+from ppke.pipeline.orchestrator import PipelineOrchestrator
+
+async def main():
+    # Load configuration
+    config = PPKEConfig.load()
+
+    # Create orchestrator
+    orchestrator = PipelineOrchestrator(config)
+
+    # Ingest document
+    await orchestrator.ingest(Path("~/Documents/my-book.md"))
+
+    print("Ingestion complete!")
+
+# Run
+asyncio.run(main())
+```
+
+---
+
+## Versioning and Stability
+
+### API Stability Levels
+
+- 🟢 **Stable:** Guaranteed backward compatibility within major version
+- 🟡 **Experimental:** May change in minor versions (deprecation warnings)
+- 🔴 **Internal:** No guarantees, subject to change
+
+### Deprecation Policy
+
+1. Feature marked as deprecated in version N
+2. Deprecation warnings in N, N+1
+3. Removed in N+2
+
+Example:
+- v2.0: Feature X stable
+- v2.3: Feature X deprecated (warnings)
+- v2.4: Feature X deprecated (warnings)
+- v2.5: Feature X removed
+
+---
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for API changes across versions.
+
+---
+
+**Document Version:** 1.0
+**Last Updated:** 2026-02-21
+**Maintained By:** PPKE Core Team

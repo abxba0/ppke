@@ -839,10 +839,13 @@ def test_save_env_file_merges(tmp_path):
 
 
 def test_save_env_file_permissions(tmp_path):
+    import sys
     env_path = tmp_path / ".env"
     save_env_file({"KEY": "val"}, env_path)
     mode = oct(env_path.stat().st_mode)[-3:]
-    assert mode == "600"
+    # File permissions work differently on Windows - skip this check
+    if sys.platform != "win32":
+        assert mode == "600"
 
 
 # ── is_first_run ─────────────────────────────────────────────────────────────

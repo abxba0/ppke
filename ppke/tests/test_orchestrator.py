@@ -523,7 +523,7 @@ def test_reread_chapters_success(tmp_path):
     meta = {
         "title": "Test Book",
         "author": "Author",
-        "year": 2024,
+        "year": "2024",
         "source_path": str(source_md),
         "human_operator": "tester",
     }

@@ -1,0 +1,43 @@
+# Legal Template - Proof of concept for multi-domain support
+
+name: legal
+version: "2.0.0"
+tier: official
+author: PPKE Core Team
+description: "Legal document analysis with case law tracking and statutory interpretation"
+
+# Pipeline stages (simplified for proof-of-concept)
+stages:
+  - id: extraction
+    name: "Legal Structural Extraction"
+    module: ppke.pipeline.stages.extractor
+    prompt: extraction
+
+  - id: case_analysis
+    name: "Case Law Analysis"
+    module: ppke.pipeline.stages.analyzer
+    prompt: case_analysis
+    output_file: "02_Case_Analysis.md"
+
+  - id: statutory_interpretation
+    name: "Statutory Interpretation"
+    module: ppke.pipeline.stages.concepts
+    prompt: statutory
+    output_file: "03_Statutory_Interpretation.md"
+
+# Skip logic (legal documents typically don't have these, but just in case)
+skip_chapters:
+  - table of contents
+  - index
+  - appendix
+  - exhibits
+
+# Output configuration
+outputs:
+  folder_format: "Legal_{title}_{author}_{year}"
+  files:
+    - "meta.yml"
+    - "01_Raw_Structure.md"
+    - "02_Case_Analysis.md"
+    - "03_Statutory_Interpretation.md"
+    - "extractions.json"

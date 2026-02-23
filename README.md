@@ -1,10 +1,22 @@
-# PPKE - Personal Philosophical Knowledge Engine
+# PPKE - Personal & Professional Knowledge Engine
 
-A CLI tool for structured philosophical book analysis. PPKE ingests markdown books, extracts their logical structure using LLMs, and builds a queryable knowledge base with full verbatim fidelity.
+**Extract deep insights from any domain**: philosophy, legal, scientific, and more.
+
+PPKE is a CLI tool for structured knowledge extraction from text documents. Using LLMs and a flexible template system, PPKE analyzes books and documents across multiple domains, extracting their logical structure and building a queryable knowledge base with full verbatim fidelity.
+
+## 🌟 What's New in v2.0
+
+**Multi-Domain Support**: PPKE v2.0 is now domain-agnostic! Analyze texts from any field while maintaining 100% backward compatibility for philosophy.
+
+- **Philosophy** (default) - Argument mapping, concept tracking, logical structure
+- **Legal** - Case law, statutory analysis, legal standards
+- **Scientific** - Methodology, findings, research questions (community template)
+- **Custom Domains** - Create your own templates ([Guide](PLUGINS.md))
 
 ## Features
 
-- **Structural Extraction** - Parses books into chapters and paragraphs, extracts claims, arguments, and concepts via LLM
+- **Multi-Domain Analysis** - Use different templates for philosophy, legal, scientific, or custom domains
+- **Structural Extraction** - Parses documents into chapters and paragraphs, extracts domain-specific insights via LLM
 - **Two-Tier LLM Architecture** - Uses a configurable fast/cheap `small_model` (e.g. `gpt-4o-mini`, `claude-3-haiku`) for extraction (Skill 1) and the main model for deep analysis (Skills 3–7), reducing cost and latency
 - **Skip Logic** - Automatically skips boilerplate, page numbers, and single-word paragraphs before LLM extraction, saving tokens on non-informative content
 - **Sub-Paragraph Splitting** - Automatically splits long paragraphs into sub-paragraphs (`{03}.p12.1`, `{03}.p12.2`) when they exceed token limits
@@ -52,13 +64,24 @@ This will walk you through:
 
 If you just run `ppke` without any command on a fresh install, the setup wizard starts automatically.
 
-### 3. Ingest a Book
+### 3. Ingest a Document
 
+**Philosophy** (default domain):
 ```bash
 ppke ingest book.md --title "Being and Time" --author "Heidegger" --year 1927
 ```
 
-Long paragraphs are automatically split into sub-paragraphs. Chapters are extracted in parallel for faster processing. If ingestion fails partway through, resume with:
+**Legal document**:
+```bash
+ppke ingest --domain legal contract.md --title "Software License Agreement" --author "Acme Corp" --year 2026
+```
+
+**Scientific paper**:
+```bash
+ppke ingest --domain scientific_research paper.md --title "Machine Learning Study" --author "Smith et al" --year 2026
+```
+
+Long paragraphs are automatically split into sub-paragraphs. Chapters are extracted in parallel for faster processing. If ingestion fails partway through, resume with `--resume`:
 
 ```bash
 ppke ingest book.md --title "Being and Time" --author "Heidegger" --year 1927 --resume
@@ -74,10 +97,20 @@ ppke query --book "Book_Being_and_Time_Heidegger_1927" --question "What is Dasei
 ppke cross-query --question "How do these authors differ on free will?"
 ```
 
-### 5. Explore Your Knowledge Base
+### 5. Explore Available Domains
 
 ```bash
-# List all ingested books
+# List all available domain templates
+ppke list-domains
+
+# Validate a custom domain template
+ppke validate-plugin path/to/your/template/
+```
+
+### 6. Explore Your Knowledge Base
+
+```bash
+# List all ingested books (across all domains)
 ppke list
 
 # View vault-wide statistics
@@ -85,10 +118,10 @@ ppke stats
 
 # Search across all extracted paragraphs (local, no LLM)
 ppke search "Dasein"
-ppke search "free will" --book "Book_Being_and_Time_Heidegger_1927"
+ppke search "strict scrutiny" --book "Book_Legal_Contract_Corp_2026"
 ```
 
-### 6. Re-Read Specific Chapters
+### 7. Re-Read Specific Chapters
 
 ```bash
 ppke re-read --book "Book_Being_and_Time_Heidegger_1927" --chapters "1,3,5"
@@ -99,7 +132,9 @@ ppke re-read --book "Book_Being_and_Time_Heidegger_1927" --chapters "1,3,5"
 | Command | Description |
 |---------|-------------|
 | `ppke init` | First-time setup wizard (API keys, provider, vault path) |
-| `ppke ingest <file>` | Ingest a markdown book into the knowledge base |
+| `ppke ingest <file>` | Ingest a document (use `--domain` to specify template, defaults to philosophy) |
+| `ppke list-domains` | List all available domain templates |
+| `ppke validate-plugin <path>` | Validate a custom domain template |
 | `ppke parse <file>` | Dry-run parse (shows structure, no LLM calls) |
 | `ppke query` | Query a single ingested book |
 | `ppke cross-query` | Query across all ingested books |

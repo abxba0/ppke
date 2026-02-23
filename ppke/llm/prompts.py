@@ -1,311 +1,204 @@
-"""Prompt templates for each PPKE skill."""
+"""Dynamic prompt loading from templates - REFACTORED for v2.0"""
 
-STRUCTURAL_EXTRACTION_SYSTEM = """\
-Structural extractor for philosophical texts. Extract structured data with full fidelity.
-Rules: Never summarize. Quote exact phrases. Mark inferences [INFERENCE]. Use provided paragraph IDs. JSON only.
-"""
+from ppke.templates.base import PluginTemplate
 
-STRUCTURAL_EXTRACTION_USER = """\
-Analyze the following paragraphs from "{book_title}" by {author}, Chapter {chapter_num}: \
-"{chapter_title}".
 
-For each paragraph, extract:
-1. topic_sentence: The main claim or topic (one sentence)
-2. function_in_argument: What role this paragraph plays (e.g., "introduces thesis", \
-"provides evidence", "transitions", "defines concept", "counter-argument", "conclusion")
-3. explicit_claims: List of explicit claims made (quoted from text)
-4. implicit_assumptions: List of unstated assumptions [INFERENCE]
-5. logical_steps: Numbered sequence of reasoning steps
-6. defined_concepts: Key terms or concepts introduced or used (exact phrases)
-7. emotional_tone: Dominant tone (e.g., "assertive", "questioning", "polemical", "neutral")
-8. tone_evidence: A quoted phrase that demonstrates the tone
-9. internal_references: Any references to other parts of the text
-10. is_argument_carrying: true if this paragraph carries substantive argument, false if \
-transitional/contextual
+def load_prompt(template: PluginTemplate, prompt_id: str, format_vars: dict = None) -> tuple[str, str]:
+    """
+    Load system and user prompts from template.
 
-Paragraphs to analyze:
+    This function replaces the hardcoded prompt constants from v1.x with dynamic
+    template-based loading. Prompts are now defined in template YAML files.
 
-{paragraphs_json}
+    Args:
+        template: Loaded PluginTemplate instance
+        prompt_id: Prompt identifier (e.g., 'extraction', 'logical_map', 'concepts')
+        format_vars: Optional variables to format user_template (e.g., {'chapter_number': 1, 'book_title': 'Meditations'})
 
-Return a JSON array where each element has:
-{{
-  "paragraph_id": "<the ID>",
-  "topic_sentence": "...",
-  "function_in_argument": "...",
-  "explicit_claims": ["..."],
-  "implicit_assumptions": ["[INFERENCE] ..."],
-  "logical_steps": ["1. ...", "2. ..."],
-  "defined_concepts": ["..."],
-  "emotional_tone": "...",
-  "tone_evidence": "...",
-  "internal_references": ["..."],
-  "is_argument_carrying": true/false
-}}
+    Returns:
+        (system_prompt, user_prompt) tuple
 
-"""
+    Raises:
+        ValueError: If prompt_id not found in template
 
-LOGICAL_MAP_SYSTEM = """\
-Logical architecture analyst for philosophical texts. Identify central thesis, map argument structures, trace logical chains.
-Rules: Every claim must cite paragraph IDs. Mark inferences [INFERENCE]. Detect circular reasoning. Map premises to conclusions. JSON only.
-"""
+    Example:
+        >>> from ppke.templates import load_template
+        >>> template = load_template('philosophy')
+        >>> system, user = load_prompt(template, 'extraction', {
+        ...     'book_title': 'Meditations',
+        ...     'author': 'Marcus Aurelius',
+        ...     'chapter_num': 1,
+        ...     'chapter_title': 'Book I',
+        ...     'paragraphs_json': '[...]'
+        ... })
+        >>> print(system[:50])
+        'Structural extractor for philosophical texts...'
 
-LOGICAL_MAP_USER = """\
-Given the following structural extraction data for "{book_title}" by {author}, \
-build the logical architecture.
+    Usage in pipeline:
+        ```python
+        template = load_template('philosophy')
+        system_prompt, user_prompt = load_prompt(
+            template,
+            'extraction',
+            format_vars={'book_title': book.title, ...}
+        )
 
-Extraction data:
-{extraction_json}
+        # Pass to LLM
+        response = llm_client.call(system=system_prompt, user=user_prompt)
+        ```
 
-Return JSON with:
-{{
-  "central_thesis": {{
-    "claim": "...",
-    "paragraph_ids": ["..."],
-    "evidence": "..."
-  }},
-  "argument_threads": [
-    {{
-      "name": "...",
-      "premises": [
-        {{"claim": "...", "paragraph_ids": ["..."], "is_inference": false}}
-      ],
-      "conclusion": {{"claim": "...", "paragraph_ids": ["..."]}},
-      "logical_issues": ["circular reasoning in...", etc.]
-    }}
-  ],
-  "key_assumptions": [
-    {{"assumption": "[INFERENCE] ...", "depends_on": ["..."]}}
-  ]
-}}
+    Migration from v1.x:
+        **Before** (v1.x):
+        ```python
+        from ppke.llm.prompts import STRUCTURAL_EXTRACTION_SYSTEM, STRUCTURAL_EXTRACTION_USER
+        system = STRUCTURAL_EXTRACTION_SYSTEM
+        user = STRUCTURAL_EXTRACTION_USER.format(book_title=book.title, ...)
+        ```
 
-"""
+        **After** (v2.0):
+        ```python
+        from ppke.llm.prompts import load_prompt
+        from ppke.templates import load_template
+        template = load_template('philosophy')
+        system, user = load_prompt(template, 'extraction', {'book_title': book.title, ...})
+        ```
+    """
+    if prompt_id not in template.prompts:
+        available = ', '.join(sorted(template.prompts.keys()))
+        raise ValueError(
+            f"Prompt '{prompt_id}' not found in template '{template.name}'. "
+            f"Available prompts: {available}"
+        )
 
-CONCEPT_INDEX_SYSTEM = """\
-Concept tracking engine for philosophical texts. Identify recurring concepts, track every occurrence, detect semantic drift.
-Rules: Quote exact sentences per occurrence. Track meaning shifts. Mark inferred shifts [INFERENCE]. JSON only.
-"""
+    prompt_config = template.prompts[prompt_id]
 
-CONCEPT_INDEX_USER = """\
-Given the following structural extraction data for "{book_title}" by {author}, \
-build a concept index.
+    # Get system prompt
+    system_prompt = prompt_config.get('system', '')
 
-Extraction data:
-{extraction_json}
+    # Get user template
+    user_template = prompt_config.get('user_template', '')
 
-For each significant concept found, track:
-1. Every paragraph where it appears (with the exact quote)
-2. How its meaning evolves across the text
-3. Related concepts
+    # Format user prompt if variables provided
+    if format_vars:
+        try:
+            user_prompt = user_template.format(**format_vars)
+        except KeyError as e:
+            raise ValueError(
+                f"Missing format variable for prompt '{prompt_id}': {e}. "
+                f"Template requires: {_extract_template_vars(user_template)}"
+            )
+    else:
+        user_prompt = user_template
 
-Return JSON:
-{{
-  "concepts": [
-    {{
-      "name": "...",
-      "definition": "Author's definition or usage (quoted)",
-      "occurrences": [
-        {{"paragraph_id": "...", "quote": "...", "usage_context": "..."}}
-      ],
-      "semantic_shifts": [
-        {{"from_id": "...", "to_id": "...", "description": "[INFERENCE] ..."}}
-      ],
-      "related_concepts": ["..."]
-    }}
-  ]
-}}
+    return system_prompt, user_prompt
 
-"""
 
-PATTERN_DETECTION_SYSTEM = """\
-Pattern and tension detector for philosophical texts. Find recurring metaphors, emotional arcs, structural repetition, logical recursion, and contradictions.
-Rules: Evidence must cite paragraph IDs. Mark hypotheses [HYPOTHESIS]. Distinguish explicit from inferred. JSON only.
-"""
+def _extract_template_vars(template_str: str) -> list[str]:
+    """
+    Extract template variable names from format string.
 
-PATTERN_DETECTION_USER = """\
-Given the following structural extraction data for "{book_title}" by {author}, \
-detect patterns and tensions.
+    Args:
+        template_str: String with {var} placeholders
 
-Extraction data:
-{extraction_json}
+    Returns:
+        List of variable names
 
-Detect:
-1. Recurring metaphors (with all instances)
-2. Emotional arcs (how tone shifts across chapters)
-3. Structural repetition (repeated argument patterns)
-4. Logical recursion (self-referential arguments)
-5. Internal contradictions (conflicting claims)
+    Example:
+        >>> _extract_template_vars("Hello {name}, chapter {num}")
+        ['name', 'num']
+    """
+    import re
+    # Find all {variable_name} patterns
+    matches = re.findall(r'\{([^}]+)\}', template_str)
+    return list(set(matches))
 
-Return JSON:
-{{
-  "patterns": [
-    {{
-      "type": "metaphor|emotional_arc|repetition|recursion|contradiction",
-      "description": "...",
-      "evidence": [
-        {{"paragraph_id": "...", "quote": "..."}}
-      ],
-      "is_hypothesis": true/false
-    }}
-  ]
-}}
 
-"""
+# ============================================================================
+# BACKWARD COMPATIBILITY LAYER (v1.x)
+# ============================================================================
+# These constants are kept for backward compatibility with existing code.
+# They will be deprecated in v3.0.
+#
+# NEW CODE SHOULD USE load_prompt() instead!
+# ============================================================================
 
-AUTHOR_MODEL_SYSTEM = """\
-Author model builder for philosophical texts. Construct a model of the author's intellectual framework from structural analysis.
-Rules: Every claim must cite paragraph IDs. Mark inferences [INFERENCE]. Be specific, not generic. JSON only.
-"""
+# Note: These are loaded from the default philosophy template
+# They are functionally identical to v1.x hardcoded prompts
 
-AUTHOR_MODEL_USER = """\
-Based on the full analysis of "{book_title}" by {author}, build an author model.
+def _load_legacy_prompts():
+    """Load prompts from philosophy template for backward compatibility."""
+    try:
+        from ppke.templates import load_template
+        template = load_template('philosophy')
 
-Logical map:
-{logical_map_json}
+        # Extract prompts for backward compatibility
+        extraction = template.prompts.get('extraction', {})
+        logical_map = template.prompts.get('logical_map', {})
+        concepts = template.prompts.get('concepts', {})
+        patterns = template.prompts.get('patterns', {})
+        author_model = template.prompts.get('author_model', {})
+        cross_book = template.prompts.get('cross_book', {})
+        single_book_query = template.prompts.get('single_book_query', {})
+        concept_dedup = template.prompts.get('concept_dedup', {})
 
-Concept index:
-{concept_index_json}
+        return {
+            'STRUCTURAL_EXTRACTION_SYSTEM': extraction.get('system', ''),
+            'STRUCTURAL_EXTRACTION_USER': extraction.get('user_template', ''),
+            'LOGICAL_MAP_SYSTEM': logical_map.get('system', ''),
+            'LOGICAL_MAP_USER': logical_map.get('user_template', ''),
+            'CONCEPT_INDEX_SYSTEM': concepts.get('system', ''),
+            'CONCEPT_INDEX_USER': concepts.get('user_template', ''),
+            'PATTERN_DETECTION_SYSTEM': patterns.get('system', ''),
+            'PATTERN_DETECTION_USER': patterns.get('user_template', ''),
+            'AUTHOR_MODEL_SYSTEM': author_model.get('system', ''),
+            'AUTHOR_MODEL_USER': author_model.get('user_template', ''),
+            'CROSS_BOOK_SYSTEM': cross_book.get('system', ''),
+            'CROSS_BOOK_USER': cross_book.get('user_template', ''),
+            'SINGLE_BOOK_QUERY_SYSTEM': single_book_query.get('system', ''),
+            'SINGLE_BOOK_QUERY_USER': single_book_query.get('user_template', ''),
+            'CONCEPT_DEDUP_SYSTEM': concept_dedup.get('system', ''),
+            'CONCEPT_DEDUP_USER': concept_dedup.get('user_template', ''),
+        }
+    except Exception as e:
+        # Fallback: Return empty strings if template loading fails
+        print(f"⚠️  Warning: Could not load legacy prompts from template: {e}")
+        return {
+            'STRUCTURAL_EXTRACTION_SYSTEM': '',
+            'STRUCTURAL_EXTRACTION_USER': '',
+            'LOGICAL_MAP_SYSTEM': '',
+            'LOGICAL_MAP_USER': '',
+            'CONCEPT_INDEX_SYSTEM': '',
+            'CONCEPT_INDEX_USER': '',
+            'PATTERN_DETECTION_SYSTEM': '',
+            'PATTERN_DETECTION_USER': '',
+            'AUTHOR_MODEL_SYSTEM': '',
+            'AUTHOR_MODEL_USER': '',
+            'CROSS_BOOK_SYSTEM': '',
+            'CROSS_BOOK_USER': '',
+            'SINGLE_BOOK_QUERY_SYSTEM': '',
+            'SINGLE_BOOK_QUERY_USER': '',
+            'CONCEPT_DEDUP_SYSTEM': '',
+            'CONCEPT_DEDUP_USER': '',
+        }
 
-Pattern analysis:
-{patterns_json}
 
-Build a model covering:
-1. Ontology: What exists, what is real, how reality is structured
-2. Epistemology: How knowledge works, what counts as evidence
-3. Moral framework: Ethical positions, value hierarchy
-4. Emotional philosophy: Role of emotion in thought/argument
-5. Logical style: Deductive, inductive, dialectical, phenomenological, etc.
-6. Recurring structural pattern: How arguments are typically built
-7. Core tensions: Unresolved internal conflicts
+# Load legacy prompts on module import
+_LEGACY_PROMPTS = _load_legacy_prompts()
 
-Return JSON:
-{{
-  "ontology": {{"description": "...", "evidence": [{{"paragraph_id": "...", "quote": "..."}}]}},
-  "epistemology": {{"description": "...", "evidence": [...]}},
-  "moral_framework": {{"description": "...", "evidence": [...]}},
-  "emotional_philosophy": {{"description": "...", "evidence": [...]}},
-  "logical_style": {{"description": "...", "evidence": [...]}},
-  "recurring_pattern": {{"description": "...", "evidence": [...]}},
-  "core_tensions": [
-    {{"tension": "...", "evidence": [...]}}
-  ]
-}}
-
-"""
-
-# ── Skill 6: Cross-Book Synthesizer ──
-
-CROSS_BOOK_SYSTEM = """\
-Cross-book synthesizer for philosophical texts. Compare books by concept definitions, ontology, epistemology, moral framework, logical style, and structural patterns.
-Rules: Cite sources as Book_Folder_Name -> paragraph ID. Compare actual content, not surface similarity. Mark hypotheses [HYPOTHESIS]. JSON only.
-"""
-
-CROSS_BOOK_USER = """\
-Given the following analyses of multiple books, perform a cross-book synthesis.
-
-Books:
-{books_json}
-
-Question/Focus: {question}
-
-Compare the books across these dimensions:
-1. Concept definitions: How do the same or similar concepts differ?
-2. Ontology: What each author takes to be real
-3. Epistemology: How each author understands knowledge
-4. Moral framework: Ethical positions and value hierarchies
-5. Logical style: Deductive vs inductive vs dialectical etc.
-6. Structural patterns: How arguments are built
-
-Return JSON:
-{{
-  "comparisons": [
-    {{
-      "dimension": "concept_definitions|ontology|epistemology|moral_framework|logical_style|structural_patterns",
-      "description": "...",
-      "per_book": [
-        {{"book_folder": "...", "position": "...", "evidence": "..."}}
-      ],
-      "synthesis": "...",
-      "tensions": ["..."],
-      "is_hypothesis": true/false
-    }}
-  ],
-  "cross_links": [
-    {{
-      "concept": "...",
-      "books": ["book_folder_1", "book_folder_2"],
-      "relationship": "agreement|tension|evolution|contradiction",
-      "description": "..."
-    }}
-  ],
-  "overall_synthesis": "..."
-}}
-
-"""
-
-# ── Single Book Query ──
-
-SINGLE_BOOK_QUERY_SYSTEM = """\
-Philosophical knowledge retrieval engine. Answer questions by reconstructing logical chains from extracted structural data.
-Rules: Include paragraph IDs for every claim. Include full verbatim quotes. Reconstruct logical chains, not just references. Mark inferences [INFERENCE]. JSON only.
-"""
-
-SINGLE_BOOK_QUERY_USER = """\
-Based on the following analysis of "{book_title}" by {author}, answer this question:
-
-**Question:** {question}
-
-Raw structure (relevant excerpts):
-{raw_structure}
-
-Logical map:
-{logical_map}
-
-Concept index:
-{concept_index}
-
-Return JSON:
-{{
-  "answer": "...",
-  "paragraph_ids_used": ["..."],
-  "verbatim_quotes": [
-    {{"paragraph_id": "...", "quote": "..."}}
-  ],
-  "logical_chain": [
-    {{"step": 1, "claim": "...", "paragraph_id": "...", "is_inference": false}}
-  ],
-  "confidence": "high|medium|low",
-  "notes": "..."
-}}
-
-"""
-
-# ── Concept Deduplication (semantic matching across books) ──
-
-CONCEPT_DEDUP_SYSTEM = """\
-Semantic concept matcher for philosophical texts. Identify concepts that are semantically equivalent despite different names.
-Rules: Group concepts by philosophical idea. Consider tradition, context, and usage — not just string similarity. Example: "Dasein" = "Being-there"; "Will to Power" ≠ "Power". JSON only.
-"""
-
-CONCEPT_DEDUP_USER = """\
-Given the following concept names from multiple books, identify groups of \
-semantically equivalent or near-equivalent concepts.
-
-Concepts by book:
-{concepts_by_book_json}
-
-Return JSON:
-{{
-  "groups": [
-    {{
-      "canonical_name": "The best/most common name for this concept",
-      "members": [
-        {{"book_folder": "...", "concept_name": "...", "reason": "..."}}
-      ]
-    }}
-  ],
-  "ungrouped": [
-    {{"book_folder": "...", "concept_name": "..."}}
-  ]
-}}
-
-"""
+# Export legacy constants (DEPRECATED - use load_prompt() instead)
+STRUCTURAL_EXTRACTION_SYSTEM = _LEGACY_PROMPTS['STRUCTURAL_EXTRACTION_SYSTEM']
+STRUCTURAL_EXTRACTION_USER = _LEGACY_PROMPTS['STRUCTURAL_EXTRACTION_USER']
+LOGICAL_MAP_SYSTEM = _LEGACY_PROMPTS['LOGICAL_MAP_SYSTEM']
+LOGICAL_MAP_USER = _LEGACY_PROMPTS['LOGICAL_MAP_USER']
+CONCEPT_INDEX_SYSTEM = _LEGACY_PROMPTS['CONCEPT_INDEX_SYSTEM']
+CONCEPT_INDEX_USER = _LEGACY_PROMPTS['CONCEPT_INDEX_USER']
+PATTERN_DETECTION_SYSTEM = _LEGACY_PROMPTS['PATTERN_DETECTION_SYSTEM']
+PATTERN_DETECTION_USER = _LEGACY_PROMPTS['PATTERN_DETECTION_USER']
+AUTHOR_MODEL_SYSTEM = _LEGACY_PROMPTS['AUTHOR_MODEL_SYSTEM']
+AUTHOR_MODEL_USER = _LEGACY_PROMPTS['AUTHOR_MODEL_USER']
+CROSS_BOOK_SYSTEM = _LEGACY_PROMPTS['CROSS_BOOK_SYSTEM']
+CROSS_BOOK_USER = _LEGACY_PROMPTS['CROSS_BOOK_USER']
+SINGLE_BOOK_QUERY_SYSTEM = _LEGACY_PROMPTS['SINGLE_BOOK_QUERY_SYSTEM']
+SINGLE_BOOK_QUERY_USER = _LEGACY_PROMPTS['SINGLE_BOOK_QUERY_USER']
+CONCEPT_DEDUP_SYSTEM = _LEGACY_PROMPTS['CONCEPT_DEDUP_SYSTEM']
+CONCEPT_DEDUP_USER = _LEGACY_PROMPTS['CONCEPT_DEDUP_USER']

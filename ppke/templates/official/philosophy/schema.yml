@@ -1,0 +1,37 @@
+# Philosophy Extraction Schema
+
+extraction_model:
+  name: PhilosophyExtraction
+  base: BaseExtraction
+  description: "Pydantic model for philosophical text extraction"
+
+  fields:
+    - name: function_in_argument
+      type: str
+      description: "How this paragraph functions in the overall philosophical argument"
+      default: ""
+
+    - name: explicit_claims
+      type: list[str]
+      description: "List of explicitly stated claims"
+      default: []
+
+    - name: implicit_assumptions
+      type: list[str]
+      description: "Unstated assumptions the argument relies on"
+      default: []
+
+    - name: logical_steps
+      type: list[str]
+      description: "Step-by-step breakdown of the logical progression"
+      default: []
+
+    - name: emotional_tone
+      type: str
+      description: "Emotional register (assertive, polemical, neutral, questioning, etc.)"
+      default: "neutral"
+
+    - name: tone_evidence
+      type: str
+      description: "Textual evidence supporting the identified tone"
+      default: ""
