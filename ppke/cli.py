@@ -132,13 +132,22 @@ def main(ctx):
 # ── init command ──
 
 
+_BUILTIN_DOMAINS = ["philosophy", "science", "legal"]
+_DOMAIN_DESCRIPTIONS = {
+    "philosophy": "Argument mapping, concept tracking, logical architecture",
+    "science": "Methodology analysis, evidence mapping, findings synthesis",
+    "legal": "Case law analysis, statutory interpretation, legal reasoning",
+    "custom": "Install your own template with: ppke template install <source>",
+}
+
+
 @main.command()
 def init():
     """First-time setup wizard.
 
     Walks you through configuring your LLM provider, API keys,
-    and knowledge base location. Secrets are stored in ~/.ppke/.env
-    (permissions 600) and never committed to git.
+    knowledge base location, and default domain template. Secrets are
+    stored in ~/.ppke/.env (permissions 600) and never committed to git.
 
     Example:
         ppke init
@@ -169,17 +178,63 @@ def init():
     key = click.prompt(env_var_name, hide_input=True)
     env_vars[env_var_name] = key
 
-    # 5. Vault path
+    # 4. Vault path
     default_vault = str(Path.home() / "KnowledgeBase")
     click.echo(f"\nKnowledge base directory (default: {default_vault})")
     vault_path = click.prompt("Vault path", default=default_vault)
 
-    # 6. Batch size
+    # 5. Batch size
     batch_size = click.prompt(
         "\nParagraphs per LLM batch",
         type=click.IntRange(min=1),
         default=5,
     )
+
+    # 6. Domain / template selection
+    click.echo("\nAvailable domain templates:")
+    for name, desc in _DOMAIN_DESCRIPTIONS.items():
+        marker = " (built-in)" if name in _BUILTIN_DOMAINS else ""
+        click.echo(f"  {name}{marker}: {desc}")
+    domain_choices = _BUILTIN_DOMAINS + ["custom"]
+    domain = click.prompt(
+        "\nDefault domain template",
+        type=click.Choice(domain_choices, case_sensitive=False),
+        default="philosophy",
+    )
+
+    # For custom domains: ask for the name and remind user to install it
+    if domain == "custom":
+        custom_name = click.prompt(
+            "Custom domain name (the template you plan to install)",
+            default="custom",
+        )
+        domain = custom_name
+        click.echo(
+            f"\nNote: '{domain}' is not a built-in template. Install it before ingesting:\n"
+            "  ppke template install https://github.com/<user>/ppke-template-<name>\n"
+            "  ppke template install ./path/to/template/"
+        )
+
+    # 7. Vector search
+    click.echo(
+        "\nVector search (ChromaDB) enables fast semantic lookup over all extractions."
+        "\nRequires: pip install 'ppke[vector]'"
+    )
+    enable_vector_search = click.confirm("Enable vector search?", default=True)
+
+    # 8. Knowledge graph
+    click.echo(
+        "\nKnowledge graph (NetworkX) enables concept-level graph traversal and cross-book reasoning."
+        "\nRequires: pip install networkx  (or pip install 'ppke[graph]')"
+    )
+    enable_knowledge_graph = click.confirm("Enable knowledge graph?", default=True)
+
+    # 9. Async ingest
+    click.echo(
+        "\nAsync ingestion runs LLM calls, disk I/O, and analysis stages concurrently"
+        "\nfor maximum throughput on large books. Uses asyncio under the hood."
+    )
+    async_ingest = click.confirm("Enable async ingestion?", default=False)
 
     # Save secrets to .env file
     click.echo("\nSaving API keys to ~/.ppke/.env ...")
@@ -194,6 +249,10 @@ def init():
     cfg.llm.provider = provider
     cfg.llm.model = model
     cfg.llm.paragraphs_per_batch = batch_size
+    cfg.default_domain = domain
+    cfg.enable_vector_search = enable_vector_search
+    cfg.enable_knowledge_graph = enable_knowledge_graph
+    cfg.async_ingest = async_ingest
     cfg.save()
 
     # Create vault directory
@@ -207,12 +266,17 @@ def init():
     cfg_table.add_row("Model:", model)
     cfg_table.add_row("Vault:", vault_path)
     cfg_table.add_row("Batch size:", str(batch_size))
+    cfg_table.add_row("Default domain:", domain)
+    cfg_table.add_row("Vector search:", "enabled" if enable_vector_search else "disabled")
+    cfg_table.add_row("Knowledge graph:", "enabled" if enable_knowledge_graph else "disabled")
+    cfg_table.add_row("Async ingest:", "enabled" if async_ingest else "disabled (sync)")
     cfg_table.add_row("Secrets:", "~/.ppke/.env (chmod 600)")
     click.echo()
     click.echo(_render(_Panel(cfg_table, title="[bold green]Setup complete![/bold green]", border_style="green")))
     click.echo()
     click.echo(_render(_Rule("Next steps")))
-    click.echo("  ppke ingest book.md --title 'Book Title' --author 'Author Name'")
+    click.echo(f"  ppke ingest book.md --title 'Book Title' --author 'Author Name' --domain {domain}")
+    click.echo("  ppke list-domains")
     click.echo("  ppke config --show")
     click.echo("  ppke --help")
 
@@ -289,7 +353,7 @@ def list_domains():
 @click.option("--title", required=True, help="Book title")
 @click.option("--author", required=True, help="Book author")
 @click.option("--year", default=None, help="Publication year")
-@click.option("--domain", default="philosophy", help="Domain template (default: philosophy)")
+@click.option("--domain", default=None, help="Domain template (overrides config default_domain)")
 @click.option(
     "--provider",
     type=click.Choice(SUPPORTED_PROVIDERS),
@@ -313,7 +377,7 @@ def ingest(
     title: str,
     author: str,
     year: str | None,
-    domain: str,
+    domain: str | None,
     provider: str | None,
     model: str | None,
     vault_path: Path | None,
@@ -330,7 +394,7 @@ def ingest(
 
     Examples:
         ppke ingest book.md --title "Being and Time" --author "Heidegger" --year 1927
-        ppke ingest book.md --title "Being and Time" --author "Heidegger" --domain legal
+        ppke ingest book.md --title "Being and Time" --author "Heidegger" --domain science
         ppke ingest book.md --title "Being and Time" --author "Heidegger" --resume
     """
     _setup_logging(verbose)
@@ -338,6 +402,8 @@ def ingest(
     config = _load_config_with_overrides(provider, model, vault_path, batch_size)
     if double_pass:
         config.double_pass = True
+    # Resolve domain: CLI flag > config default_domain > "philosophy"
+    domain = domain or config.default_domain or "philosophy"
     _require_api_key(config)
 
     # Parse the book
@@ -357,25 +423,37 @@ def ingest(
         line = _Text.assemble(stage_t, " ", detail)
         click.echo("  " + _render(line))
 
-    from ppke.pipeline.orchestrator import ingest_book
     from ppke.progress.tracker import ProgressTracker
     from ppke.vectordb.store import VectorStore
     from ppke.graph.knowledge_graph import KnowledgeGraph
 
     tracker = ProgressTracker()
-    vector_store = VectorStore(config.vault_path)
-    knowledge_graph = KnowledgeGraph(config.vault_path)
+    vector_store = VectorStore(config.vault_path) if config.enable_vector_search else None
+    knowledge_graph = KnowledgeGraph(config.vault_path) if config.enable_knowledge_graph else None
 
     try:
-        book_dir = ingest_book(
-            book, config,
-            progress_callback=progress_callback,
-            human_operator=operator,
-            resume=resume,
-            tracker=tracker,
-            vector_store=vector_store,
-            knowledge_graph=knowledge_graph,
-        )
+        if config.async_ingest:
+            import asyncio
+            from ppke.pipeline.async_orchestrator import ingest_book_async
+            book_dir = asyncio.run(
+                ingest_book_async(
+                    book, config,
+                    progress_callback=progress_callback,
+                    human_operator=operator,
+                    resume=resume,
+                )
+            )
+        else:
+            from ppke.pipeline.orchestrator import ingest_book
+            book_dir = ingest_book(
+                book, config,
+                progress_callback=progress_callback,
+                human_operator=operator,
+                resume=resume,
+                tracker=tracker,
+                vector_store=vector_store,
+                knowledge_graph=knowledge_graph,
+            )
     except Exception as e:
         if tracker.get_book(book.folder_name):
             tracker.fail_book(book.folder_name, str(e))
@@ -805,6 +883,10 @@ def config(
         tbl.add_row("Max workers:", str(cfg.llm.max_workers))
         tbl.add_row("Selective:", str(cfg.selective_depth))
         tbl.add_row("Double pass:", str(cfg.double_pass))
+        tbl.add_row("Default domain:", cfg.default_domain)
+        tbl.add_row("Vector search:", "enabled" if cfg.enable_vector_search else "disabled")
+        tbl.add_row("Knowledge graph:", "enabled" if cfg.enable_knowledge_graph else "disabled")
+        tbl.add_row("Async ingest:", "enabled" if cfg.async_ingest else "disabled (sync)")
         api_key_val = "yes" if cfg.llm.active_api_key else "no"
         tbl.add_row("API key set:", api_key_val)
         click.echo(_render(_Panel(tbl, title="[bold]PPKE Configuration[/bold]")))
@@ -1750,7 +1832,7 @@ def vector_search(
 @click.option("--title", required=True, help="Book title")
 @click.option("--author", required=True, help="Book author")
 @click.option("--year", default=None, help="Publication year")
-@click.option("--domain", default="philosophy", help="Domain template (default: philosophy)")
+@click.option("--domain", default=None, help="Domain template (overrides config default_domain)")
 @click.option(
     "--provider",
     type=click.Choice(SUPPORTED_PROVIDERS),
@@ -1774,7 +1856,7 @@ def async_ingest(
     title: str,
     author: str,
     year: str | None,
-    domain: str,
+    domain: str | None,
     provider: str | None,
     model: str | None,
     vault_path: Path | None,
@@ -1799,6 +1881,8 @@ def async_ingest(
     config = _load_config_with_overrides(provider, model, vault_path, batch_size)
     if double_pass:
         config.double_pass = True
+    # Resolve domain: CLI flag > config default_domain > "philosophy"
+    domain = domain or config.default_domain or "philosophy"
     _require_api_key(config)
 
     click.echo(f"Parsing {filepath}...")
