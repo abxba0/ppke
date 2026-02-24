@@ -88,17 +88,17 @@ def cross_book_synthesis(
             "title": b["title"],
             "author": b["author"],
         }
-        # Include key sections (truncated if massive for token limits)
+        # Include key sections (truncated for token limits)
         if "author_model" in b:
-            summary["author_model"] = b["author_model"][:3000]
+            summary["author_model"] = b["author_model"][:2000]
         if "concept_index" in b:
-            summary["concept_index"] = b["concept_index"][:3000]
+            summary["concept_index"] = b["concept_index"][:2000]
         if "logical_map" in b:
-            summary["logical_map"] = b["logical_map"][:2000]
+            summary["logical_map"] = b["logical_map"][:1500]
         book_summaries.append(summary)
 
     user_prompt = CROSS_BOOK_USER.format(
-        books_json=json.dumps(book_summaries, indent=1),
+        books_json=json.dumps(book_summaries, separators=(',', ':')),
         question=question or "Produce a general cross-book synthesis.",
     )
 

@@ -128,27 +128,39 @@ def _save_checkpoint(
     completed_indices: list[int],
     extractions: list[ExtractionResult],
 ) -> None:
-    """Save extraction checkpoint after each chapter completes."""
+    """Save extraction checkpoint after each chapter completes.
+
+    Omits empty list fields and uses compact JSON to minimize checkpoint
+    file size.  original_text is still included so that resumed runs can
+    pass complete ExtractionResult objects to downstream stages.
+    """
+    ext_list = []
+    for ext in extractions:
+        entry: dict[str, Any] = {
+            "paragraph_id": ext.paragraph_id,
+            "original_text": ext.original_text,
+            "topic_sentence": ext.topic_sentence,
+            "function_in_argument": ext.function_in_argument,
+            "depth": ext.depth.value,
+        }
+        if ext.explicit_claims:
+            entry["explicit_claims"] = ext.explicit_claims
+        if ext.implicit_assumptions:
+            entry["implicit_assumptions"] = ext.implicit_assumptions
+        if ext.logical_steps:
+            entry["logical_steps"] = ext.logical_steps
+        if ext.defined_concepts:
+            entry["defined_concepts"] = ext.defined_concepts
+        if ext.emotional_tone:
+            entry["emotional_tone"] = ext.emotional_tone
+        if ext.tone_evidence:
+            entry["tone_evidence"] = ext.tone_evidence
+        if ext.internal_references:
+            entry["internal_references"] = ext.internal_references
+        ext_list.append(entry)
     data = {
         "completed_chapter_indices": completed_indices,
-        "extractions": [
-            {
-                "paragraph_id": ext.paragraph_id,
-                "original_text": ext.original_text,
-                "topic_sentence": ext.topic_sentence,
-                "function_in_argument": ext.function_in_argument,
-                "explicit_claims": ext.explicit_claims,
-                "implicit_assumptions": ext.implicit_assumptions,
-                "logical_steps": ext.logical_steps,
-                "defined_concepts": ext.defined_concepts,
-                "emotional_tone": ext.emotional_tone,
-                "tone_evidence": ext.tone_evidence,
-                "internal_references": ext.internal_references,
-                "is_argument_carrying": ext.depth.value == "full",
-                "depth": ext.depth.value,
-            }
-            for ext in extractions
-        ],
+        "extractions": ext_list,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, separators=(',', ':')))
@@ -237,6 +249,18 @@ def _load_checkpoint(
         return None
 
 
+def _truncate_json(data: dict[str, Any], max_chars: int = 8000) -> str:
+    """Serialize *data* to compact JSON, truncating if it exceeds *max_chars*.
+
+    This prevents the author-model prompt from blowing up when analysis
+    stages produce very large outputs (e.g. hundreds of concepts).
+    """
+    raw = json.dumps(data, separators=(',', ':'))
+    if len(raw) <= max_chars:
+        return raw
+    return raw[:max_chars] + '..."}'
+
+
 def _build_author_model(
     client: LLMClient,
     book: Book,
@@ -244,13 +268,18 @@ def _build_author_model(
     concept_data: dict[str, Any],
     pattern_data: dict[str, Any],
 ) -> dict[str, Any]:
-    """Build author model from all analysis results."""
+    """Build author model from all analysis results.
+
+    Analysis data is truncated to keep total prompt within reasonable
+    token bounds — the author model needs representative data, not every
+    last occurrence entry.
+    """
     user_prompt = AUTHOR_MODEL_USER.format(
         book_title=book.title,
         author=book.author,
-        logical_map_json=json.dumps(logical_map, separators=(',', ':')),
-        concept_index_json=json.dumps(concept_data, separators=(',', ':')),
-        patterns_json=json.dumps(pattern_data, separators=(',', ':')),
+        logical_map_json=_truncate_json(logical_map, 10000),
+        concept_index_json=_truncate_json(concept_data, 8000),
+        patterns_json=_truncate_json(pattern_data, 6000),
     )
 
     try:
@@ -820,6 +849,27 @@ def ingest_book(
     # ── Mark book complete in progress tracker ──
     if tracker is not None:
         tracker.complete_book(book.folder_name)
+
+    # ── Log token usage summary ──
+    try:
+        usage = client.usage.summary()
+        calls = int(usage.get("total_calls", 0))
+        inp = int(usage.get("input_tokens", 0))
+        out = int(usage.get("output_tokens", 0))
+        total = int(usage.get("total_tokens", 0))
+        cr = int(usage.get("cache_read_tokens", 0))
+        cc = int(usage.get("cache_creation_tokens", 0))
+        cache_info = (
+            f" | Cache read: {cr:,} | Cache created: {cc:,}"
+            if cr or cc else ""
+        )
+        _progress(
+            "token_usage",
+            f"Total API calls: {calls} | Input: {inp:,} | Output: {out:,} | "
+            f"Total: {total:,} tokens{cache_info}",
+        )
+    except Exception as _ue:
+        logger.debug("Could not log token usage summary: %s", _ue)
 
     _progress("complete", f"Book ingested: {book_dir}")
     return book_dir

@@ -16,22 +16,28 @@ logger = logging.getLogger(__name__)
 def _extraction_to_summary(results: list[ExtractionResult]) -> str:
     """Convert extraction results to a condensed JSON summary for the LLM.
 
-    We don't send full text - just the structured extractions to stay within limits.
-    Empty fields are omitted to reduce token usage without losing content.
+    Only argument-carrying (FULL depth) and substantive paragraphs are
+    included — LIGHT/SKIP paragraphs add noise without logical content.
+    Short key names reduce serialized size.
     """
     items = []
     for r in results:
-        item: dict[str, Any] = {"paragraph_id": r.paragraph_id}
+        # Skip low-information and skip-depth paragraphs for logical map
+        if r.depth.value == "skip":
+            continue
+        if r.topic_sentence in ("[LOW INFORMATION]", "[EXTRACTION FAILED]"):
+            continue
+        item: dict[str, Any] = {"id": r.paragraph_id}
         if r.topic_sentence:
-            item["topic_sentence"] = r.topic_sentence
+            item["topic"] = r.topic_sentence
         if r.function_in_argument:
-            item["function"] = r.function_in_argument
+            item["fn"] = r.function_in_argument
         if r.explicit_claims:
             item["claims"] = r.explicit_claims
         if r.implicit_assumptions:
             item["assumptions"] = r.implicit_assumptions
         if r.logical_steps:
-            item["logical_steps"] = r.logical_steps
+            item["steps"] = r.logical_steps
         if r.defined_concepts:
             item["concepts"] = r.defined_concepts
         items.append(item)

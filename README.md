@@ -265,7 +265,99 @@ ppke tui --vault-path ~/my-vault
 
 ## Architecture & Pipeline
 
-PPKE processes a book through six sequential pipeline stages:
+### High-Level Overview
+
+```mermaid
+flowchart LR
+    A["📄 Markdown\nDocument"] --> B["PPKE CLI\nppke ingest"]
+    B --> C["🧠 LLM Analysis\n(multi-stage)"]
+    C --> D["🗂️ Knowledge\nVault"]
+    D --> E["💬 Query\nppke query"]
+    D --> F["🔍 Search\nppke search"]
+    D --> G["📊 Cross-Book\nSynthesis"]
+
+    style A fill:#e8f4f8
+    style D fill:#f0f8e8
+    style C fill:#fff3e0
+```
+
+### Ingestion Pipeline (Technical)
+
+```mermaid
+flowchart TD
+    MD["📄 Markdown File"] --> P0
+
+    P0["Stage 0 · Split long paragraphs\n≤ max_paragraph_tokens each"]
+    P0 --> P1
+
+    subgraph P1["Stage 1 · Structural Extraction (small_model)"]
+        direction LR
+        SL["Skip Logic\nboilerplate / page numbers\n→ LOW INFORMATION"] --> EX["Batch Extraction\nbatch_size paras/call\nparallel chapters"]
+        EX --> CV1["Per-chapter\nCoverage Check"]
+        CV1 -->|gaps| RR["Re-read\nmissing paras"]
+    end
+    P1 --> P2
+
+    P2{{"Stage 2 · Double-Pass?\n(optional)"}}
+    P2 -->|Yes| DP["Re-extract all chapters\nMerge best results"]
+    P2 -->|No| P3
+    DP --> P3
+
+    P3["Stage 3 · Coverage Validation\n(pure logic — no LLM)\n100% paragraph check"]
+    P3 -->|INCOMPLETE| ERR["❌ RuntimeError\nRe-run with --resume"]
+    P3 -->|COMPLETE| P456
+
+    subgraph P456["Stages 4–6 · Secondary Analysis (main model) — parallel"]
+        direction LR
+        LM["Logical\nMap"]
+        CI["Concept\nIndex"]
+        PD["Pattern\nDetection"]
+    end
+    P456 --> P7
+
+    P7["Stage 7 · Author Model\n(main model)"]
+    P7 --> P8
+
+    P8["Stage 8 · Write Output Files\nextractions.json · Logical Map · Concepts\nAuthor Model · Coverage · Patterns"]
+    P8 --> P9
+
+    P9["Stage 9–10 · Optional Layers\nVector DB index · Knowledge Graph"]
+    P9 --> LOG
+
+    LOG["📊 Token Usage Summary\ncalls · input · output · cache hits"]
+
+    style ERR fill:#ffcccc
+    style LOG fill:#e8f4e8
+    style SL fill:#fff3e0
+```
+
+### Token Cost Architecture
+
+```mermaid
+flowchart LR
+    subgraph Cost["Cost Reduction Mechanisms"]
+        direction TB
+        TT["Two-Tier Models\nsmall_model → extraction\nmain model → analysis"]
+        SL["Skip Logic\nboilerplate filtered\nbefore any LLM call"]
+        PC["Prompt Caching\nAnthropic ephemeral cache\nDeepSeek prefix cache"]
+        SP["Sub-paragraph Split\n≤ 2000 tokens each\nno wasted context"]
+        BA["Batching\n5 paras/call default\nreduces round-trips"]
+        CK["Checkpointing\nresume on failure\nno re-extraction"]
+    end
+
+    subgraph Saved["Estimated Savings"]
+        direction TB
+        S1["~60–80% extraction cost\n(small vs. main model)"]
+        S2["~5–15% tokens skipped\n(boilerplate)"]
+        S3["~5–10× cache hits\n(same system prompt)"]
+    end
+
+    TT --> S1
+    SL --> S2
+    PC --> S3
+```
+
+PPKE processes a book through sequential pipeline stages:
 
 ```
 Stage 0: Sub-paragraph splitting (token limit management)

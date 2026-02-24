@@ -1,165 +1,47 @@
-# Science Prompts - Scientific text analysis
+# Science Prompts - Token-optimized v2.1
 
 extraction:
   system: |
-    Scientific text structural extractor. Extract structured data from scientific texts including research papers, reviews, and technical reports.
-    Rules: Quote exact text for evidence. Cite all numerical results precisely. Mark inferences [INFERENCE]. Use provided paragraph IDs. JSON only.
+    Scientific text extractor. Exact quotes, precise numerical results, [INFERENCE] tags. Use given paragraph IDs. JSON array only.
 
   user_template: |
-    Analyze the following paragraphs from "{book_title}" by {author}, Section {chapter_num}: "{chapter_title}".
+    Paper: "{book_title}" by {author}, Section {chapter_num}: "{chapter_title}"
 
-    For each paragraph, extract:
-    1. topic_sentence: The main scientific claim or point (one sentence)
-    2. hypothesis: The hypothesis or research question addressed (if any)
-    3. methodology: Research methods or experimental procedures described
-    4. evidence: Empirical evidence, data points, or results cited (quoted from text)
-    5. conclusions: Conclusions or interpretations drawn from the evidence
-    6. limitations: Limitations, caveats, or uncertainty acknowledged
-    7. epistemic_status: Level of certainty (e.g., "established", "hypothesized", "speculative", "contested", "replicated")
-    8. defined_concepts: Key scientific terms or concepts introduced (exact phrases)
-    9. internal_references: References to other parts of the text, other studies, or data
-    10. is_argument_carrying: true if this paragraph carries substantive scientific argument, false if transitional/contextual
-
-    Paragraphs to analyze:
+    Extract per paragraph: topic_sentence, hypothesis, methodology, evidence (quoted), conclusions, limitations, epistemic_status (established/hypothesized/speculative/contested/replicated), defined_concepts (exact), internal_references, is_argument_carrying (bool).
 
     {paragraphs_json}
 
-    Return a JSON array where each element has:
-    {{
-      "paragraph_id": "<the ID>",
-      "topic_sentence": "...",
-      "hypothesis": "...",
-      "methodology": ["..."],
-      "evidence": ["..."],
-      "conclusions": ["..."],
-      "limitations": ["..."],
-      "epistemic_status": "...",
-      "defined_concepts": ["..."],
-      "internal_references": ["..."],
-      "is_argument_carrying": true/false
-    }}
+    JSON array: [{{"paragraph_id":"...","topic_sentence":"...","hypothesis":"...","methodology":[],"evidence":[],"conclusions":[],"limitations":[],"epistemic_status":"...","defined_concepts":[],"internal_references":[],"is_argument_carrying":bool}}]
 
 methodology:
   system: |
-    Scientific methodology analyzer. Identify research designs, methods, and analytical approaches. Evaluate methodological rigor.
-    Rules: Every claim must cite paragraph IDs. Quote exact methodological descriptions. Mark inferences [INFERENCE]. JSON only.
+    Scientific methodology analyzer. Cite paragraph IDs. Quote exact methods. [INFERENCE] tags. JSON only.
 
   user_template: |
-    Given the following structural extraction data for "{book_title}" by {author}, build a methodology analysis.
+    Analyze methodology for "{book_title}" by {author}.
 
-    Extraction data:
-    {extraction_json}
+    Extraction data: {extraction_json}
 
-    Return JSON with:
-    {{
-      "research_design": {{
-        "type": "experimental|observational|review|theoretical|mixed",
-        "description": "...",
-        "paragraph_ids": ["..."]
-      }},
-      "methods": [
-        {{
-          "name": "...",
-          "description": "...",
-          "paragraph_ids": ["..."],
-          "strengths": ["..."],
-          "limitations": ["..."]
-        }}
-      ],
-      "data_sources": [
-        {{
-          "source": "...",
-          "type": "primary|secondary|meta-analysis",
-          "paragraph_ids": ["..."]
-        }}
-      ],
-      "analytical_approach": {{
-        "description": "...",
-        "statistical_methods": ["..."],
-        "paragraph_ids": ["..."]
-      }}
-    }}
+    JSON: {{"research_design":{{"type":"experimental|observational|review|theoretical|mixed","description":"...","paragraph_ids":[]}},"methods":[{{"name":"...","description":"...","paragraph_ids":[],"strengths":[],"limitations":[]}}],"data_sources":[{{"source":"...","type":"primary|secondary|meta-analysis","paragraph_ids":[]}}],"analytical_approach":{{"description":"...","statistical_methods":[],"paragraph_ids":[]}}}}
 
 evidence:
   system: |
-    Scientific evidence mapper. Identify and evaluate empirical evidence, data quality, and reasoning from evidence to conclusions.
-    Rules: Quote exact evidence from text. Cite paragraph IDs. Distinguish correlation from causation. Mark inferences [INFERENCE]. JSON only.
+    Scientific evidence mapper. Exact quotes. Cite paragraph IDs. Distinguish correlation/causation. [INFERENCE] tags. JSON only.
 
   user_template: |
-    Given the following structural extraction data for "{book_title}" by {author}, build an evidence map.
+    Map evidence for "{book_title}" by {author}.
 
-    Extraction data:
-    {extraction_json}
+    Extraction data: {extraction_json}
 
-    For each significant claim or conclusion, map the evidence supporting it:
-    1. Every paragraph where supporting evidence appears (with exact quote)
-    2. The quality and type of evidence
-    3. Alternative explanations or counter-evidence
-
-    Return JSON:
-    {{
-      "evidence_chains": [
-        {{
-          "claim": "...",
-          "evidence": [
-            {{"paragraph_id": "...", "quote": "...", "evidence_type": "experimental|observational|statistical|anecdotal"}}
-          ],
-          "strength": "strong|moderate|weak",
-          "counter_evidence": ["..."],
-          "reasoning_type": "causal|correlational|descriptive|theoretical"
-        }}
-      ],
-      "key_findings": [
-        {{
-          "finding": "...",
-          "paragraph_ids": ["..."],
-          "epistemic_status": "established|hypothesized|speculative|contested"
-        }}
-      ]
-    }}
+    JSON: {{"evidence_chains":[{{"claim":"...","evidence":[{{"paragraph_id":"...","quote":"...","evidence_type":"experimental|observational|statistical|anecdotal"}}],"strength":"strong|moderate|weak","counter_evidence":[],"reasoning_type":"causal|correlational|descriptive|theoretical"}}],"key_findings":[{{"finding":"...","paragraph_ids":[],"epistemic_status":"established|hypothesized|speculative|contested"}}]}}
 
 findings:
   system: |
-    Scientific findings and conclusions synthesizer. Summarize key results, evaluate their significance, and detect inconsistencies or gaps.
-    Rules: Evidence must cite paragraph IDs. Distinguish results from interpretations. Mark hypotheses [HYPOTHESIS]. JSON only.
+    Scientific findings synthesizer. Cite paragraph IDs. Distinguish results from interpretations. [HYPOTHESIS] tags. JSON only.
 
   user_template: |
-    Given the following structural extraction data for "{book_title}" by {author}, synthesize the findings and conclusions.
+    Synthesize findings for "{book_title}" by {author}.
 
-    Extraction data:
-    {extraction_json}
+    Extraction data: {extraction_json}
 
-    Synthesize:
-    1. Key findings (with supporting evidence)
-    2. Theoretical contributions or novel claims
-    3. Unanswered questions or future directions
-    4. Internal inconsistencies or contradictions
-    5. Relationship to established knowledge
-
-    Return JSON:
-    {{
-      "key_findings": [
-        {{
-          "finding": "...",
-          "significance": "...",
-          "evidence": [
-            {{"paragraph_id": "...", "quote": "..."}}
-          ],
-          "is_novel": true/false
-        }}
-      ],
-      "theoretical_contributions": [
-        {{
-          "contribution": "...",
-          "paragraph_ids": ["..."],
-          "is_hypothesis": true/false
-        }}
-      ],
-      "open_questions": ["..."],
-      "inconsistencies": [
-        {{
-          "description": "...",
-          "paragraph_ids": ["..."]
-        }}
-      ]
-    }}
+    JSON: {{"key_findings":[{{"finding":"...","significance":"...","evidence":[{{"paragraph_id":"...","quote":"..."}}],"is_novel":bool}}],"theoretical_contributions":[{{"contribution":"...","paragraph_ids":[],"is_hypothesis":bool}}],"open_questions":[],"inconsistencies":[{{"description":"...","paragraph_ids":[]}}]}}

@@ -20,18 +20,22 @@ def _extraction_to_pattern_input(results: list[ExtractionResult]) -> str:
     """Build input focusing on tones, claims, and structural data.
 
     All paragraphs are included (needed for emotional arc tracking).
-    Full verbatim text is preserved — no truncation. Empty fields are
-    omitted to reduce token usage without losing content.
+    Original text is omitted to save tokens — the LLM has topic_sentence,
+    claims, and tone_evidence which provide sufficient context for pattern
+    detection. Short key names reduce serialized size further.
+    Empty fields are omitted.
     """
     items = []
     for r in results:
-        item: dict = {"paragraph_id": r.paragraph_id, "original_text": r.original_text}
+        item: dict = {"id": r.paragraph_id}
         if r.topic_sentence:
             item["topic"] = r.topic_sentence
         if r.function_in_argument:
-            item["function"] = r.function_in_argument
+            item["fn"] = r.function_in_argument
         if r.emotional_tone:
             item["tone"] = r.emotional_tone
+        if r.tone_evidence:
+            item["tone_ev"] = r.tone_evidence
         if r.explicit_claims:
             item["claims"] = r.explicit_claims
         if r.implicit_assumptions:
@@ -72,10 +76,20 @@ def detect_patterns(
     if not extraction_results:
         return {"patterns": []}
 
+    # Filter out SKIP-depth and failed/low-info paragraphs to reduce token input
+    substantive = [
+        r for r in extraction_results
+        if r.depth.value != "skip"
+        and r.topic_sentence not in ("[LOW INFORMATION]", "[EXTRACTION FAILED]")
+    ]
+
+    if not substantive:
+        return {"patterns": []}
+
     chunk_results: list[dict[str, Any]] = []
 
-    for i in range(0, len(extraction_results), _PATTERN_CHUNK_SIZE):
-        chunk = extraction_results[i : i + _PATTERN_CHUNK_SIZE]
+    for i in range(0, len(substantive), _PATTERN_CHUNK_SIZE):
+        chunk = substantive[i : i + _PATTERN_CHUNK_SIZE]
         extraction_json = _extraction_to_pattern_input(chunk)
 
         user_prompt = effective_user_tpl.format(
@@ -90,7 +104,7 @@ def detect_patterns(
             logger.info(
                 "Pattern chunk %d-%d: %d patterns found",
                 i + 1,
-                min(i + _PATTERN_CHUNK_SIZE, len(extraction_results)),
+                min(i + _PATTERN_CHUNK_SIZE, len(substantive)),
                 len(result.get("patterns", [])),
             )
         except Exception as e:

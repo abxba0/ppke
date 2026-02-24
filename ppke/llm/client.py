@@ -39,14 +39,59 @@ def _is_retryable(exc: Exception) -> bool:
     return False
 
 
+class TokenUsageTracker:
+    """Thread-safe tracker for cumulative token usage across all LLM calls.
+
+    Tracks input tokens, output tokens, and cache hits (where reported).
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.input_tokens: int = 0
+        self.output_tokens: int = 0
+        self.cache_read_tokens: int = 0
+        self.cache_creation_tokens: int = 0
+        self.total_calls: int = 0
+
+    def record(
+        self,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_read: int = 0,
+        cache_creation: int = 0,
+    ) -> None:
+        with self._lock:
+            self.input_tokens += input_tokens
+            self.output_tokens += output_tokens
+            self.cache_read_tokens += cache_read
+            self.cache_creation_tokens += cache_creation
+            self.total_calls += 1
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+    def summary(self) -> dict[str, int]:
+        return {
+            "total_calls": self.total_calls,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cache_read_tokens": self.cache_read_tokens,
+            "cache_creation_tokens": self.cache_creation_tokens,
+            "total_tokens": self.total_tokens,
+        }
+
+
 class LLMClient:
     """Configurable LLM client wrapping Anthropic, OpenAI, DeepSeek, Gemini, and OpenRouter.
 
     Thread-safe: lazy client initialization is protected by a lock.
+    Tracks cumulative token usage via ``usage`` attribute.
     """
 
     def __init__(self, config: LLMConfig):
         self.config = config
+        self.usage = TokenUsageTracker()
         self._anthropic_client = None
         self._openai_client = None
         self._deepseek_client = None
@@ -183,6 +228,15 @@ class LLMClient:
             system=system_content,
             messages=[{"role": "user", "content": user_prompt}],
         )
+        # Track token usage from Anthropic's usage object
+        if hasattr(response, "usage") and response.usage:
+            u = response.usage
+            self.usage.record(
+                input_tokens=getattr(u, "input_tokens", 0),
+                output_tokens=getattr(u, "output_tokens", 0),
+                cache_read=getattr(u, "cache_read_input_tokens", 0),
+                cache_creation=getattr(u, "cache_creation_input_tokens", 0),
+            )
         return response.content[0].text
 
     def _complete_openai(
@@ -203,6 +257,13 @@ class LLMClient:
             kwargs["response_format"] = {"type": "json_object"}
 
         response = client.chat.completions.create(**kwargs)
+        # Track token usage from OpenAI-compatible usage object
+        if hasattr(response, "usage") and response.usage:
+            u = response.usage
+            self.usage.record(
+                input_tokens=getattr(u, "prompt_tokens", 0),
+                output_tokens=getattr(u, "completion_tokens", 0),
+            )
         content = response.choices[0].message.content
         if content is None:
             raise ValueError("OpenAI returned empty content")
@@ -231,6 +292,12 @@ class LLMClient:
             kwargs["response_format"] = {"type": "json_object"}
 
         response = client.chat.completions.create(**kwargs)
+        if hasattr(response, "usage") and response.usage:
+            u = response.usage
+            self.usage.record(
+                input_tokens=getattr(u, "prompt_tokens", 0),
+                output_tokens=getattr(u, "completion_tokens", 0),
+            )
         content = response.choices[0].message.content
         if content is None:
             raise ValueError("DeepSeek returned empty content")
@@ -265,6 +332,13 @@ class LLMClient:
         )
         if not response.text:
             raise ValueError("Gemini returned empty content")
+        # Track token usage from Gemini's usage_metadata (if present)
+        um = getattr(response, "usage_metadata", None)
+        if um is not None:
+            self.usage.record(
+                input_tokens=getattr(um, "prompt_token_count", 0),
+                output_tokens=getattr(um, "candidates_token_count", 0),
+            )
         return response.text
 
     def _complete_openrouter(
@@ -286,6 +360,13 @@ class LLMClient:
             kwargs["response_format"] = {"type": "json_object"}
 
         response = client.chat.completions.create(**kwargs)
+        # Track token usage from OpenRouter's OpenAI-compatible usage object
+        if hasattr(response, "usage") and response.usage:
+            u = response.usage
+            self.usage.record(
+                input_tokens=getattr(u, "prompt_tokens", 0),
+                output_tokens=getattr(u, "completion_tokens", 0),
+            )
         content = response.choices[0].message.content
         if content is None:
             raise ValueError("OpenRouter returned empty content")
