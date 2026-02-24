@@ -71,12 +71,22 @@ def build_concept_index(
     extraction_results: list[ExtractionResult],
     book_title: str,
     author: str,
+    system_prompt: str | None = None,
+    user_template: str | None = None,
 ) -> dict[str, Any]:
-    """Build concept index for the book.
+    """Build concept/entity index for the book.
 
     Processes in chunks to respect token limits while preserving full text.
-    Returns dict structure for writing to 03_Concept_Index.md.
+    Returns dict structure for writing to the stage 3 output file.
+
+    Args:
+        system_prompt: Override system prompt from the active domain template.
+        user_template: Override user template; must contain {book_title},
+            {author}, {extraction_json} placeholders.
     """
+    effective_system = system_prompt if system_prompt else CONCEPT_INDEX_SYSTEM
+    effective_user_tpl = user_template if user_template else CONCEPT_INDEX_USER
+
     # Filter to paragraphs that have concepts or claims
     relevant = [r for r in extraction_results if r.defined_concepts or r.explicit_claims]
 
@@ -89,14 +99,14 @@ def build_concept_index(
         chunk = relevant[i : i + _CONCEPT_CHUNK_SIZE]
         extraction_json = _extraction_to_concept_input(chunk)
 
-        user_prompt = CONCEPT_INDEX_USER.format(
+        user_prompt = effective_user_tpl.format(
             book_title=book_title,
             author=author,
             extraction_json=extraction_json,
         )
 
         try:
-            result = client.complete_json(CONCEPT_INDEX_SYSTEM, user_prompt)
+            result = client.complete_json(effective_system, user_prompt)
             chunk_results.append(result)
             logger.info(
                 "Concept chunk %d-%d: %d concepts found",

@@ -105,6 +105,7 @@ async def _extract_chapter_async(
 async def ingest_book_async(
     book: Book,
     config: Config,
+    domain: str = "philosophy",
     progress_callback: Optional[ProgressCallback] = None,
     human_operator: str = "",
     resume: bool = False,
@@ -112,18 +113,20 @@ async def ingest_book_async(
     """Async version of the full book ingestion pipeline.
 
     Pipeline stages:
-    1. Sub-paragraph splitting (sync, fast)
-    2. Checkpoint load / resume
-    3. Concurrent chapter extraction via asyncio.gather + semaphore
-    4. Optional double-pass verification
-    5. Coverage validation
-    6. Concurrent analysis: logical map + concept index + pattern detection
-    7. Author model generation
-    8. Write all output files
+    1. Load domain template (prompts + skip_chapters)
+    2. Sub-paragraph splitting (sync, fast)
+    3. Checkpoint load / resume
+    4. Concurrent chapter extraction via asyncio.gather + semaphore
+    5. Optional double-pass verification
+    6. Coverage validation
+    7. Concurrent analysis: stage-2/3/4 with template prompts
+    8. Author model generation
+    9. Write all output files
 
     Args:
         book: Parsed Book object.
         config: PPKE configuration (max_workers controls concurrency level).
+        domain: Domain template name to use for prompts and skip_chapters.
         progress_callback: Optional callable(stage, detail) for progress updates.
         human_operator: Name for meta.yml versioning.
         resume: If True, resume from existing checkpoint.
@@ -131,6 +134,42 @@ async def ingest_book_async(
     Returns:
         Path to the book's output directory in the vault.
     """
+    # ── Load domain template ──
+    from ppke.templates.loader import load_template
+    try:
+        template = load_template(domain)
+        logger.info("Loaded domain template: %s v%s", template.name, template.version)
+    except Exception as _te:
+        logger.warning(
+            "Failed to load template '%s' (%s) — falling back to defaults", domain, _te
+        )
+        template = None
+
+    def _stage_prompts(stage_id: str) -> tuple[Optional[str], Optional[str]]:
+        if template is None:
+            return None, None
+        stage_def = next((s for s in template.stages if s.get("id") == stage_id), None)
+        if stage_def is None:
+            return None, None
+        prompt_key = stage_def.get("prompt")
+        if prompt_key is None:
+            return None, None
+        prompt_cfg = template.prompts.get(prompt_key, {})
+        if not isinstance(prompt_cfg, dict):
+            return None, None
+        return prompt_cfg.get("system"), prompt_cfg.get("user_template")
+
+    extra_skip: Optional[frozenset] = None
+    if template is not None and template.skip_chapters:
+        extra_skip = frozenset(s.strip().lower() for s in template.skip_chapters)
+
+    _stages = template.stages if template else []
+    _s1_id = _stages[1]["id"] if len(_stages) > 1 else "logical_map"
+    _s2_id = _stages[2]["id"] if len(_stages) > 2 else "concepts"
+    _s3_id = _stages[3]["id"] if len(_stages) > 3 else "patterns"
+    _s1_sys, _s1_usr = _stage_prompts(_s1_id)
+    _s2_sys, _s2_usr = _stage_prompts(_s2_id)
+    _s3_sys, _s3_usr = _stage_prompts(_s3_id)
 
     def _progress(stage: str, detail: str = "") -> None:
         if progress_callback:
@@ -278,8 +317,11 @@ async def ingest_book_async(
         f"COMPLETE: {coverage.processed_paragraph_count}/{coverage.total_paragraphs}",
     )
 
-    # ── Stages 4/5/6: Concurrent analysis ──
-    _progress("analysis", "Running logical map, concept index, and pattern detection concurrently")
+    # ── Stages 4/5/6: Concurrent analysis with template prompts ──
+    _progress(
+        "analysis",
+        f"Running [{_s1_id}, {_s2_id}, {_s3_id}] stages concurrently (domain: {domain})",
+    )
 
     logical_map: dict[str, Any] = {}
     concept_data: dict[str, Any] = {}
@@ -289,22 +331,20 @@ async def ingest_book_async(
 
         async def _logical() -> dict:
             return await _run_sync(
-                analysis_executor, build_logical_map, client, all_extractions, book.title, book.author
+                analysis_executor, build_logical_map, client, all_extractions,
+                book.title, book.author, _s1_sys, _s1_usr,
             )
 
         async def _concepts() -> dict:
             return await _run_sync(
-                analysis_executor,
-                build_concept_index,
-                client,
-                all_extractions,
-                book.title,
-                book.author,
+                analysis_executor, build_concept_index, client, all_extractions,
+                book.title, book.author, _s2_sys, _s2_usr,
             )
 
         async def _patterns() -> dict:
             return await _run_sync(
-                analysis_executor, detect_patterns, client, all_extractions, book.title, book.author
+                analysis_executor, detect_patterns, client, all_extractions,
+                book.title, book.author, _s3_sys, _s3_usr,
             )
 
         lm_result, co_result, pa_result = await asyncio.gather(

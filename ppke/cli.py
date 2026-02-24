@@ -438,6 +438,7 @@ def ingest(
             book_dir = asyncio.run(
                 ingest_book_async(
                     book, config,
+                    domain=domain,
                     progress_callback=progress_callback,
                     human_operator=operator,
                     resume=resume,
@@ -447,6 +448,7 @@ def ingest(
             from ppke.pipeline.orchestrator import ingest_book
             book_dir = ingest_book(
                 book, config,
+                domain=domain,
                 progress_callback=progress_callback,
                 human_operator=operator,
                 resume=resume,
@@ -1591,8 +1593,10 @@ def menu():
         ctx = click.get_current_context()
         try:
             ctx.invoke(main.commands[cmd])
-        except (SystemExit, click.ClickException):
-            pass
+        except (SystemExit, click.ClickException) as _exc:
+            # click.ClickException already printed its error; SystemExit is normal
+            import logging as _logging
+            _logging.getLogger(__name__).debug("Command %r exited: %s", cmd, _exc)
         except TypeError:
             # Command requires arguments we can't pass via ctx.invoke easily
             # Fall back to suggesting manual execution
