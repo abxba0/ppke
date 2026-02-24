@@ -71,7 +71,7 @@ def validate_coverage(
 
 
 def validate_chapter_coverage(
-    chapter_number: int,
+    chapter_number: int,  # pylint: disable=unused-argument
     chapter_paragraph_ids: list[str],
     extraction_results: list[ExtractionResult],
 ) -> tuple[bool, list[str]]:

@@ -15,7 +15,7 @@ from ppke.llm.client import LLMClient
 from ppke.llm.prompts import AUTHOR_MODEL_SYSTEM, AUTHOR_MODEL_USER
 from ppke.output.writer import load_extractions_json, write_all_book_files, write_global_files
 from ppke.parser.markdown import split_long_paragraphs
-from ppke.parser.models import Book, Chapter, CoverageReport, DepthLevel, ExtractionResult
+from ppke.parser.models import Book, Chapter, DepthLevel, ExtractionResult
 from ppke.pipeline.concepts import build_concept_index
 from ppke.pipeline.extractor import extract_chapter
 from ppke.pipeline.logical_map import build_logical_map
@@ -192,8 +192,6 @@ def _load_checkpoint(
         return None
 
     try:
-        from ppke.parser.models import DepthLevel
-
         raw_text = path.read_text(encoding="utf-8")
         data = json.loads(raw_text)
 
@@ -614,8 +612,8 @@ def ingest_book(
         # Re-sort extractions to maintain chapter order
         ext_map: dict[str, ExtractionResult] = {e.paragraph_id: e for e in all_extractions}
         all_extractions = []
-        for idx in range(len(book.chapters)):
-            for p in book.chapters[idx].paragraphs:
+        for idx, chapter_item in enumerate(book.chapters):
+            for p in chapter_item.paragraphs:
                 if p.paragraph_id in ext_map:
                     all_extractions.append(ext_map[p.paragraph_id])
     else:
@@ -713,8 +711,7 @@ def ingest_book(
             "Ingestion aborted before writing final outputs. "
             "Fix provider/API settings and re-run with --resume."
         )
-    else:
-        _progress("validation", "COMPLETE: All paragraphs processed successfully")
+    _progress("validation", "COMPLETE: All paragraphs processed successfully")
 
     _progress(
         "validation",
@@ -806,11 +803,10 @@ def ingest_book(
     if vector_store is not None and vector_store.available:
         _progress("vector_index", f"Indexing '{book.title}' into vector store")
         try:
-            import json as _json
             ext_path = book_dir / "extractions.json"
             ext_dicts: list[dict] = []
             if ext_path.exists():
-                ext_dicts = _json.loads(ext_path.read_text())
+                ext_dicts = json.loads(ext_path.read_text())
             indexed = vector_store.index_extractions(
                 book_folder=book.folder_name,
                 book_title=book.title,
@@ -825,11 +821,10 @@ def ingest_book(
     if knowledge_graph is not None:
         _progress("graph", f"Updating knowledge graph for '{book.title}'")
         try:
-            import json as _json
             ext_path = book_dir / "extractions.json"
             ext_dicts = []
             if ext_path.exists():
-                ext_dicts = _json.loads(ext_path.read_text())
+                ext_dicts = json.loads(ext_path.read_text())
             edges = knowledge_graph.add_book_extractions(
                 book_folder=book.folder_name,
                 book_title=book.title,

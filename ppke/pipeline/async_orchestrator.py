@@ -35,7 +35,6 @@ from ppke.pipeline.logical_map import build_logical_map
 from ppke.pipeline.orchestrator import (
     _checkpoint_path,
     _extract_with_retry,
-    _is_skip_chapter,
     _load_checkpoint,
     _save_checkpoint,
 )
@@ -159,9 +158,9 @@ async def ingest_book_async(
             return None, None
         return prompt_cfg.get("system"), prompt_cfg.get("user_template")
 
-    extra_skip: Optional[frozenset] = None
+    _extra_skip: Optional[frozenset] = None
     if template is not None and template.skip_chapters:
-        extra_skip = frozenset(s.strip().lower() for s in template.skip_chapters)
+        _extra_skip = frozenset(s.strip().lower() for s in template.skip_chapters)
 
     _stages = template.stages if template else []
     _s1_id = _stages[1]["id"] if len(_stages) > 1 else "logical_map"

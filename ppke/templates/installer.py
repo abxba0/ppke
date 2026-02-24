@@ -8,7 +8,6 @@ import re
 import sys
 from typing import Optional
 from ppke.templates.loader import load_template, CUSTOM_TEMPLATES_DIR
-from ppke.templates.validator import validate_template
 from ppke.templates.registry import register_plugin
 
 
@@ -16,9 +15,9 @@ from ppke.templates.registry import register_plugin
 def _can_use_emojis() -> bool:
     """Check if stdout supports Unicode emojis."""
     try:
-        sys.stdout.encoding
+        encoding = sys.stdout.encoding
         # Test if we can encode an emoji
-        '\U0001f50d'.encode(sys.stdout.encoding or 'utf-8')
+        '\U0001f50d'.encode(encoding or 'utf-8')
         return True
     except (AttributeError, UnicodeEncodeError):
         return False
@@ -43,7 +42,6 @@ def _print(msg: str) -> None:
 
 class TemplateInstallError(Exception):
     """Raised when template installation fails."""
-    pass
 
 
 # ── Security constants ────────────────────────────────────────────────────────
@@ -134,11 +132,11 @@ def install_from_github(github_url: str, force: bool = False) -> str:
         subprocess.run(
             ['git', '--version'], capture_output=True, check=True, timeout=10,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as exc:
         raise TemplateInstallError(
             "Git is not installed or not in PATH.\n"
             "Please install git: https://git-scm.com/downloads"
-        )
+        ) from exc
 
     # Clone to temporary directory
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -153,15 +151,15 @@ def install_from_github(github_url: str, force: bool = False) -> str:
                 text=True,
                 timeout=_GIT_CLONE_TIMEOUT_SECONDS,
             )
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             raise TemplateInstallError(
                 f"Git clone timed out after {_GIT_CLONE_TIMEOUT_SECONDS}s. "
                 "Check your network connection or try again later."
-            )
+            ) from exc
         except subprocess.CalledProcessError as e:
             raise TemplateInstallError(
                 f"Failed to clone repository:\n{e.stderr}"
-            )
+            ) from e
 
         repo_path = temp_path / 'repo'
 
@@ -206,8 +204,8 @@ def install_from_local(local_path: Path | str, force: bool = False, source: Opti
     template_yml = local_path / "template.yml"
     if not template_yml.exists():
         raise TemplateInstallError(
-            f"Invalid template: missing template.yml\n"
-            f"Template directory must contain at least template.yml"
+            "Invalid template: missing template.yml\n"
+            "Template directory must contain at least template.yml"
         )
 
     # Security pre-check: file type allowlist + size + count limits
@@ -253,7 +251,7 @@ def install_from_local(local_path: Path | str, force: bool = False, source: Opti
         # Clean up if validation fails
         if target_path.exists():
             shutil.rmtree(target_path)
-        raise TemplateInstallError(f"Template validation failed: {e}")
+        raise TemplateInstallError(f"Template validation failed: {e}") from e
 
     # Register in plugin registry
     register_plugin(
@@ -266,7 +264,7 @@ def install_from_local(local_path: Path | str, force: bool = False, source: Opti
     )
 
     _print(f"✅ Successfully installed template: {template_name}")
-    _print(f"\nUsage:")
+    _print("\nUsage:")
     _print(f"  ppke ingest --domain {template_name} document.md")
 
     return template_name
@@ -313,7 +311,7 @@ def uninstall_template(template_name: str, force: bool = False) -> bool:
     template_path = CUSTOM_TEMPLATES_DIR / template_name
     if not template_path.exists():
         _print(f"⚠️  Warning: Template directory not found: {template_path}")
-        _print(f"Removing from registry anyway...")
+        _print("Removing from registry anyway...")
 
     # Confirm uninstallation
     if not force:
@@ -382,7 +380,7 @@ def upgrade_template(template_name: str) -> bool:
         _print(f"✅ Successfully upgraded template: {template_name}")
         return True
     except TemplateInstallError as e:
-        raise TemplateInstallError(f"Upgrade failed: {e}")
+        raise TemplateInstallError(f"Upgrade failed: {e}") from e
 
 
 def list_installed_templates() -> list[dict]:

@@ -63,7 +63,7 @@ def _detect_chapter_heading(line: str) -> tuple[str, int | None] | None:
         return None
 
     # Try specific chapter patterns first
-    for i, pattern in enumerate(CHAPTER_PATTERNS[:-1]):
+    for _, pattern in enumerate(CHAPTER_PATTERNS[:-1]):
         match = pattern.match(stripped)
         if match:
             groups = match.groups()

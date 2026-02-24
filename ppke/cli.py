@@ -25,6 +25,8 @@ from ppke.config import (
     save_env_file,
 )
 
+logger = logging.getLogger(__name__)
+
 # URLs where users can obtain API keys for each provider
 _PROVIDER_KEY_URLS: dict[str, str] = {
     "anthropic": "https://console.anthropic.com/settings/keys",
@@ -1230,11 +1232,16 @@ def cheat():
 
     commands = [
         ("ppke init", "First-time setup wizard", "ppke init"),
-        ("ppke ingest", "Ingest a markdown book into the KB", 'ppke ingest book.md --title "Being and Time" --author "Heidegger"'),
-        ("ppke async-ingest", "Async ingestion (asyncio pipeline)", 'ppke async-ingest book.md --title "Critique" --author "Kant"'),
-        ("ppke parse", "Preview chapter/paragraph structure", 'ppke parse book.md --title "Republic" --author "Plato"'),
-        ("ppke query", "Query a single encoded book", 'ppke query --book "Book_Republic_Plato" --question "What is justice?"'),
-        ("ppke cross-query", "Query across all books", 'ppke cross-query --question "How do they differ on free will?"'),
+        ("ppke ingest", "Ingest a markdown book into the KB",
+         'ppke ingest book.md --title "Being and Time" --author "Heidegger"'),
+        ("ppke async-ingest", "Async ingestion (asyncio pipeline)",
+         'ppke async-ingest book.md --title "Critique" --author "Kant"'),
+        ("ppke parse", "Preview chapter/paragraph structure",
+         'ppke parse book.md --title "Republic" --author "Plato"'),
+        ("ppke query", "Query a single encoded book",
+         'ppke query --book "Book_Republic_Plato" --question "What is justice?"'),
+        ("ppke cross-query", "Query across all books",
+         'ppke cross-query --question "How do they differ on free will?"'),
         ("ppke re-read", "Re-extract specific chapters", 'ppke re-read --book "Book_Republic_Plato" --chapters "1,3"'),
         ("ppke config", "View or update configuration", "ppke config --show"),
         ("ppke status", "Show ingestion progress dashboard", "ppke status"),
@@ -1372,7 +1379,8 @@ def doctor(vault_path: Path | None):
 
     title_style = "bold green" if not issues else "bold yellow"
     title_text = "All checks passed!" if not issues else f"{len(issues)} issue(s) found"
-    click.echo(_render(_Panel(result_table, title=f"[{title_style}]PPKE Doctor — {title_text}[/{title_style}]", border_style="blue")))
+    panel_title = f"[{title_style}]PPKE Doctor — {title_text}[/{title_style}]"
+    click.echo(_render(_Panel(result_table, title=panel_title, border_style="blue")))
 
 
 # ── notebook command ──
@@ -1424,7 +1432,7 @@ def _append_to_notebook(
 
     entry_lines.append("\n---\n\n")
 
-    with open(notebook_path, "a") as f:
+    with open(notebook_path, "a", encoding="utf-8") as f:
         f.writelines(entry_lines)
 
 
@@ -1472,7 +1480,7 @@ def notebook(vault_path: Path | None, tail: int | None, clear: bool):
         # Split by entries (separated by ---) and take the last N
         entries = [e.strip() for e in content.split("---") if e.strip()]
         # First entry is the header
-        header = entries[0] if entries else ""
+        _header = entries[0] if entries else ""
         data_entries = entries[1:] if len(entries) > 1 else []
         shown = data_entries[-tail:] if tail < len(data_entries) else data_entries
         click.echo(f"Showing last {len(shown)} of {len(data_entries)} entries:\n")
@@ -1519,7 +1527,7 @@ def menu():
 
     for i, (label, _) in enumerate(actions, 1):
         click.echo(f"  {i:2d}. {label}")
-    click.echo(f"   0. Exit")
+    click.echo("   0. Exit")
     click.echo()
 
     choice = click.prompt("Select an action", type=int)
@@ -1595,8 +1603,7 @@ def menu():
             ctx.invoke(main.commands[cmd])
         except (SystemExit, click.ClickException) as _exc:
             # click.ClickException already printed its error; SystemExit is normal
-            import logging as _logging
-            _logging.getLogger(__name__).debug("Command %r exited: %s", cmd, _exc)
+            logger.debug("Command %r exited: %s", cmd, _exc)
         except TypeError:
             # Command requires arguments we can't pass via ctx.invoke easily
             # Fall back to suggesting manual execution
@@ -1642,7 +1649,7 @@ def tui(vault_path: Path | None):
     help="Vault path",
 )
 @click.option("--clear-done", is_flag=True, help="Remove completed books from the tracker")
-def status(vault_path: Path | None, clear_done: bool):
+def status(vault_path: Path | None, clear_done: bool):  # pylint: disable=unused-argument
     """Show ingestion progress for all tracked books.
 
     Displays a live dashboard of queued, in-progress, completed, and failed
@@ -2117,7 +2124,7 @@ def graph_build(vault_path: Path | None, reset: bool):
     results = kg.build_from_vault(vp)
     kg.save()
 
-    total_edges = sum(results.values())
+    _total_edges = sum(results.values())
     tbl = _Table(title="Knowledge Graph Build Results", border_style="green")
     tbl.add_column("Book", style="cyan")
     tbl.add_column("Edges Added", justify="right", width=12)
@@ -2223,7 +2230,6 @@ def promote_plugin(plugin_name: str, force: bool):
     from ppke.templates.registry import register_plugin
 
     # Determine paths
-    from pathlib import Path
     custom_path = Path.home() / ".ppke" / "plugins" / plugin_name
     official_path = Path(__file__).parent / "templates" / "official" / plugin_name
 
@@ -2298,12 +2304,10 @@ def promote_plugin(plugin_name: str, force: bool):
 
 @main.group("template")
 def template():
-    """
-    Manage PPKE templates (install, uninstall, upgrade).
+    """Manage PPKE templates (install, uninstall, upgrade).
 
     Templates extend PPKE with domain-specific analysis capabilities.
     """
-    pass
 
 
 @template.command("install")
@@ -2332,11 +2336,11 @@ def template_install(source: str, force: bool):
         # Determine if source is GitHub URL or local path
         if source.startswith('http://') or source.startswith('https://'):
             # GitHub URL
-            template_name = install_from_github(source, force=force)
+            _template_name = install_from_github(source, force=force)
         else:
             # Local path
             local_path = Path(source).expanduser().resolve()
-            template_name = install_from_local(local_path, force=force)
+            _template_name = install_from_local(local_path, force=force)
 
         # Success message already printed by installer module
 
@@ -2364,7 +2368,7 @@ def template_uninstall(template_name: str, force: bool):
     from ppke.templates.installer import uninstall_template, TemplateInstallError
 
     try:
-        success = uninstall_template(template_name, force=force)
+        _success = uninstall_template(template_name, force=force)
         # Success message already printed by uninstall_template function
     except TemplateInstallError as e:
         click.echo(f"\nUninstallation failed: {e}", err=True)
@@ -2452,4 +2456,4 @@ def template_list():
 
 
 if __name__ == "__main__":  # pragma: no cover
-    main()
+    main()  # pylint: disable=no-value-for-parameter

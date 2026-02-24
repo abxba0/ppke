@@ -17,15 +17,15 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_NX_AVAILABLE = False
+_nx_available = False
 try:
     import networkx as nx  # type: ignore[import]
 
-    _NX_AVAILABLE = True
+    _nx_available = True
 except ImportError:  # pragma: no cover
     pass
 
@@ -73,7 +73,7 @@ class KnowledgeGraph:
         self._vault_path = vault_path
         self._graph_path = vault_path / _GRAPH_FILE
 
-        if _NX_AVAILABLE:
+        if _nx_available:
             self._g: Any = nx.DiGraph()
         else:
             self._g = None
@@ -96,20 +96,20 @@ class KnowledgeGraph:
                 nid = node["id"]
                 attrs = {k: v for k, v in node.items() if k != "id"}
                 self._nodes[nid] = attrs
-                if _NX_AVAILABLE:
+                if _nx_available:
                     self._g.add_node(nid, **attrs)
             for edge in data.get("edges", []):
                 src, dst, rel = edge["src"], edge["dst"], edge["rel"]
                 eattrs = {k: v for k, v in edge.items() if k not in ("src", "dst", "rel")}
                 self._edges.append({"src": src, "dst": dst, "rel": rel, **eattrs})
-                if _NX_AVAILABLE:
+                if _nx_available:
                     self._g.add_edge(src, dst, rel=rel, **eattrs)
         except Exception as exc:
             logger.error("Failed to load knowledge graph: %s", exc)
 
     def save(self) -> None:
         """Persist graph to disk as JSON."""
-        if _NX_AVAILABLE:
+        if _nx_available:
             nodes = [
                 {"id": n, **{k: list(v) if isinstance(v, set) else v for k, v in self._g.nodes[n].items()}}
                 for n in self._g.nodes
@@ -140,7 +140,7 @@ class KnowledgeGraph:
         return concept.strip().lower().replace(" ", "_")[:80]
 
     def _add_node(self, node_id: str, **attrs) -> None:
-        if _NX_AVAILABLE:
+        if _nx_available:
             if node_id not in self._g:
                 self._g.add_node(node_id, **attrs)
             else:
@@ -165,7 +165,7 @@ class KnowledgeGraph:
                 self._nodes[node_id]["books"] = existing | new
 
     def _add_edge(self, src: str, dst: str, rel: str, **attrs) -> None:
-        if _NX_AVAILABLE:
+        if _nx_available:
             self._g.add_edge(src, dst, rel=rel, **attrs)
         else:
             self._edges.append({"src": src, "dst": dst, "rel": rel, **attrs})
@@ -293,7 +293,7 @@ class KnowledgeGraph:
         cid = f"concept:{self._norm(concept)}"
         results: list[dict] = []
 
-        if _NX_AVAILABLE:
+        if _nx_available:
             if cid not in self._g:
                 return []
             for node, data in nx.bfs_successors(self._g, cid, depth_limit=depth):
@@ -351,7 +351,7 @@ class KnowledgeGraph:
         cid = f"concept:{self._norm(concept)}"
         results: list[dict] = []
 
-        if _NX_AVAILABLE:
+        if _nx_available:
             if cid not in self._g:
                 return []
             for src, _, data in self._g.in_edges(cid, data=True):
@@ -386,7 +386,7 @@ class KnowledgeGraph:
     def books_mentioning(self, concept: str) -> list[str]:
         """Return a sorted list of book folders that mention *concept*."""
         cid = f"concept:{self._norm(concept)}"
-        if _NX_AVAILABLE:
+        if _nx_available:
             if cid not in self._g:
                 return []
             attrs = self._g.nodes[cid]
@@ -400,7 +400,7 @@ class KnowledgeGraph:
 
     def all_concepts(self) -> list[dict[str, Any]]:
         """Return all concept nodes with their metadata."""
-        if _NX_AVAILABLE:
+        if _nx_available:
             return [
                 {
                     "concept_id": n,
@@ -410,20 +410,19 @@ class KnowledgeGraph:
                 for n in self._g.nodes
                 if n.startswith("concept:")
             ]
-        else:
-            return [
-                {
-                    "concept_id": nid,
-                    "label": attrs.get("label", nid),
-                    "books": list(attrs.get("books", set())),
-                }
-                for nid, attrs in self._nodes.items()
-                if nid.startswith("concept:")
-            ]
+        return [
+            {
+                "concept_id": nid,
+                "label": attrs.get("label", nid),
+                "books": list(attrs.get("books", set())),
+            }
+            for nid, attrs in self._nodes.items()
+            if nid.startswith("concept:")
+        ]
 
     def stats(self) -> dict[str, Any]:
         """Return high-level graph statistics."""
-        if _NX_AVAILABLE:
+        if _nx_available:
             g = self._g
             n_books = sum(1 for n in g.nodes if n.startswith("book:"))
             n_concepts = sum(1 for n in g.nodes if n.startswith("concept:"))
@@ -443,7 +442,7 @@ class KnowledgeGraph:
             "paragraphs": n_paras,
             "edges": n_edges,
             "weakly_connected_components": connected_components,
-            "networkx_available": _NX_AVAILABLE,
+            "networkx_available": _nx_available,
         }
 
     def build_from_vault(self, vault_path: Path) -> dict[str, int]:

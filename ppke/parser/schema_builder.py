@@ -1,7 +1,9 @@
 """Dynamic Pydantic model generation from template schemas."""
 
+from typing import Any, Optional, Type
+
 from pydantic import BaseModel, Field, create_model
-from typing import Any, Type, Optional, get_origin, get_args
+
 from ppke.parser.models import BaseExtraction
 
 
@@ -203,4 +205,4 @@ def validate_schema(schema: dict[str, Any]) -> None:
         except ValueError as e:
             raise ValueError(
                 f"Field {i} ({field_def.get('name', '?')}) has invalid type: {e}"
-            )
+            ) from e

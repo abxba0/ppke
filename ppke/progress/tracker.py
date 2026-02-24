@@ -58,10 +58,12 @@ class ProgressState:
     books: dict[str, BookProgress] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
+        """Serialize state to a JSON-compatible dictionary."""
         return {"books": {k: asdict(v) for k, v in self.books.items()}}
 
     @classmethod
     def from_dict(cls, data: dict) -> "ProgressState":
+        """Deserialize state from a dictionary."""
         state = cls()
         for k, v in data.get("books", {}).items():
             try:

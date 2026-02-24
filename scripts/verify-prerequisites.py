@@ -12,7 +12,6 @@ Usage:
 import sys
 import subprocess
 from pathlib import Path
-from typing import List, Tuple
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -22,6 +21,8 @@ if sys.platform == 'win32':
 
 # ANSI colors
 class Colors:
+    """ANSI color codes for terminal output."""
+
     GREEN = '\033[92m'
     YELLOW = '\033[93m'
     RED = '\033[91m'
@@ -30,20 +31,25 @@ class Colors:
     END = '\033[0m'
 
 def print_header(text: str):
+    """Print a formatted section header."""
     print(f"\n{Colors.BOLD}{Colors.BLUE}{'='*60}{Colors.END}")
     print(f"{Colors.BOLD}{Colors.BLUE}{text}{Colors.END}")
     print(f"{Colors.BOLD}{Colors.BLUE}{'='*60}{Colors.END}\n")
 
 def check_pass(text: str):
+    """Print a passing check result."""
     print(f"{Colors.GREEN}✅ {text}{Colors.END}")
 
 def check_fail(text: str):
+    """Print a failing check result."""
     print(f"{Colors.RED}❌ {text}{Colors.END}")
 
 def check_warn(text: str):
+    """Print a warning check result."""
     print(f"{Colors.YELLOW}⚠️  {text}{Colors.END}")
 
 def check_info(text: str):
+    """Print an informational message."""
     print(f"{Colors.BLUE}ℹ️  {text}{Colors.END}")
 
 
@@ -106,7 +112,7 @@ class PrerequisitesChecker:
         print(f"\n{Colors.BOLD}Git Installation{Colors.END}")
 
         try:
-            result = subprocess.run(['git', '--version'], capture_output=True, text=True)
+            result = subprocess.run(['git', '--version'], capture_output=True, text=True, check=False)
             if result.returncode == 0:
                 version = result.stdout.strip()
                 check_pass(f"{version}")
@@ -168,7 +174,7 @@ class PrerequisitesChecker:
             ('rich', '13.0'),
         ]
 
-        for package, min_version in required_packages:
+        for package, _min_version in required_packages:
             try:
                 __import__(package)
                 # Display pyyaml for yaml package
@@ -183,7 +189,7 @@ class PrerequisitesChecker:
 
         # Check optional
         missing_optional = []
-        for package, min_version in optional_packages:
+        for package, _min_version in optional_packages:
             try:
                 __import__(package)
             except ImportError:
@@ -244,7 +250,8 @@ class PrerequisitesChecker:
                 ['git', 'rev-parse', '--git-dir'],
                 cwd=self.repo_root,
                 capture_output=True,
-                text=True
+                text=True,
+                check=False,
             )
 
             if result.returncode != 0:
@@ -258,7 +265,8 @@ class PrerequisitesChecker:
                 ['git', 'status', '--porcelain'],
                 cwd=self.repo_root,
                 capture_output=True,
-                text=True
+                text=True,
+                check=False,
             )
 
             if result.stdout.strip():
@@ -276,13 +284,14 @@ class PrerequisitesChecker:
                 ['git', 'branch', '--show-current'],
                 cwd=self.repo_root,
                 capture_output=True,
-                text=True
+                text=True,
+                check=False,
             )
             current_branch = result.stdout.strip()
 
             if current_branch:
                 check_info(f"Current branch: {current_branch}")
-                if current_branch != 'main' and current_branch != 'master':
+                if current_branch not in ('main', 'master'):
                     check_warn("Not on main/master branch")
                     check_info("Consider: git checkout -b refactor-v2")
             else:
@@ -307,19 +316,19 @@ class PrerequisitesChecker:
             print(f"\n{Colors.RED}{Colors.BOLD}❌ Prerequisites NOT met{Colors.END}")
             print("Please fix the failed checks before proceeding.\n")
             return False
-        elif self.checks_warned > 0:
+        if self.checks_warned > 0:
             print(f"\n{Colors.YELLOW}{Colors.BOLD}⚠️  Prerequisites met with warnings{Colors.END}")
             print("You can proceed, but consider addressing the warnings.\n")
             return True
-        else:
-            print(f"\n{Colors.GREEN}{Colors.BOLD}✅ All prerequisites met!{Colors.END}")
-            print("\nReady to start PPKE v2.0 refactoring.\n")
-            print("Next step:")
-            print(f"  {Colors.BLUE}python prompts/quick-start-phase-1.py{Colors.END}\n")
-            return True
+        print(f"\n{Colors.GREEN}{Colors.BOLD}✅ All prerequisites met!{Colors.END}")
+        print("\nReady to start PPKE v2.0 refactoring.\n")
+        print("Next step:")
+        print(f"  {Colors.BLUE}python prompts/quick-start-phase-1.py{Colors.END}\n")
+        return True
 
 
 def main():
+    """Run the prerequisites checker."""
     checker = PrerequisitesChecker()
     success = checker.run_all_checks()
     sys.exit(0 if success else 1)

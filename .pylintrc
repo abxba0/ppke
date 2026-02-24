@@ -1,0 +1,56 @@
+[MAIN]
+# Use multiple processes to speed up Pylint
+jobs=1
+
+# Files or directories to be skipped
+ignore-paths=ppke/tests
+
+# Skip script files with hyphens in names (not importable Python modules)
+ignore-patterns=.*-.*\.py$
+
+[MESSAGES CONTROL]
+disable=
+    # Structural complexity (hard to fix without major refactoring)
+    too-many-arguments,
+    too-many-positional-arguments,
+    too-many-locals,
+    too-many-statements,
+    too-many-branches,
+    too-many-lines,
+    too-many-instance-attributes,
+    too-many-boolean-expressions,
+    too-many-nested-blocks,
+    # Intentional lazy imports for optional dependencies
+    import-outside-toplevel,
+    # Optional dependencies not installed in CI without extras
+    import-error,
+    # CLI callback parameter pattern (redefined-outer-name is false positive here)
+    redefined-outer-name,
+    # Code duplication acceptable in test helpers
+    duplicate-code,
+    # Pydantic/dataclass models don't need extra public methods
+    too-few-public-methods,
+    # Broad exception catching is intentional for optional-dependency graceful degradation
+    broad-exception-caught,
+
+[FORMAT]
+# Increase line length limit - 120 is widely accepted
+max-line-length=120
+
+[DESIGN]
+max-args=15
+max-locals=30
+max-statements=100
+max-branches=25
+max-public-methods=30
+max-attributes=20
+
+[VARIABLES]
+# Allow single-letter variable names in specific contexts
+good-names=i,j,k,e,x,f,n,m,_
+
+[SIMILARITIES]
+# Minimum lines number of a similarity
+min-similarity-lines=10
+ignore-imports=yes
+ignore-docstrings=yes
