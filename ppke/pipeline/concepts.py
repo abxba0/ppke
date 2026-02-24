@@ -19,14 +19,14 @@ _CONCEPT_CHUNK_SIZE = 30
 def _extraction_to_concept_input(results: list[ExtractionResult]) -> str:
     """Build input focusing on concepts and their paragraph contexts.
 
-    Full verbatim text is preserved — no truncation. The caller is responsible
-    for chunking to stay within token limits. Empty fields are omitted to
-    reduce token usage without losing content.
+    Original text is omitted — topic_sentence plus defined_concepts and
+    claims provide sufficient context for concept indexing.  Short key
+    names reduce serialized size.  The caller chunks for token limits.
     """
     items = []
     for r in results:
         if r.defined_concepts or r.explicit_claims:
-            item: dict = {"paragraph_id": r.paragraph_id, "original_text": r.original_text}
+            item: dict = {"id": r.paragraph_id}
             if r.topic_sentence:
                 item["topic"] = r.topic_sentence
             if r.defined_concepts:

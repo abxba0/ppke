@@ -617,16 +617,16 @@ def test_extraction_to_summary_omits_empty():
     ext = ExtractionResult(paragraph_id="{01}.p1", original_text="")
     result = json.loads(_extraction_to_summary([ext]))
     assert len(result) == 1
-    assert "paragraph_id" in result[0]
+    assert "id" in result[0]
     # empty fields omitted
-    assert "topic_sentence" not in result[0]
+    assert "topic" not in result[0]
 
 
 def test_extraction_to_summary_includes_fields():
     from ppke.pipeline.logical_map import _extraction_to_summary
     ext = _make_extraction()
     result = json.loads(_extraction_to_summary([ext]))
-    assert result[0]["topic_sentence"] == "A topic"
+    assert result[0]["topic"] == "A topic"
     assert result[0]["claims"] == ["Claim A"]
     assert result[0]["concepts"] == ["Concept X"]
 
@@ -727,7 +727,7 @@ def test_extraction_to_pattern_input():
     result = json.loads(_extraction_to_pattern_input([ext]))
     assert result[0]["tone"] == "neutral"
     assert result[0]["claims"] == ["Claim A"]
-    assert result[0]["function"] == "premise"
+    assert result[0]["fn"] == "premise"
 
 
 def test_extraction_to_pattern_input_omits_empty_fields():

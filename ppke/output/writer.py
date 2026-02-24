@@ -398,26 +398,40 @@ def write_patterns(
 
 
 def _save_extractions_json(book_dir: Path, extractions: list[ExtractionResult]) -> Path:
-    """Persist extraction data as JSON for re-read support."""
+    """Persist extraction data as compact JSON for re-read support.
+
+    Uses compact separators to minimize disk usage and speed up re-read
+    loading.  Empty list fields are omitted to reduce file size further.
+    """
     data = []
     for ext in extractions:
-        data.append({
+        entry: dict[str, Any] = {
             "paragraph_id": ext.paragraph_id,
             "original_text": ext.original_text,
             "topic_sentence": ext.topic_sentence,
             "function_in_argument": ext.function_in_argument,
-            "explicit_claims": ext.explicit_claims,
-            "implicit_assumptions": ext.implicit_assumptions,
-            "logical_steps": ext.logical_steps,
-            "defined_concepts": ext.defined_concepts,
-            "emotional_tone": ext.emotional_tone,
-            "tone_evidence": ext.tone_evidence,
-            "internal_references": ext.internal_references,
-            "is_argument_carrying": ext.depth.value == "full",
             "depth": ext.depth.value,
-        })
+        }
+        # Only include non-empty list/string fields
+        if ext.explicit_claims:
+            entry["explicit_claims"] = ext.explicit_claims
+        if ext.implicit_assumptions:
+            entry["implicit_assumptions"] = ext.implicit_assumptions
+        if ext.logical_steps:
+            entry["logical_steps"] = ext.logical_steps
+        if ext.defined_concepts:
+            entry["defined_concepts"] = ext.defined_concepts
+        if ext.emotional_tone:
+            entry["emotional_tone"] = ext.emotional_tone
+        if ext.tone_evidence:
+            entry["tone_evidence"] = ext.tone_evidence
+        if ext.internal_references:
+            entry["internal_references"] = ext.internal_references
+        if ext.depth.value == "full":
+            entry["is_argument_carrying"] = True
+        data.append(entry)
     path = book_dir / "extractions.json"
-    path.write_text(json.dumps(data, indent=1))
+    path.write_text(json.dumps(data, separators=(',', ':')))
     return path
 
 

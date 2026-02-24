@@ -97,6 +97,9 @@ class LLMConfig:
     gemini_api_key: str | None = None
     openrouter_api_key: str | None = None
     max_tokens: int = 4096
+    max_tokens_extraction: int = 4096  # Token budget for extraction stage (Skill 1)
+    max_tokens_analysis: int = 4096  # Token budget for analysis stages (Skills 3-5)
+    max_tokens_author: int = 3072  # Token budget for author model (Skill 7) — typically shorter
     temperature: float = 0.2
     paragraphs_per_batch: int = 5
     max_paragraph_tokens: int = 2000  # Split paragraphs exceeding this
@@ -173,6 +176,9 @@ class Config:
                 "model": self.llm.model,
                 "small_model": self.llm.small_model,
                 "max_tokens": self.llm.max_tokens,
+                "max_tokens_extraction": self.llm.max_tokens_extraction,
+                "max_tokens_analysis": self.llm.max_tokens_analysis,
+                "max_tokens_author": self.llm.max_tokens_author,
                 "temperature": self.llm.temperature,
                 "paragraphs_per_batch": self.llm.paragraphs_per_batch,
                 "max_paragraph_tokens": self.llm.max_paragraph_tokens,
@@ -201,6 +207,9 @@ class Config:
                 model=llm_data.get("model", "claude-sonnet-4-20250514"),
                 small_model=llm_data.get("small_model", None),
                 max_tokens=llm_data.get("max_tokens", 4096),
+                max_tokens_extraction=llm_data.get("max_tokens_extraction", 4096),
+                max_tokens_analysis=llm_data.get("max_tokens_analysis", 4096),
+                max_tokens_author=llm_data.get("max_tokens_author", 3072),
                 temperature=llm_data.get("temperature", 0.2),
                 paragraphs_per_batch=llm_data.get("paragraphs_per_batch", 5),
                 max_paragraph_tokens=llm_data.get("max_paragraph_tokens", 2000),

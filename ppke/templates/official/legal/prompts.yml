@@ -1,109 +1,36 @@
-# Legal Prompts - Proof of concept
+# Legal Prompts - Token-optimized v2.1
 
 extraction:
   system: |
-    Legal document structural extractor. Extract structured data from legal texts including case law, statutes, and legal arguments.
-    Rules: Quote exact legal text. Cite cases and statutes precisely. Mark legal inferences [LEGAL INFERENCE]. JSON only.
+    Legal document extractor. Exact legal text quotes. Precise case/statute citations. [LEGAL INFERENCE] tags. JSON array only.
 
   user_template: |
-    Analyze the following paragraphs from the legal document "{book_title}" by {author}, Section {chapter_num}: "{chapter_title}".
+    Document: "{book_title}" by {author}, Section {chapter_num}: "{chapter_title}"
 
-    For each paragraph, extract:
-    1. topic_sentence: The main legal point or holding (one sentence)
-    2. legal_standard: The legal standard applied (e.g., "strict scrutiny", "rational basis", "preponderance of evidence")
-    3. case_references: List of case citations (e.g., "Brown v. Board of Education", "Roe v. Wade")
-    4. statutory_citations: List of statutory citations (e.g., "42 U.S.C. § 1983", "Title VII")
-    5. holding: The main legal holding or conclusion (if present)
-    6. legal_reasoning: Step-by-step legal reasoning
-    7. defined_concepts: Legal terms or concepts defined
-    8. distinguishing_factors: Factors that distinguish this from other cases
-    9. internal_references: References to other parts of the document
-
-    Paragraphs to analyze:
+    Extract per paragraph: topic_sentence, legal_standard, case_references, statutory_citations, holding, legal_reasoning (numbered), defined_concepts, distinguishing_factors, internal_references.
 
     {paragraphs_json}
 
-    Return a JSON array where each element has:
-    {{
-      "paragraph_id": "<the ID>",
-      "topic_sentence": "...",
-      "legal_standard": "...",
-      "case_references": ["..."],
-      "statutory_citations": ["..."],
-      "holding": "...",
-      "legal_reasoning": ["1. ...", "2. ..."],
-      "defined_concepts": ["..."],
-      "distinguishing_factors": ["..."],
-      "internal_references": ["..."]
-    }}
+    JSON array: [{{"paragraph_id":"...","topic_sentence":"...","legal_standard":"...","case_references":[],"statutory_citations":[],"holding":"...","legal_reasoning":[],"defined_concepts":[],"distinguishing_factors":[],"internal_references":[]}}]
 
 case_analysis:
   system: |
-    Legal case law analyzer. Identify precedents, analyze holdings, and map legal reasoning chains.
-    Rules: Every legal claim must cite paragraph IDs. Quote exact legal text. Mark legal inferences [LEGAL INFERENCE]. JSON only.
+    Legal case law analyzer. Cite paragraph IDs. Exact legal text. [LEGAL INFERENCE] tags. JSON only.
 
   user_template: |
-    Given the following structural extraction data for the legal document "{book_title}" by {author}, perform case law analysis.
+    Case analysis for "{book_title}" by {author}.
 
-    Extraction data:
-    {extraction_json}
+    Extraction data: {extraction_json}
 
-    Return JSON with:
-    {{
-      "primary_holding": {{
-        "holding": "...",
-        "paragraph_ids": ["..."],
-        "legal_standard": "...",
-        "supporting_cases": ["..."]
-      }},
-      "precedents_cited": [
-        {{
-          "case_name": "...",
-          "citation": "...",
-          "holding": "...",
-          "paragraph_ids": ["..."],
-          "how_applied": "distinguished|followed|overruled|questioned"
-        }}
-      ],
-      "legal_reasoning_chain": [
-        {{
-          "step": 1,
-          "premise": "...",
-          "legal_authority": "...",
-          "paragraph_ids": ["..."]
-        }}
-      ]
-    }}
+    JSON: {{"primary_holding":{{"holding":"...","paragraph_ids":[],"legal_standard":"...","supporting_cases":[]}},"precedents_cited":[{{"case_name":"...","citation":"...","holding":"...","paragraph_ids":[],"how_applied":"distinguished|followed|overruled|questioned"}}],"legal_reasoning_chain":[{{"step":1,"premise":"...","legal_authority":"...","paragraph_ids":[]}}]}}
 
 statutory:
   system: |
-    Statutory interpretation analyzer. Identify statutory references, track interpretive methods, and map regulatory frameworks.
-    Rules: Quote exact statutory text. Cite statutes precisely. Mark interpretive choices [INTERPRETATION]. JSON only.
+    Statutory interpretation analyzer. Exact statutory text. Precise citations. [INTERPRETATION] tags. JSON only.
 
   user_template: |
-    Given the following structural extraction data for "{book_title}", perform statutory interpretation analysis.
+    Statutory analysis for "{book_title}".
 
-    Extraction data:
-    {extraction_json}
+    Extraction data: {extraction_json}
 
-    For each statute referenced, track:
-    1. Every paragraph where it appears
-    2. How it is interpreted
-    3. Conflicting interpretations
-
-    Return JSON:
-    {{
-      "statutes": [
-        {{
-          "citation": "...",
-          "text_quoted": "...",
-          "occurrences": [
-            {{"paragraph_id": "...", "interpretation": "...", "context": "..."}}
-          ],
-          "interpretive_method": "textualist|purposivist|intentionalist|structural",
-          "conflicting_interpretations": [
-            {{"interpretation_1": "...", "interpretation_2": "...", "resolution": "..."}}
-          ]
-        }}
-      ]
-    }}
+    JSON: {{"statutes":[{{"citation":"...","text_quoted":"...","occurrences":[{{"paragraph_id":"...","interpretation":"...","context":"..."}}],"interpretive_method":"textualist|purposivist|intentionalist|structural","conflicting_interpretations":[{{"interpretation_1":"...","interpretation_2":"...","resolution":"..."}}]}}]}}
