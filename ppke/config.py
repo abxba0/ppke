@@ -158,6 +158,10 @@ class Config:
     llm: LLMConfig = field(default_factory=LLMConfig)
     selective_depth: bool = True
     double_pass: bool = False
+    default_domain: str = "philosophy"
+    enable_vector_search: bool = True
+    enable_knowledge_graph: bool = True
+    async_ingest: bool = False
 
     def save(self, path: Path | None = None) -> None:
         path = path or DEFAULT_CONFIG_PATH
@@ -176,6 +180,10 @@ class Config:
             },
             "selective_depth": self.selective_depth,
             "double_pass": self.double_pass,
+            "default_domain": self.default_domain,
+            "enable_vector_search": self.enable_vector_search,
+            "enable_knowledge_graph": self.enable_knowledge_graph,
+            "async_ingest": self.async_ingest,
         }
         path.write_text(json.dumps(data, indent=2))
 
@@ -200,4 +208,8 @@ class Config:
             ),
             selective_depth=data.get("selective_depth", True),
             double_pass=data.get("double_pass", False),
+            default_domain=data.get("default_domain", "philosophy"),
+            enable_vector_search=data.get("enable_vector_search", True),
+            enable_knowledge_graph=data.get("enable_knowledge_graph", True),
+            async_ingest=data.get("async_ingest", False),
         )

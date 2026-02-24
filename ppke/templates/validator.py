@@ -157,16 +157,34 @@ def _security_check(template: PluginTemplate) -> None:
     prompts_str = str(template.prompts)
     config_str = str(template.model_dump())
 
-    # Dangerous patterns
+    # Comprehensive injection detection — covers classic and obfuscated Python attacks
     dangerous_patterns = [
-        (r'import\s+(os|subprocess|sys|shutil|pathlib)', 'Python imports (os, subprocess, etc.)'),
-        (r'__import__', '__import__ call'),
+        # Direct imports of dangerous stdlib modules
+        (r'import\s+(os|subprocess|sys|shutil|pathlib|socket|importlib|ctypes|pickle|marshal)',
+         'dangerous stdlib import'),
+        # Dynamic import mechanisms
+        (r'__import__\s*\(', '__import__() call'),
+        (r'importlib\s*\.\s*import_module', 'importlib.import_module() call'),
+        # Code execution sinks
         (r'eval\s*\(', 'eval() call'),
         (r'exec\s*\(', 'exec() call'),
-        (r'os\.system', 'os.system() call'),
-        (r'subprocess\.', 'subprocess module usage'),
-        (r'\$\{.*\}', 'Shell variable expansion'),
+        (r'compile\s*\(', 'compile() call'),
+        # OS command execution
+        (r'os\s*\.\s*system\s*\(', 'os.system() call'),
+        (r'os\s*\.\s*popen\s*\(', 'os.popen() call'),
+        (r'os\s*\.\s*spawn', 'os.spawn*() call'),
+        (r'subprocess\s*\.', 'subprocess module usage'),
+        # Reflection / introspection used for bypassing restrictions
+        (r'__builtins__', '__builtins__ access'),
+        (r'builtins\s*\.', 'builtins module access'),
+        (r'globals\s*\(\s*\)', 'globals() call'),
+        (r'locals\s*\(\s*\)', 'locals() call'),
+        (r'vars\s*\(\s*\)', 'vars() call'),
+        (r'getattr\s*\(', 'getattr() — may bypass attribute access controls'),
+        # Shell injection
+        (r'\$\{[^}]*\}', 'Shell variable expansion ${...}'),
         (r'`[^`]+`', 'Backtick command execution'),
+        (r'\|\s*(bash|sh|zsh|cmd|powershell)', 'Shell pipe to interpreter'),
     ]
 
     for pattern, description in dangerous_patterns:

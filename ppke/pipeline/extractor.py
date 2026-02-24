@@ -104,6 +104,8 @@ def extract_chapter(
     author: str,
     batch_size: int = 5,
     model_override: str | None = None,
+    system_prompt: str | None = None,
+    user_template: str | None = None,
 ) -> list[ExtractionResult]:
     """Extract structural data from all paragraphs in a chapter.
 
@@ -117,7 +119,15 @@ def extract_chapter(
         batch_size: Number of paragraphs per LLM call.
         model_override: If provided, use this model instead of client's default
             (supports two-tier architecture for cheaper extraction).
+        system_prompt: Override the default philosophy extraction system prompt.
+            Loaded from the active domain template's prompts.yml.
+        user_template: Override the default philosophy extraction user template.
+            Must contain {book_title}, {author}, {chapter_num}, {chapter_title},
+            {paragraphs_json} placeholders.
     """
+    effective_system = system_prompt if system_prompt else STRUCTURAL_EXTRACTION_SYSTEM
+    effective_user_tpl = user_template if user_template else STRUCTURAL_EXTRACTION_USER
+
     all_results: list[ExtractionResult] = []
 
     for i in range(0, len(chapter.paragraphs), batch_size):
@@ -131,7 +141,7 @@ def extract_chapter(
             batch_ids,
         )
 
-        user_prompt = STRUCTURAL_EXTRACTION_USER.format(
+        user_prompt = effective_user_tpl.format(
             book_title=book_title,
             author=author,
             chapter_num=f"{chapter.number:02d}",
@@ -141,7 +151,7 @@ def extract_chapter(
 
         try:
             response = client.complete_json(
-                STRUCTURAL_EXTRACTION_SYSTEM, user_prompt, model_override=model_override
+                effective_system, user_prompt, model_override=model_override
             )
             # Response should be a list
             if isinstance(response, dict) and "paragraphs" in response:

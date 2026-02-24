@@ -1,0 +1,58 @@
+# Science Template - Scientific text analysis with methodology and evidence tracking
+
+name: science
+version: "1.0.0"
+tier: official
+author: PPKE Core Team
+description: "Scientific text analysis with methodology tracking and evidence evaluation"
+
+# Pipeline stages (executed in order)
+stages:
+  - id: extraction
+    name: "Scientific Structural Extraction"
+    module: ppke.pipeline.stages.extractor
+    prompt: extraction
+
+  - id: methodology
+    name: "Methodology Analysis"
+    module: ppke.pipeline.stages.analyzer
+    prompt: methodology
+    output_file: "02_Methodology.md"
+
+  - id: evidence
+    name: "Evidence Mapping"
+    module: ppke.pipeline.stages.concepts
+    prompt: evidence
+    output_file: "03_Evidence_Map.md"
+
+  - id: findings
+    name: "Findings & Conclusions"
+    module: ppke.pipeline.stages.patterns
+    prompt: findings
+    output_file: "06_Findings.md"
+
+# Skip logic (chapters to skip during ingestion)
+skip_chapters:
+  - bibliography
+  - references
+  - index
+  - appendix
+  - appendices
+  - acknowledgements
+  - acknowledgments
+  - about the author
+  - abbreviations
+  - list of figures
+  - list of tables
+
+# Output configuration
+outputs:
+  folder_format: "Paper_{title}_{author}_{year}"
+  files:
+    - "meta.yml"
+    - "01_Raw_Structure.md"
+    - "02_Methodology.md"
+    - "03_Evidence_Map.md"
+    - "05_Coverage_Report.md"
+    - "06_Findings.md"
+    - "extractions.json"

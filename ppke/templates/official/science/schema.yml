@@ -1,0 +1,37 @@
+# Science Extraction Schema
+
+extraction_model:
+  name: ScienceExtraction
+  base: BaseExtraction
+  description: "Pydantic model for scientific text extraction"
+
+  fields:
+    - name: hypothesis
+      type: str
+      description: "The hypothesis or research question addressed in this paragraph"
+      default: ""
+
+    - name: methodology
+      type: list[str]
+      description: "Research methods, experimental procedures, or analytical techniques described"
+      default: []
+
+    - name: evidence
+      type: list[str]
+      description: "Empirical evidence, data points, experimental results, or observations cited"
+      default: []
+
+    - name: conclusions
+      type: list[str]
+      description: "Conclusions, interpretations, or claims drawn from evidence"
+      default: []
+
+    - name: limitations
+      type: list[str]
+      description: "Limitations, caveats, confounds, or uncertainty acknowledged"
+      default: []
+
+    - name: epistemic_status
+      type: str
+      description: "Level of certainty expressed (e.g., 'established', 'hypothesized', 'speculative', 'contested', 'replicated')"
+      default: "established"

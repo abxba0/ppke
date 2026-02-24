@@ -91,6 +91,7 @@ def _is_low_information(text: str) -> bool:
 
 # ── Stop-word chapter detection ──
 
+# Built-in skip titles (always applied regardless of domain template)
 _SKIP_CHAPTER_TITLES: frozenset[str] = frozenset({
     "bibliography", "index", "appendix", "appendices",
     "references", "works cited", "glossary", "endnotes",
@@ -98,9 +99,20 @@ _SKIP_CHAPTER_TITLES: frozenset[str] = frozenset({
 })
 
 
-def _is_skip_chapter(title: str) -> bool:
-    """Return True if the chapter title matches a non-content section."""
-    return title.strip().lower() in _SKIP_CHAPTER_TITLES
+def _is_skip_chapter(title: str, extra_skip: frozenset[str] | None = None) -> bool:
+    """Return True if the chapter title matches a non-content section.
+
+    Args:
+        title: Chapter title to test.
+        extra_skip: Additional lowercase skip titles loaded from the active
+            domain template's ``skip_chapters`` list.
+    """
+    normalised = title.strip().lower()
+    if normalised in _SKIP_CHAPTER_TITLES:
+        return True
+    if extra_skip and normalised in extra_skip:
+        return True
+    return False
 
 
 # ── Checkpoint support ──
@@ -142,26 +154,65 @@ def _save_checkpoint(
     path.write_text(json.dumps(data, separators=(',', ':')))
 
 
+_MAX_CHECKPOINT_BYTES = 256 * 1024 * 1024  # 256 MiB hard cap
+
+
 def _load_checkpoint(
     path: Path,
 ) -> tuple[list[int], list[ExtractionResult]] | None:
-    """Load checkpoint if it exists. Returns (completed_indices, extractions) or None."""
+    """Load and structurally validate a checkpoint file.
+
+    Returns (completed_indices, extractions) on success, or ``None`` if the
+    file is missing, corrupt, oversized, or structurally invalid (which will
+    cause the caller to start from scratch rather than trust bad data).
+    """
     if not path.exists():
         return None
+
+    # Guard against checkpoint files that have been inflated / tampered with
+    file_size = path.stat().st_size
+    if file_size > _MAX_CHECKPOINT_BYTES:
+        logger.error(
+            "Checkpoint file %s is suspiciously large (%d MiB > %d MiB limit). "
+            "Refusing to load — starting fresh.",
+            path, file_size // (1024 * 1024), _MAX_CHECKPOINT_BYTES // (1024 * 1024),
+        )
+        return None
+
     try:
         from ppke.parser.models import DepthLevel
 
-        data = json.loads(path.read_text())
+        raw_text = path.read_text(encoding="utf-8")
+        data = json.loads(raw_text)
+
+        # Structural integrity checks
+        if not isinstance(data, dict):
+            raise ValueError("Checkpoint root must be a JSON object")
+
         completed = data.get("completed_chapter_indices", [])
-        extractions = []
-        for item in data.get("extractions", []):
-            depth_str = item.get("depth", "LIGHT")
+        if not isinstance(completed, list) or not all(isinstance(i, int) for i in completed):
+            raise ValueError("'completed_chapter_indices' must be a list of integers")
+
+        raw_extractions = data.get("extractions", [])
+        if not isinstance(raw_extractions, list):
+            raise ValueError("'extractions' must be a list")
+
+        extractions: list[ExtractionResult] = []
+        for item in raw_extractions:
+            if not isinstance(item, dict):
+                raise ValueError(f"Extraction entry is not a dict: {type(item)}")
+            pid = item.get("paragraph_id", "")
+            if not isinstance(pid, str) or not pid:
+                raise ValueError(f"Extraction entry has invalid paragraph_id: {pid!r}")
+
+            depth_str = item.get("depth", "light")
             try:
                 depth = DepthLevel(depth_str)
             except ValueError:
                 depth = DepthLevel.LIGHT
+
             extractions.append(ExtractionResult(
-                paragraph_id=item["paragraph_id"],
+                paragraph_id=pid,
                 original_text=item.get("original_text", ""),
                 topic_sentence=item.get("topic_sentence", ""),
                 function_in_argument=item.get("function_in_argument", ""),
@@ -175,10 +226,11 @@ def _load_checkpoint(
                 depth=depth,
             ))
         return completed, extractions
+
     except Exception as e:
         logger.error(
-            "Checkpoint file %s is corrupt or unreadable (%s). "
-            "Starting extraction from scratch. The corrupted checkpoint will be "
+            "Checkpoint file %s is corrupt or invalid (%s). "
+            "Starting extraction from scratch. The bad checkpoint will be "
             "overwritten once the first chapter completes.",
             path, e,
         )
@@ -218,6 +270,9 @@ def _extract_with_retry(
     batch_size: int,
     progress: ProgressCallback | None,
     model_override: str | None = None,
+    extra_skip: frozenset[str] | None = None,
+    extraction_system: str | None = None,
+    extraction_user_tpl: str | None = None,
 ) -> list[ExtractionResult]:
     """Extract a chapter with automatic retry for missing/failed paragraphs.
 
@@ -228,9 +283,15 @@ def _extract_with_retry(
     etc.) all paragraphs are marked SKIP without LLM calls. Otherwise,
     low-information paragraphs (boilerplate, page numbers, etc.) are skipped
     individually and assigned minimal placeholder results directly.
+
+    Args:
+        extra_skip: Additional lowercase chapter titles to skip, from the
+            active domain template's ``skip_chapters`` list.
+        extraction_system: Domain-specific system prompt for extraction stage.
+        extraction_user_tpl: Domain-specific user template for extraction stage.
     """
     # Stop-word chapter detection: skip non-content sections entirely
-    if _is_skip_chapter(chapter.title):
+    if _is_skip_chapter(chapter.title, extra_skip=extra_skip):
         logger.info(
             "Skipping non-content chapter %02d: %s", chapter.number, chapter.title
         )
@@ -278,6 +339,8 @@ def _extract_with_retry(
         author=author,
         batch_size=batch_size,
         model_override=model_override,
+        system_prompt=extraction_system,
+        user_template=extraction_user_tpl,
     )
 
     # Check for missing or failed extractions (among substantive paragraphs only)
@@ -318,6 +381,8 @@ def _extract_with_retry(
             author=author,
             batch_size=batch_size,
             model_override=model_override,
+            system_prompt=extraction_system,
+            user_template=extraction_user_tpl,
         )
         results.extend(retry_results)
 
@@ -327,6 +392,7 @@ def _extract_with_retry(
 def ingest_book(
     book: Book,
     config: Config,
+    domain: str = "philosophy",
     progress_callback: ProgressCallback | None = None,
     human_operator: str = "",
     resume: bool = False,
@@ -334,25 +400,28 @@ def ingest_book(
     vector_store: VectorStore | None = None,
     knowledge_graph: KnowledgeGraph | None = None,
 ) -> Path:
-    """Run the full ingestion pipeline for a book.
+    """Run the full ingestion pipeline for a book using the specified domain template.
 
     Pipeline stages (QUALITY_MAX mode):
-    1. Structural extraction (per chapter, batched)
+    1. Load and validate domain template (prompts + skip_chapters)
+    2. Structural extraction (per chapter, batched) with template prompts
        - Per-chapter coverage validation with automatic re-read retry
        - Checkpoint saved after each chapter (resumable on failure)
-    2. Optional double-pass: re-extract entire book if config.double_pass is True
-    3. Full coverage validation
-    4. Logical architecture building
-    5. Concept indexing
-    6. Pattern detection
-    7. Author model generation
-    8. Write all output files (per-book + global vault files)
-    9. Index into vector store (if available)
-    10. Update knowledge graph (if available)
+    3. Optional double-pass: re-extract entire book if config.double_pass is True
+    4. Full coverage validation
+    5. Secondary analysis (logical map / methodology / evidence) with template prompts
+    6. Concept / entity indexing with template prompts
+    7. Pattern / findings detection with template prompts
+    8. Author model generation
+    9. Write all output files (per-book + global vault files)
+    10. Index into vector store (if available)
+    11. Update knowledge graph (if available)
 
     Args:
         book: Parsed Book object.
         config: PPKE configuration.
+        domain: Domain template name (e.g. 'philosophy', 'science', 'legal').
+            Loaded from ``ppke/templates/official/`` or ``~/.ppke/plugins/``.
         progress_callback: Optional callable(stage_name, detail) for progress updates.
         human_operator: Name of the human operator for meta.yml versioning.
         resume: If True, resume from last checkpoint instead of starting fresh.
@@ -363,6 +432,38 @@ def ingest_book(
     Returns:
         Path to the book's output directory.
     """
+    # ── Load domain template ──
+    from ppke.templates.loader import load_template
+    try:
+        template = load_template(domain)
+        logger.info("Loaded domain template: %s v%s", template.name, template.version)
+    except Exception as _te:
+        logger.warning(
+            "Failed to load template '%s' (%s) — falling back to philosophy defaults", domain, _te
+        )
+        template = None
+
+    # Build prompt lookup: stage_id -> {system, user_template}
+    def _stage_prompts(stage_id: str) -> tuple[str | None, str | None]:
+        """Return (system_prompt, user_template) for a given stage ID from the template."""
+        if template is None:
+            return None, None
+        stage_def = next((s for s in template.stages if s.get("id") == stage_id), None)
+        if stage_def is None:
+            return None, None
+        prompt_key = stage_def.get("prompt")
+        if prompt_key is None:
+            return None, None
+        prompt_cfg = template.prompts.get(prompt_key, {})
+        if not isinstance(prompt_cfg, dict):
+            return None, None
+        return prompt_cfg.get("system"), prompt_cfg.get("user_template")
+
+    # Build extra skip set from template's skip_chapters list
+    extra_skip: frozenset[str] | None = None
+    if template is not None and template.skip_chapters:
+        extra_skip = frozenset(s.strip().lower() for s in template.skip_chapters)
+
     client = LLMClient(config.llm)
 
     def _progress(stage: str, detail: str = ""):
@@ -438,6 +539,7 @@ def ingest_book(
                     f"Submitting Chapter {chapter.number:02d}: {chapter.title} "
                     f"({chapter.paragraph_count} paragraphs)",
                 )
+                _ext_sys, _ext_usr = _stage_prompts("extraction")
                 future = executor.submit(
                     _extract_with_retry,
                     client=client,
@@ -447,6 +549,9 @@ def ingest_book(
                     batch_size=config.llm.paragraphs_per_batch,
                     progress=_progress,
                     model_override=config.llm.effective_small_model,
+                    extra_skip=extra_skip,
+                    extraction_system=_ext_sys,
+                    extraction_user_tpl=_ext_usr,
                 )
                 futures[future] = idx
 
@@ -493,6 +598,7 @@ def ingest_book(
                 f"Chapter {chapter.number:02d}: {chapter.title} "
                 f"({chapter.paragraph_count} paragraphs)",
             )
+            _ext_sys, _ext_usr = _stage_prompts("extraction")
             chapter_results = _extract_with_retry(
                 client=client,
                 chapter=chapter,
@@ -501,6 +607,9 @@ def ingest_book(
                 batch_size=config.llm.paragraphs_per_batch,
                 progress=_progress,
                 model_override=config.llm.effective_small_model,
+                extra_skip=extra_skip,
+                extraction_system=_ext_sys,
+                extraction_user_tpl=_ext_usr,
             )
             all_extractions.extend(chapter_results)
             completed_indices.append(idx)
@@ -524,6 +633,7 @@ def ingest_book(
                 "double_pass",
                 f"Pass 2 - Chapter {chapter.number:02d}: {chapter.title}",
             )
+            _ext_sys, _ext_usr = _stage_prompts("extraction")
             chapter_results = extract_chapter(
                 client=client,
                 chapter=chapter,
@@ -531,6 +641,8 @@ def ingest_book(
                 author=book.author,
                 batch_size=config.llm.paragraphs_per_batch,
                 model_override=config.llm.effective_small_model,
+                system_prompt=_ext_sys,
+                user_template=_ext_usr,
             )
             pass2_extractions.extend(chapter_results)
 
@@ -581,21 +693,39 @@ def ingest_book(
         f"({coverage.processed_paragraph_count}/{coverage.total_paragraphs})",
     )
 
-    # ── Stages 4/5/6: Logical architecture, Concept indexing, Pattern detection (parallel) ──
-    _progress("analysis", "Running logical map, concept index, and pattern detection in parallel")
+    # ── Stages 4/5/6: Secondary analysis, Concept/entity indexing, Pattern/findings detection ──
+    # Resolve stage IDs from template: stage index 1 = logical/methodology,
+    # index 2 = concepts/evidence, index 3 = patterns/findings.
+    _stages = template.stages if template else []
+    _s1_id = _stages[1]["id"] if len(_stages) > 1 else "logical_map"
+    _s2_id = _stages[2]["id"] if len(_stages) > 2 else "concepts"
+    _s3_id = _stages[3]["id"] if len(_stages) > 3 else "patterns"
+
+    _s1_sys, _s1_usr = _stage_prompts(_s1_id)
+    _s2_sys, _s2_usr = _stage_prompts(_s2_id)
+    _s3_sys, _s3_usr = _stage_prompts(_s3_id)
+
+    _progress(
+        "analysis",
+        f"Running [{_s1_id}, {_s2_id}, {_s3_id}] analysis stages in parallel "
+        f"(domain: {domain})",
+    )
     logical_map: dict[str, Any] = {}
     concept_data: dict[str, Any] = {}
     pattern_data: dict[str, Any] = {}
 
     with ThreadPoolExecutor(max_workers=3) as analysis_executor:
         future_logical = analysis_executor.submit(
-            build_logical_map, client, all_extractions, book.title, book.author
+            build_logical_map, client, all_extractions, book.title, book.author,
+            _s1_sys, _s1_usr,
         )
         future_concepts = analysis_executor.submit(
-            build_concept_index, client, all_extractions, book.title, book.author
+            build_concept_index, client, all_extractions, book.title, book.author,
+            _s2_sys, _s2_usr,
         )
         future_patterns = analysis_executor.submit(
-            detect_patterns, client, all_extractions, book.title, book.author
+            detect_patterns, client, all_extractions, book.title, book.author,
+            _s3_sys, _s3_usr,
         )
 
         try:

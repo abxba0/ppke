@@ -43,23 +43,31 @@ def build_logical_map(
     extraction_results: list[ExtractionResult],
     book_title: str,
     author: str,
+    system_prompt: str | None = None,
+    user_template: str | None = None,
 ) -> dict[str, Any]:
-    """Build the logical architecture map for the entire book.
+    """Build the logical architecture / second-stage analysis map for the book.
 
-    Returns the raw dict structure for writing to 02_Logical_Map.md.
+    Returns the raw dict structure for writing to the stage 2 output file.
+
+    Args:
+        system_prompt: Override system prompt from the active domain template.
+        user_template: Override user template; must contain {book_title},
+            {author}, {extraction_json} placeholders.
     """
-    # For very large books, we may need to chunk this too
-    # For now, send all extractions (summarized form)
+    effective_system = system_prompt if system_prompt else LOGICAL_MAP_SYSTEM
+    effective_user_tpl = user_template if user_template else LOGICAL_MAP_USER
+
     extraction_json = _extraction_to_summary(extraction_results)
 
-    user_prompt = LOGICAL_MAP_USER.format(
+    user_prompt = effective_user_tpl.format(
         book_title=book_title,
         author=author,
         extraction_json=extraction_json,
     )
 
     try:
-        result = client.complete_json(LOGICAL_MAP_SYSTEM, user_prompt)
+        result = client.complete_json(effective_system, user_prompt)
         logger.info("Logical map built successfully")
         return result
     except Exception as e:

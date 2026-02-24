@@ -46,6 +46,67 @@ class TemplateInstallError(Exception):
     pass
 
 
+# ── Security constants ────────────────────────────────────────────────────────
+
+_GIT_CLONE_TIMEOUT_SECONDS = 120  # Hard cap on clone operations
+
+# Strict allowlist: only these extensions are copied from a template package.
+# Executable, binary, and script files are rejected outright.
+_ALLOWED_TEMPLATE_EXTENSIONS: frozenset[str] = frozenset({
+    ".yml", ".yaml", ".md", ".txt", ".json",
+})
+
+# Limits on how large a template package may be
+_MAX_TEMPLATE_FILES = 50
+_MAX_FILE_BYTES = 512 * 1024  # 512 KiB per file
+
+
+def _validate_github_url(url: str) -> None:
+    """Validate that *url* is a safe, well-formed GitHub repository URL.
+
+    Uses ``re.fullmatch`` so that trailing query strings, path suffixes,
+    fragments, or shell metacharacters are rejected outright.
+    Only ``https://`` is accepted; no credentials, no port overrides.
+    """
+    pattern = r'https://github\.com/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*'
+    if not re.fullmatch(pattern, url):
+        raise TemplateInstallError(
+            f"Invalid GitHub URL: {url!r}\n"
+            "Expected format: https://github.com/username/repo-name\n"
+            "Only HTTPS URLs with no credentials, query strings, or fragments are accepted."
+        )
+
+
+def _check_template_files(local_path: Path) -> None:
+    """Verify file count, size, and extension allowlist before installation.
+
+    Raises TemplateInstallError if any file violates the safety policy.
+    """
+    allowed_files = []
+    for f in local_path.rglob("*"):
+        if not f.is_file():
+            continue
+        if f.suffix.lower() not in _ALLOWED_TEMPLATE_EXTENSIONS:
+            raise TemplateInstallError(
+                f"Template contains a disallowed file type: {f.relative_to(local_path)!s}\n"
+                f"Only these extensions are permitted: {', '.join(sorted(_ALLOWED_TEMPLATE_EXTENSIONS))}"
+            )
+        size = f.stat().st_size
+        if size > _MAX_FILE_BYTES:
+            raise TemplateInstallError(
+                f"File {f.relative_to(local_path)!s} is too large "
+                f"({size // 1024} KiB > {_MAX_FILE_BYTES // 1024} KiB limit)."
+            )
+        allowed_files.append(f)
+
+    if len(allowed_files) > _MAX_TEMPLATE_FILES:
+        raise TemplateInstallError(
+            f"Template package contains {len(allowed_files)} files "
+            f"(limit: {_MAX_TEMPLATE_FILES}). "
+            "Remove unnecessary files before installing."
+        )
+
+
 def install_from_github(github_url: str, force: bool = False) -> str:
     """
     Install a template from a GitHub repository.
@@ -65,18 +126,15 @@ def install_from_github(github_url: str, force: bool = False) -> str:
         >>> print(f"Installed template: {name}")
         Installed template: legal
     """
-    # Validate GitHub URL
-    github_pattern = r'https?://github\.com/[\w-]+/[\w-]+'
-    if not re.match(github_pattern, github_url):
-        raise TemplateInstallError(
-            f"Invalid GitHub URL: {github_url}\n"
-            f"Expected format: https://github.com/username/repo-name"
-        )
+    # Strict URL validation: fullmatch, HTTPS only, no query/fragment/credentials
+    _validate_github_url(github_url)
 
     # Check if git is available
     try:
-        subprocess.run(['git', '--version'], capture_output=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
+        subprocess.run(
+            ['git', '--version'], capture_output=True, check=True, timeout=10,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         raise TemplateInstallError(
             "Git is not installed or not in PATH.\n"
             "Please install git: https://git-scm.com/downloads"
@@ -92,7 +150,13 @@ def install_from_github(github_url: str, force: bool = False) -> str:
                 ['git', 'clone', '--depth', '1', github_url, str(temp_path / 'repo')],
                 capture_output=True,
                 check=True,
-                text=True
+                text=True,
+                timeout=_GIT_CLONE_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            raise TemplateInstallError(
+                f"Git clone timed out after {_GIT_CLONE_TIMEOUT_SECONDS}s. "
+                "Check your network connection or try again later."
             )
         except subprocess.CalledProcessError as e:
             raise TemplateInstallError(
@@ -145,6 +209,10 @@ def install_from_local(local_path: Path | str, force: bool = False, source: Opti
             f"Invalid template: missing template.yml\n"
             f"Template directory must contain at least template.yml"
         )
+
+    # Security pre-check: file type allowlist + size + count limits
+    _print("🔍 Checking template file safety...")
+    _check_template_files(local_path)
 
     # Load and validate template (this will raise errors if invalid)
     _print("🔍 Validating template structure...")

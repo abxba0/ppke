@@ -53,12 +53,22 @@ def detect_patterns(
     extraction_results: list[ExtractionResult],
     book_title: str,
     author: str,
+    system_prompt: str | None = None,
+    user_template: str | None = None,
 ) -> dict[str, Any]:
-    """Detect patterns and tensions in the book.
+    """Detect patterns, tensions, and findings in the book.
 
     Processes in chunks to respect token limits while preserving full text.
-    Returns dict structure for writing to pattern sections.
+    Returns dict structure for writing to the stage 4 output file.
+
+    Args:
+        system_prompt: Override system prompt from the active domain template.
+        user_template: Override user template; must contain {book_title},
+            {author}, {extraction_json} placeholders.
     """
+    effective_system = system_prompt if system_prompt else PATTERN_DETECTION_SYSTEM
+    effective_user_tpl = user_template if user_template else PATTERN_DETECTION_USER
+
     if not extraction_results:
         return {"patterns": []}
 
@@ -68,14 +78,14 @@ def detect_patterns(
         chunk = extraction_results[i : i + _PATTERN_CHUNK_SIZE]
         extraction_json = _extraction_to_pattern_input(chunk)
 
-        user_prompt = PATTERN_DETECTION_USER.format(
+        user_prompt = effective_user_tpl.format(
             book_title=book_title,
             author=author,
             extraction_json=extraction_json,
         )
 
         try:
-            result = client.complete_json(PATTERN_DETECTION_SYSTEM, user_prompt)
+            result = client.complete_json(effective_system, user_prompt)
             chunk_results.append(result)
             logger.info(
                 "Pattern chunk %d-%d: %d patterns found",
