@@ -60,6 +60,7 @@ class TokenUsageTracker:
         cache_read: int = 0,
         cache_creation: int = 0,
     ) -> None:
+        """Add token counts from a single LLM call to the running totals."""
         with self._lock:
             self.input_tokens += input_tokens
             self.output_tokens += output_tokens
@@ -69,9 +70,11 @@ class TokenUsageTracker:
 
     @property
     def total_tokens(self) -> int:
+        """Sum of input and output tokens."""
         return self.input_tokens + self.output_tokens
 
     def summary(self) -> dict[str, int]:
+        """Return a snapshot of all tracked token counts."""
         return {
             "total_calls": self.total_calls,
             "input_tokens": self.input_tokens,
@@ -177,24 +180,24 @@ class LLMClient:
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES + 1):
             try:
-                if self.config.provider == "anthropic":
+                provider = self.config.provider
+                if provider == "anthropic":
                     return self._complete_anthropic(system_prompt, user_prompt, model_override)
-                elif self.config.provider == "openai":
+                if provider == "openai":
                     return self._complete_openai(
                         system_prompt, user_prompt, response_format, model_override
                     )
-                elif self.config.provider == "deepseek":
+                if provider == "deepseek":
                     return self._complete_deepseek(
                         system_prompt, user_prompt, response_format, model_override
                     )
-                elif self.config.provider == "gemini":
+                if provider == "gemini":
                     return self._complete_gemini(system_prompt, user_prompt, model_override)
-                elif self.config.provider == "openrouter":
+                if provider == "openrouter":
                     return self._complete_openrouter(
                         system_prompt, user_prompt, response_format, model_override
                     )
-                else:
-                    raise ValueError(f"Unknown provider: {self.config.provider}")
+                raise ValueError(f"Unknown provider: {provider}")
             except Exception as e:
                 last_exc = e
                 if attempt < _MAX_RETRIES and _is_retryable(e):
@@ -394,9 +397,9 @@ class LLMClient:
                 if line.strip().startswith("```") and not inside:
                     inside = True
                     continue
-                elif line.strip() == "```" and inside:
+                if line.strip() == "```" and inside:
                     break
-                elif inside:
+                if inside:
                     json_lines.append(line)
             text = "\n".join(json_lines)
 

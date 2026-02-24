@@ -672,7 +672,8 @@ def write_global_files(vault_path: Path, config: Any) -> None:
 
     qa_lines.append("---")
     qa_lines.append("")
-    qa_lines.append(f"**Overall Status:** {'ALL COMPLETE' if all_complete else 'INCOMPLETE — review missing books above'}")
+    status_str = 'ALL COMPLETE' if all_complete else 'INCOMPLETE — review missing books above'
+    qa_lines.append(f"**Overall Status:** {status_str}")
     qa_lines.append(f"**Last checked:** {date.today().isoformat()}")
 
     (vault_path / "QA_RESULTS.md").write_text("\n".join(qa_lines))

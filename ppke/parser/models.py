@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Optional, Any
-from pydantic import BaseModel, Field, computed_field, field_validator
+from typing import Optional
+from pydantic import BaseModel, Field, computed_field
 
 
 class DepthLevel(str, Enum):
@@ -162,8 +162,12 @@ class ConceptEntry(BaseModel):
     """A concept tracked across a book."""
 
     name: str = Field(..., description="Concept name")
-    occurrences: list[dict] = Field(default_factory=list, description="List of occurrences with paragraph_id, quote, context")
-    semantic_shifts: list[dict] = Field(default_factory=list, description="Semantic shifts with from_id, to_id, description")
+    occurrences: list[dict] = Field(
+        default_factory=list, description="List of occurrences with paragraph_id, quote, context"
+    )
+    semantic_shifts: list[dict] = Field(
+        default_factory=list, description="Semantic shifts with from_id, to_id, description"
+    )
 
     model_config = {"validate_assignment": True}
 

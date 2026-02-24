@@ -19,11 +19,11 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 # Optional dependency guard
-_CHROMA_AVAILABLE = False
+_chroma_available = False
 try:
     import chromadb  # type: ignore[import]
 
-    _CHROMA_AVAILABLE = True
+    _chroma_available = True
 except ImportError:  # pragma: no cover
     pass
 
@@ -53,7 +53,7 @@ class VectorStore:
         self._client: Any = None
         self._collection: Any = None
 
-        if not _CHROMA_AVAILABLE:
+        if not _chroma_available:
             logger.debug(
                 "chromadb not installed — vector search unavailable. "
                 "Install with: pip install chromadb"
@@ -77,7 +77,7 @@ class VectorStore:
     @property
     def available(self) -> bool:
         """True when ChromaDB is installed and the collection is ready."""
-        return _CHROMA_AVAILABLE and self._collection is not None
+        return _chroma_available and self._collection is not None
 
     def index_extractions(
         self,

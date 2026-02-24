@@ -11,9 +11,7 @@ Usage:
 """
 
 import sys
-import re
 from pathlib import Path
-from typing import Dict, List, Tuple
 import argparse
 
 # Fix Windows console encoding
@@ -24,6 +22,8 @@ if sys.platform == 'win32':
 
 # ANSI colors
 class Colors:
+    """ANSI color codes for terminal output."""
+
     GREEN = '\033[92m'
     YELLOW = '\033[93m'
     RED = '\033[91m'
@@ -36,8 +36,8 @@ def progress_bar(percentage: float, width: int = 20) -> str:
     """Generate a progress bar."""
     filled = int(width * percentage / 100)
     empty = width - filled
-    bar = '█' * filled + '░' * empty
-    return f"[{bar}] {percentage:5.1f}%"
+    bar_str = '█' * filled + '░' * empty
+    return f"[{bar_str}] {percentage:5.1f}%"
 
 
 class ProgressTracker:
@@ -85,20 +85,20 @@ class ProgressTracker:
             ],
         }
 
-    def get_overall_progress(self) -> Tuple[float, int, int]:
+    def get_overall_progress(self) -> tuple[float, int, int]:
         """Calculate overall progress percentage."""
         total_tasks = sum(len(tasks) for tasks in self.phase_tasks.values())
         completed_tasks = 0
 
-        for phase, tasks in self.phase_tasks.items():
-            for task_name, check_func in tasks:
+        for _phase, tasks in self.phase_tasks.items():
+            for _task_name, check_func in tasks:
                 if check_func():
                     completed_tasks += 1
 
         percentage = (completed_tasks / total_tasks) * 100 if total_tasks > 0 else 0
         return percentage, completed_tasks, total_tasks
 
-    def get_phase_progress(self, phase: int) -> Tuple[float, int, int]:
+    def get_phase_progress(self, phase: int) -> tuple[float, int, int]:
         """Calculate progress for a specific phase."""
         tasks = self.phase_tasks.get(phase, [])
         if not tasks:
@@ -310,6 +310,7 @@ class ProgressTracker:
 
 
 def main():
+    """Run the progress tracker CLI."""
     parser = argparse.ArgumentParser(description='Track PPKE v2.0 refactoring progress')
     parser.add_argument('--detailed', '-d', action='store_true', help='Show detailed task lists')
     args = parser.parse_args()

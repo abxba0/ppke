@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from io import StringIO
 from pathlib import Path
 
 import click
@@ -43,7 +42,7 @@ def _show_book_detail(console: Console, book: dict):
     path = book["path"]
     title = book.get("title", book["folder"])
     author = book.get("author", "Unknown")
-    status = book.get("verification_status", "?")
+    _status = book.get("verification_status", "?")
 
     console.print()
     console.print(Rule(f"[bold]{title}[/bold] by {author}"))
@@ -180,7 +179,7 @@ def run_dashboard(vault_path: Path, config: Config):
         if choice == 0:
             console.print("Exiting dashboard.")
             break
-        elif choice == 1:
+        if choice == 1:
             if not books:
                 console.print("[yellow]No books found in vault.[/yellow]")
             else:
@@ -223,8 +222,6 @@ def run_dashboard(vault_path: Path, config: Config):
 
 def _show_vault_stats(console: Console, vault_path: Path, books: list[dict]):
     """Show vault-wide statistics in the TUI."""
-    import re
-
     total_chapters = 0
     total_paragraphs = 0
     complete = 0

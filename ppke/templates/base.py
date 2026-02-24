@@ -1,7 +1,8 @@
 """Base classes for PPKE plugin templates."""
 
-from pydantic import BaseModel, Field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class PluginTemplate(BaseModel):
@@ -56,7 +57,10 @@ class PluginTemplate(BaseModel):
         - Only YAML configuration files are processed
     """
 
-    name: str = Field(..., min_length=1, pattern=r'^[a-z_]+$', description="Template identifier (lowercase, underscore-separated)")
+    name: str = Field(
+        ..., min_length=1, pattern=r'^[a-z_]+$',
+        description="Template identifier (lowercase, underscore-separated)"
+    )
     version: str = Field(..., pattern=r'^\d+\.\d+\.\d+$', description="Semantic version")
     tier: str = Field(..., pattern=r'^(official|custom)$', description="Template tier: 'official' or 'custom'")
     author: str = Field(..., description="Creator name")

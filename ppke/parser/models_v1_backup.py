@@ -49,6 +49,7 @@ class Chapter:
 
     @property
     def paragraph_count(self) -> int:
+        """Number of paragraphs in this chapter."""
         return len(self.paragraphs)
 
     def __repr__(self) -> str:
@@ -67,6 +68,7 @@ class Book:
 
     @property
     def total_paragraphs(self) -> int:
+        """Total number of paragraphs across all chapters."""
         return sum(ch.paragraph_count for ch in self.chapters)
 
     @property
@@ -79,10 +81,12 @@ class Book:
 
     @property
     def all_paragraphs(self) -> list[Paragraph]:
+        """Flatten all paragraphs across all chapters."""
         return [p for ch in self.chapters for p in ch.paragraphs]
 
     @property
     def all_paragraph_ids(self) -> list[str]:
+        """Get list of all paragraph IDs in the book."""
         return [p.paragraph_id for p in self.all_paragraphs]
 
     def __repr__(self) -> str:

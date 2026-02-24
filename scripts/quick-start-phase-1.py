@@ -15,11 +15,9 @@ Options:
     --verbose       Show detailed progress
 """
 
-import os
 import sys
 import re
 from pathlib import Path
-from typing import List, Dict, Tuple
 from datetime import datetime
 import argparse
 
@@ -31,6 +29,8 @@ if sys.platform == 'win32':
 
 # ANSI colors for terminal output
 class Colors:
+    """ANSI color codes for terminal output."""
+
     GREEN = '\033[92m'
     YELLOW = '\033[93m'
     RED = '\033[91m'
@@ -68,11 +68,11 @@ class Phase1Auditor:
         self.repo_root = repo_root
         self.output_dir = output_dir
         self.verbose = verbose
-        self.audit_results = {
-            'prompts': [],
-            'models': [],
-            'pipeline': [],
-            'output': []
+        self.audit_results: dict = {
+            'prompts': {},
+            'models': {},
+            'pipeline': {},
+            'output': {}
         }
 
     def run(self):
@@ -302,7 +302,7 @@ class Phase1Auditor:
             return
 
         with open(template_path, 'r', encoding='utf-8') as f:
-            template_content = f.read()
+            _template_content = f.read()
 
         # Extract spec-plan section from template
         # (In a real implementation, we'd generate this dynamically)
@@ -456,7 +456,7 @@ ppke/templates/
         with open(spec_file, 'w', encoding='utf-8') as f:
             f.write(spec_content)
 
-        print_success(f"Generated spec-plan-v2.md")
+        print_success("Generated spec-plan-v2.md")
         print(f"  Location: {spec_file}")
 
     def _create_license(self):
@@ -636,9 +636,9 @@ Track progress through all 4 phases of the PPKE v2.0 refactoring.
         print_header("Phase 1 Complete!")
 
         print(f"\n{Colors.BOLD}Deliverables Created:{Colors.END}")
-        print(f"  ✅ spec-plan-v2.md          - Architecture specification")
-        print(f"  ✅ LICENSE                  - Apache 2.0 license")
-        print(f"  ✅ REFACTORING_CHECKLIST.md - Migration tracker")
+        print("  ✅ spec-plan-v2.md          - Architecture specification")
+        print("  ✅ LICENSE                  - Apache 2.0 license")
+        print("  ✅ REFACTORING_CHECKLIST.md - Migration tracker")
 
         print(f"\n{Colors.BOLD}Audit Summary:{Colors.END}")
         print(f"  Prompts:   {self.audit_results['prompts'].get('severity', 'UNKNOWN')} severity")
@@ -647,14 +647,15 @@ Track progress through all 4 phases of the PPKE v2.0 refactoring.
         print(f"  Output:    {self.audit_results['output'].get('severity', 'UNKNOWN')} severity")
 
         print(f"\n{Colors.BOLD}Next Steps:{Colors.END}")
-        print(f"  1. Review spec-plan-v2.md")
-        print(f"  2. Verify audit findings")
-        print(f"  3. Proceed to Phase 2: python prompts/quick-start-phase-2.py")
+        print("  1. Review spec-plan-v2.md")
+        print("  2. Verify audit findings")
+        print("  3. Proceed to Phase 2: python prompts/quick-start-phase-2.py")
 
         print(f"\n{Colors.GREEN}{Colors.BOLD}Phase 1 automation complete!{Colors.END}\n")
 
 
 def main():
+    """Run the Phase 1 quick-start automation."""
     parser = argparse.ArgumentParser(description='PPKE Phase 1 Quick-Start Automation')
     parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
     parser.add_argument('--output-dir', type=Path, default=Path.cwd(), help='Output directory')
@@ -687,7 +688,7 @@ def main():
     auditor = Phase1Auditor(repo_root, args.output_dir, verbose=args.verbose)
 
     if args.skip_license:
-        auditor._create_license = lambda: print_warning("Skipped LICENSE creation")
+        auditor._create_license = lambda: print_warning("Skipped LICENSE creation")  # pylint: disable=protected-access
 
     auditor.run()
 

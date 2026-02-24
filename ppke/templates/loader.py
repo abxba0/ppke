@@ -1,9 +1,11 @@
 """Template discovery and loading system."""
 
 from pathlib import Path
-import yaml
-from ppke.templates.base import PluginTemplate
 from typing import Dict
+
+import yaml
+
+from ppke.templates.base import PluginTemplate
 
 
 # Template directories
@@ -178,7 +180,7 @@ def list_templates() -> list[tuple[str, str, str]]:
     """
     templates_data = []
 
-    for name, path in discover_templates().items():
+    for name, _path in discover_templates().items():
         try:
             template = load_template(name)
             templates_data.append((template.name, template.tier, template.description))

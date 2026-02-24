@@ -1,7 +1,8 @@
 """Template validation and security checks."""
 
-from ppke.templates.base import PluginTemplate
 import re
+
+from ppke.templates.base import PluginTemplate
 
 
 def validate_template(template: PluginTemplate) -> None:

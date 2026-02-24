@@ -13,7 +13,8 @@ def load_prompt(template: PluginTemplate, prompt_id: str, format_vars: dict = No
     Args:
         template: Loaded PluginTemplate instance
         prompt_id: Prompt identifier (e.g., 'extraction', 'logical_map', 'concepts')
-        format_vars: Optional variables to format user_template (e.g., {'chapter_number': 1, 'book_title': 'Meditations'})
+        format_vars: Optional variables to format user_template
+            (e.g., ``{'chapter_number': 1, 'book_title': 'Meditations'}``)
 
     Returns:
         (system_prompt, user_prompt) tuple
@@ -86,7 +87,7 @@ def load_prompt(template: PluginTemplate, prompt_id: str, format_vars: dict = No
             raise ValueError(
                 f"Missing format variable for prompt '{prompt_id}': {e}. "
                 f"Template requires: {_extract_template_vars(user_template)}"
-            )
+            ) from e
     else:
         user_prompt = user_template
 

@@ -6,7 +6,6 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional  # noqa: F401 — kept for re-exports; use T | None below
 
 
 DEFAULT_CONFIG_PATH = Path.home() / ".ppke" / "config.json"
@@ -167,6 +166,7 @@ class Config:
     async_ingest: bool = False
 
     def save(self, path: Path | None = None) -> None:
+        """Serialize configuration to JSON and write to *path*."""
         path = path or DEFAULT_CONFIG_PATH
         path.parent.mkdir(parents=True, exist_ok=True)
         data = {
@@ -194,7 +194,8 @@ class Config:
         path.write_text(json.dumps(data, indent=2))
 
     @classmethod
-    def load(cls, path: Path | None = None) -> Config:
+    def load(cls, path: Path | None = None) -> "Config":
+        """Load configuration from *path*, returning defaults if not found."""
         path = path or DEFAULT_CONFIG_PATH
         if not path.exists():
             return cls()
