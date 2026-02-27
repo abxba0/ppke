@@ -34,11 +34,44 @@ graph = [
 async = [
     "aiofiles>=23.0",
 ]
+# Web GUI — FastAPI + Jinja2 + HTMX server
+web = [
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "python-multipart>=0.0.6",
+    "jinja2>=3.1.0",
+]
+# Document converters — PDF, DOCX, images, OCR
+ocr = [
+    "PyMuPDF>=1.23.0",
+    "pytesseract>=0.3.10",
+    "pdf2image>=1.16.0",
+    "Pillow>=10.0.0",
+    "python-docx>=1.0.0",
+    "beautifulsoup4>=4.12.0",
+]
+# Audio — transcription input + TTS audio overviews
+audio = [
+    "pydub>=0.25.1",
+    "edge-tts>=6.1.0",
+]
 # All optional extras at once
 all = [
     "chromadb>=0.4.0",
     "networkx>=3.0",
     "aiofiles>=23.0",
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "python-multipart>=0.0.6",
+    "jinja2>=3.1.0",
+    "PyMuPDF>=1.23.0",
+    "pytesseract>=0.3.10",
+    "pdf2image>=1.16.0",
+    "Pillow>=10.0.0",
+    "python-docx>=1.0.0",
+    "beautifulsoup4>=4.12.0",
+    "pydub>=0.25.1",
+    "edge-tts>=6.1.0",
 ]
 
 [tool.pytest.ini_options]

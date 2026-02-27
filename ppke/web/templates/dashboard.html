@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Library{% endblock %}
+
+{% block content %}
+<!-- Stats cards -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 fade-in">
+    <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <div class="text-3xl font-bold text-brand-600">{{ total_books }}</div>
+        <div class="text-sm text-gray-500 mt-1">Books Ingested</div>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <div class="text-3xl font-bold text-emerald-600" id="stat-chapters">--</div>
+        <div class="text-sm text-gray-500 mt-1">Total Chapters</div>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <div class="text-3xl font-bold text-purple-600" id="stat-paragraphs">--</div>
+        <div class="text-sm text-gray-500 mt-1">Paragraphs Analyzed</div>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <div class="text-3xl font-bold text-amber-600" id="stat-concepts">--</div>
+        <div class="text-sm text-gray-500 mt-1">Concepts Indexed</div>
+    </div>
+</div>
+
+<!-- Action bar -->
+<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900">Knowledge Library</h1>
+        <p class="text-sm text-gray-500 mt-1">{{ vault_path }} &middot; {{ provider }} / {{ model }}</p>
+    </div>
+    <a href="/upload" class="inline-flex items-center px-5 py-2.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm shadow-sm">
+        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+        </svg>
+        Upload Document
+    </a>
+</div>
+
+<!-- Book grid -->
+{% if books %}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    {% for book in books %}
+    <a href="/notebook/{{ book.folder }}" class="group bg-white rounded-xl border border-gray-200 hover:border-brand-300 hover:shadow-md transition-all duration-200 overflow-hidden fade-in">
+        <div class="p-6">
+            <div class="flex items-start justify-between">
+                <div class="flex-1 min-w-0">
+                    <h3 class="font-semibold text-gray-900 group-hover:text-brand-600 transition-colors truncate">
+                        {{ book.title }}
+                    </h3>
+                    <p class="text-sm text-gray-500 mt-1">{{ book.author }}{% if book.year %} ({{ book.year }}){% endif %}</p>
+                </div>
+                <span class="ml-3 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium
+                    {% if book.status == 'COMPLETE' %}bg-green-100 text-green-800
+                    {% elif book.status == 'VERIFIED' %}bg-green-100 text-green-800
+                    {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                    {{ book.status }}
+                </span>
+            </div>
+            <div class="mt-4 flex items-center space-x-4 text-xs text-gray-400">
+                <span>{{ book.chapters }} chapters</span>
+                <span>&middot;</span>
+                <span>{{ book.paragraphs }} paragraphs</span>
+                {% if book.date %}
+                <span>&middot;</span>
+                <span>{{ book.date }}</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="px-6 py-3 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+            <span class="text-xs text-gray-400">{{ book.folder }}</span>
+            <svg class="w-4 h-4 text-gray-400 group-hover:text-brand-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-16 bg-white rounded-xl border border-dashed border-gray-300">
+    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+    </svg>
+    <h3 class="mt-4 text-lg font-medium text-gray-900">No books yet</h3>
+    <p class="mt-2 text-sm text-gray-500">Upload your first document to get started.</p>
+    <a href="/upload" class="mt-6 inline-flex items-center px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 text-sm font-medium">
+        Upload Document
+    </a>
+</div>
+{% endif %}
+
+<script>
+// Load stats asynchronously
+fetch('/api/stats').then(r => r.json()).then(data => {
+    document.getElementById('stat-chapters').textContent = data.total_chapters || 0;
+    document.getElementById('stat-paragraphs').textContent = data.total_paragraphs || 0;
+    document.getElementById('stat-concepts').textContent = data.total_concepts || 0;
+});
+</script>
+{% endblock %}
