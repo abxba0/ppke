@@ -8,75 +8,177 @@
     </div>
 
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 sm:p-8 fade-in transition-colors">
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Upload Document</h1>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
-            Upload any supported document to ingest into your knowledge base.
-        </p>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Add to Library</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">Upload a file, paste a URL, or import from YouTube.</p>
 
-        <form id="upload-form" enctype="multipart/form-data">
-            <!-- File drop zone -->
-            <div id="drop-zone"
-                 class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-8 sm:p-10 text-center cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/10 transition-colors mb-6"
-                 onclick="document.getElementById('file-input').click()">
-                <svg class="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-                </svg>
-                <p class="text-sm text-gray-600 dark:text-gray-400 font-medium">Drop your file here or click to browse</p>
-                <p class="text-xs text-gray-400 dark:text-gray-500 mt-2" id="file-name">No file selected</p>
-                <input type="file" id="file-input" name="file" class="hidden"
-                       accept=".md,.txt,.pdf,.docx,.epub,.html,.htm,.jpg,.jpeg,.png,.tiff,.tif,.bmp,.webp,.pptx,.mp3,.mp4,.m4a,.wav,.webm,.ogg">
-            </div>
-
-            <!-- Supported formats -->
-            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-6">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">SUPPORTED FORMATS</p>
-                <div class="flex flex-wrap gap-1.5">
-                    {% for fmt in supported_formats %}
-                    <span class="inline-flex px-2 py-0.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-xs text-gray-600 dark:text-gray-300">{{ fmt }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-
-            <!-- Metadata -->
-            <div class="space-y-4 mb-6">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
-                    <input type="text" name="title" required
-                           class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                           placeholder="e.g. Being and Time">
-                </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Author *</label>
-                        <input type="text" name="author" required
-                               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                               placeholder="e.g. Martin Heidegger">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Year</label>
-                        <input type="text" name="year"
-                               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                               placeholder="e.g. 1927">
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Domain Template</label>
-                    <select name="domain" class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent">
-                        <option value="philosophy">Philosophy — Argument mapping, concept tracking</option>
-                        <option value="science">Science — Methodology, evidence, findings</option>
-                        <option value="legal">Legal — Case law, statutory interpretation</option>
-                    </select>
-                </div>
-            </div>
-
-            <button type="submit" id="upload-btn"
-                    class="w-full px-6 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm shadow-sm disabled:opacity-50">
-                Upload &amp; Ingest
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-200 dark:border-gray-700 mb-6" role="tablist">
+            <button id="tab-file" onclick="switchTab('file')" role="tab" aria-selected="true"
+                    class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400 transition-colors">
+                File Upload
             </button>
-        </form>
+            <button id="tab-url" onclick="switchTab('url')" role="tab" aria-selected="false"
+                    class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                From URL
+            </button>
+            <button id="tab-batch" onclick="switchTab('batch')" role="tab" aria-selected="false"
+                    class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                Batch Upload
+            </button>
+        </div>
 
-        <!-- Progress -->
+        <!-- ─── TAB: File Upload ─── -->
+        <div id="panel-file" role="tabpanel">
+            <form id="upload-form" enctype="multipart/form-data">
+                <!-- Drop zone -->
+                <div id="drop-zone"
+                     class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-8 sm:p-10 text-center cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/10 transition-colors mb-6"
+                     onclick="document.getElementById('file-input').click()">
+                    <svg class="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 font-medium">Drop your file here or click to browse</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-2" id="file-name">No file selected</p>
+                    <input type="file" id="file-input" name="files" class="hidden"
+                           accept=".md,.txt,.pdf,.docx,.epub,.html,.htm,.jpg,.jpeg,.png,.tiff,.tif,.bmp,.webp,.pptx,.mp3,.mp4,.m4a,.wav,.webm,.ogg,.tex,.csv,.xlsx,.xls,.zip">
+                </div>
+
+                <!-- Supported formats -->
+                <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-6">
+                    <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">SUPPORTED FORMATS</p>
+                    <div class="flex flex-wrap gap-1.5">
+                        {% for fmt in supported_formats %}
+                        <span class="inline-flex px-2 py-0.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-xs text-gray-600 dark:text-gray-300">{{ fmt }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <button type="submit" id="upload-btn"
+                        class="w-full px-6 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm shadow-sm disabled:opacity-50">
+                    Upload &amp; Ingest
+                </button>
+            </form>
+        </div>
+
+        <!-- ─── TAB: From URL ─── -->
+        <div id="panel-url" role="tabpanel" class="hidden">
+            <form id="url-form">
+                <div class="mb-5">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">URL *</label>
+                    <input type="url" id="url-input" name="url" required
+                           class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                           placeholder="https://example.com/article  or  https://youtube.com/watch?v=...">
+                    <p id="url-hint" class="text-xs text-gray-400 dark:text-gray-500 mt-1">Paste any article URL or YouTube link.</p>
+                </div>
+
+                <!-- YouTube badge (shown dynamically) -->
+                <div id="yt-badge" class="hidden mb-4 flex items-center space-x-2 text-sm text-red-600 dark:text-red-400 font-medium">
+                    <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                    </svg>
+                    <span>YouTube detected — will download &amp; transcribe audio via Whisper</span>
+                </div>
+
+                <div class="space-y-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title <span class="text-gray-400">(auto-detected if blank)</span></label>
+                        <input type="text" name="title"
+                               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                               placeholder="Leave blank to use page title">
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Author <span class="text-gray-400">(optional)</span></label>
+                            <input type="text" name="author"
+                                   class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                                   placeholder="e.g. Jane Doe">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Year</label>
+                            <input type="text" name="year"
+                                   class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                                   placeholder="e.g. 2024">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Domain Template</label>
+                        <select name="domain" class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent">
+                            <option value="philosophy">Philosophy — Argument mapping, concept tracking</option>
+                            <option value="science">Science — Methodology, evidence, findings</option>
+                            <option value="legal">Legal — Case law, statutory interpretation</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit" id="url-btn"
+                        class="w-full px-6 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm shadow-sm disabled:opacity-50">
+                    Import &amp; Ingest
+                </button>
+            </form>
+        </div>
+
+        <!-- ─── TAB: Batch Upload ─── -->
+        <div id="panel-batch" role="tabpanel" class="hidden">
+            <form id="batch-form" enctype="multipart/form-data">
+                <!-- Multi-file drop zone -->
+                <div id="batch-drop-zone"
+                     class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-8 sm:p-10 text-center cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/10 transition-colors mb-4"
+                     onclick="document.getElementById('batch-input').click()">
+                    <svg class="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                    </svg>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 font-medium">Drop multiple files or a ZIP archive here</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">All files in a ZIP will be ingested automatically</p>
+                    <input type="file" id="batch-input" name="files" class="hidden" multiple
+                           accept=".md,.txt,.pdf,.docx,.epub,.html,.htm,.jpg,.jpeg,.png,.tiff,.tif,.bmp,.webp,.pptx,.mp3,.mp4,.m4a,.wav,.webm,.ogg,.tex,.csv,.xlsx,.xls,.zip">
+                </div>
+
+                <!-- File queue preview -->
+                <div id="batch-file-list" class="mb-5 space-y-1.5 hidden">
+                    <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">FILES TO INGEST</p>
+                </div>
+
+                <div class="space-y-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title Prefix *</label>
+                        <input type="text" name="title" required
+                               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                               placeholder="Used for each file (e.g. Lecture Notes)">
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Author *</label>
+                            <input type="text" name="author" required
+                                   class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                                   placeholder="e.g. Various">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Year</label>
+                            <input type="text" name="year"
+                                   class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                                   placeholder="e.g. 2024">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Domain Template</label>
+                        <select name="domain" class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent">
+                            <option value="philosophy">Philosophy — Argument mapping, concept tracking</option>
+                            <option value="science">Science — Methodology, evidence, findings</option>
+                            <option value="legal">Legal — Case law, statutory interpretation</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit" id="batch-btn"
+                        class="w-full px-6 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm shadow-sm disabled:opacity-50">
+                    Upload All &amp; Ingest
+                </button>
+            </form>
+        </div>
+
+        <!-- Shared progress section -->
         <div id="progress-section" class="hidden mt-6">
             <div class="flex items-center space-x-3 mb-3">
                 <div class="spinner"></div>
@@ -87,10 +189,16 @@
             </div>
         </div>
 
+        <!-- Batch job list (multi-file) -->
+        <div id="batch-progress-section" class="hidden mt-6 space-y-3">
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Batch ingestion progress:</p>
+            <div id="batch-job-list"></div>
+        </div>
+
         <!-- Success -->
         <div id="success-section" class="hidden mt-6 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg p-4">
             <div class="flex items-center space-x-2">
-                <svg class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                 </svg>
                 <span class="text-sm font-medium text-green-800 dark:text-green-300">Ingestion complete!</span>
@@ -102,33 +210,99 @@
     </div>
 </div>
 
+<!-- Inline macro for metadata fields (avoids duplication) -->
+<template id="tpl-meta-fields">
+    <div class="space-y-4 mb-6">
+        <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
+            <input type="text" name="title" required
+                   class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                   placeholder="e.g. Being and Time">
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Author *</label>
+                <input type="text" name="author" required
+                       class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                       placeholder="e.g. Martin Heidegger">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Year</label>
+                <input type="text" name="year"
+                       class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                       placeholder="e.g. 1927">
+            </div>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Domain Template</label>
+            <select name="domain" class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent">
+                <option value="philosophy">Philosophy — Argument mapping, concept tracking</option>
+                <option value="science">Science — Methodology, evidence, findings</option>
+                <option value="legal">Legal — Case law, statutory interpretation</option>
+            </select>
+        </div>
+    </div>
+</template>
+
 <script>
+// ── Inject shared meta fields into the file-upload form ──
+(function() {
+    const tpl = document.getElementById('tpl-meta-fields');
+    const placeholder = document.querySelector('#upload-form button[type=submit]');
+    if (tpl && placeholder) {
+        placeholder.before(tpl.content.cloneNode(true));
+    }
+})();
+
+// ── Tab switching ──
+function switchTab(tab) {
+    ['file', 'url', 'batch'].forEach(t => {
+        const btn = document.getElementById('tab-' + t);
+        const panel = document.getElementById('panel-' + t);
+        const active = t === tab;
+        btn.setAttribute('aria-selected', active);
+        btn.classList.toggle('border-brand-600', active);
+        btn.classList.toggle('text-brand-600', active);
+        btn.classList.toggle('dark:border-brand-400', active);
+        btn.classList.toggle('dark:text-brand-400', active);
+        btn.classList.toggle('border-transparent', !active);
+        btn.classList.toggle('text-gray-500', !active);
+        btn.classList.toggle('dark:text-gray-400', !active);
+        panel.classList.toggle('hidden', !active);
+    });
+    // Reset shared UI sections
+    ['progress-section', 'success-section', 'batch-progress-section'].forEach(id => {
+        document.getElementById(id).classList.add('hidden');
+    });
+}
+
+// ── File upload tab ──
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 
-['dragenter', 'dragover'].forEach(ev => {
-    dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('border-brand-500', 'bg-brand-50', 'dark:bg-brand-900/10'); });
-});
-['dragleave', 'drop'].forEach(ev => {
-    dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('border-brand-500', 'bg-brand-50', 'dark:bg-brand-900/10'); });
-});
+['dragenter', 'dragover'].forEach(ev => dropZone.addEventListener(ev, e => {
+    e.preventDefault();
+    dropZone.classList.add('border-brand-500', 'bg-brand-50', 'dark:bg-brand-900/10');
+}));
+['dragleave', 'drop'].forEach(ev => dropZone.addEventListener(ev, e => {
+    e.preventDefault();
+    dropZone.classList.remove('border-brand-500', 'bg-brand-50', 'dark:bg-brand-900/10');
+}));
 dropZone.addEventListener('drop', e => { fileInput.files = e.dataTransfer.files; updateFileName(); });
 fileInput.addEventListener('change', updateFileName);
 
 function updateFileName() {
-    const name = fileInput.files[0]?.name || 'No file selected';
-    document.getElementById('file-name').textContent = name;
+    document.getElementById('file-name').textContent =
+        fileInput.files[0]?.name || 'No file selected';
 }
 
 document.getElementById('upload-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     if (!fileInput.files[0]) { showToast('Please select a file.', 'warning'); return; }
-
     const formData = new FormData(this);
-    document.getElementById('upload-btn').disabled = true;
-    document.getElementById('upload-btn').textContent = 'Uploading...';
+    const btn = document.getElementById('upload-btn');
+    btn.disabled = true; btn.textContent = 'Uploading...';
     document.getElementById('progress-section').classList.remove('hidden');
-
     try {
         const resp = await fetch('/api/upload', { method: 'POST', body: formData });
         const data = await resp.json();
@@ -140,12 +314,142 @@ document.getElementById('upload-form').addEventListener('submit', async function
         }
     } catch (err) {
         showToast('Upload failed: ' + err.message, 'error');
-        document.getElementById('upload-btn').disabled = false;
-        document.getElementById('upload-btn').textContent = 'Upload & Ingest';
+        btn.disabled = false; btn.textContent = 'Upload & Ingest';
         document.getElementById('progress-section').classList.add('hidden');
     }
 });
 
+// ── URL import tab ──
+const urlInput = document.getElementById('url-input');
+const ytBadge = document.getElementById('yt-badge');
+const YT_RE = /(?:youtube\.com\/watch|youtu\.be\/|youtube\.com\/shorts\/)/;
+
+urlInput.addEventListener('input', () => {
+    ytBadge.classList.toggle('hidden', !YT_RE.test(urlInput.value));
+});
+
+document.getElementById('url-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const url = urlInput.value.trim();
+    if (!url) { showToast('Please enter a URL.', 'warning'); return; }
+    const formData = new FormData(this);
+    const btn = document.getElementById('url-btn');
+    btn.disabled = true; btn.textContent = 'Importing...';
+    document.getElementById('progress-section').classList.remove('hidden');
+    try {
+        const resp = await fetch('/api/import-url', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (resp.ok && data.job_id) {
+            const label = data.source_type === 'youtube'
+                ? 'YouTube download started — transcribing audio...'
+                : 'Page fetched — ingesting...';
+            showToast(label, 'info');
+            pollJob(data.job_id);
+        } else {
+            throw new Error(data.detail || 'Import failed');
+        }
+    } catch (err) {
+        showToast('Import failed: ' + err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Import & Ingest';
+        document.getElementById('progress-section').classList.add('hidden');
+    }
+});
+
+// ── Batch upload tab ──
+const batchDrop = document.getElementById('batch-drop-zone');
+const batchInput = document.getElementById('batch-input');
+
+['dragenter', 'dragover'].forEach(ev => batchDrop.addEventListener(ev, e => {
+    e.preventDefault();
+    batchDrop.classList.add('border-brand-500', 'bg-brand-50', 'dark:bg-brand-900/10');
+}));
+['dragleave', 'drop'].forEach(ev => batchDrop.addEventListener(ev, e => {
+    e.preventDefault();
+    batchDrop.classList.remove('border-brand-500', 'bg-brand-50', 'dark:bg-brand-900/10');
+}));
+batchDrop.addEventListener('drop', e => { batchInput.files = e.dataTransfer.files; updateBatchList(); });
+batchInput.addEventListener('change', updateBatchList);
+
+function updateBatchList() {
+    const list = document.getElementById('batch-file-list');
+    list.innerHTML = '<p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">FILES TO INGEST</p>';
+    if (batchInput.files.length === 0) { list.classList.add('hidden'); return; }
+    list.classList.remove('hidden');
+    Array.from(batchInput.files).forEach(f => {
+        const div = document.createElement('div');
+        div.className = 'flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 py-1 border-b border-gray-100 dark:border-gray-700';
+        div.innerHTML = `<svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg><span class="truncate">${escHtml(f.name)}</span><span class="ml-auto text-xs text-gray-400">${(f.size/1024).toFixed(0)} KB</span>`;
+        list.appendChild(div);
+    });
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+document.getElementById('batch-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    if (!batchInput.files.length) { showToast('Please select at least one file.', 'warning'); return; }
+    const formData = new FormData(this);
+    const btn = document.getElementById('batch-btn');
+    btn.disabled = true; btn.textContent = 'Uploading...';
+    try {
+        const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || 'Batch upload failed');
+
+        if (data.jobs) {
+            // Multiple files → show batch progress UI
+            showToast(`${data.count} files queued for ingestion`, 'info');
+            document.getElementById('batch-progress-section').classList.remove('hidden');
+            data.jobs.forEach((jid, i) => pollBatchJob(jid, i));
+        } else if (data.job_id) {
+            // Single file via batch form
+            showToast('Upload started — ingesting...', 'info');
+            document.getElementById('progress-section').classList.remove('hidden');
+            pollJob(data.job_id);
+        }
+    } catch (err) {
+        showToast('Batch upload failed: ' + err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Upload All & Ingest';
+    }
+});
+
+function pollBatchJob(jobId, index) {
+    const list = document.getElementById('batch-job-list');
+    const row = document.createElement('div');
+    row.id = 'bjob-' + jobId;
+    row.className = 'flex items-center space-x-3 py-2 border-b border-gray-100 dark:border-gray-700 text-sm';
+    row.innerHTML = `<div class="spinner w-4 h-4 flex-shrink-0"></div><span class="text-gray-600 dark:text-gray-300 flex-1 truncate" id="bjob-stage-${jobId}">Starting...</span><span class="text-xs text-gray-400" id="bjob-pct-${jobId}">0%</span>`;
+    list.appendChild(row);
+
+    const interval = setInterval(async () => {
+        try {
+            const resp = await fetch(`/api/jobs/${jobId}`);
+            const data = await resp.json();
+            document.getElementById(`bjob-stage-${jobId}`).textContent = data.stage || '...';
+            document.getElementById(`bjob-pct-${jobId}`).textContent = (data.progress || 0) + '%';
+
+            if (data.status === 'completed') {
+                clearInterval(interval);
+                const row = document.getElementById('bjob-' + jobId);
+                row.querySelector('.spinner').outerHTML = '<svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+                if (data.book_folder) {
+                    const link = document.createElement('a');
+                    link.href = '/notebook/' + data.book_folder;
+                    link.className = 'text-xs text-brand-600 dark:text-brand-400 hover:underline ml-2';
+                    link.textContent = 'Open';
+                    row.appendChild(link);
+                }
+            } else if (data.status === 'failed') {
+                clearInterval(interval);
+                const stage = document.getElementById(`bjob-stage-${jobId}`);
+                stage.textContent = 'Failed: ' + (data.error || 'Unknown');
+                stage.classList.add('text-red-500');
+            }
+        } catch (_) {}
+    }, 2000);
+}
+
+// ── Shared polling (single job) ──
 async function pollJob(jobId) {
     const interval = setInterval(async () => {
         try {
@@ -165,11 +469,14 @@ async function pollJob(jobId) {
             } else if (data.status === 'failed') {
                 clearInterval(interval);
                 document.getElementById('progress-stage').textContent = 'Failed: ' + (data.error || 'Unknown');
+                // Re-enable buttons
                 document.getElementById('upload-btn').disabled = false;
                 document.getElementById('upload-btn').textContent = 'Upload & Ingest';
+                document.getElementById('url-btn').disabled = false;
+                document.getElementById('url-btn').textContent = 'Import & Ingest';
                 showToast('Ingestion failed: ' + (data.error || 'Unknown'), 'error');
             }
-        } catch (err) { /* ignore transient poll errors */ }
+        } catch (_) {}
     }, 2000);
 }
 </script>

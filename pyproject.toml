@@ -55,6 +55,13 @@ audio = [
     "pydub>=0.25.1",
     "edge-tts>=6.1.0",
 ]
+# Phase 2: document intelligence — URL scraping, YouTube import, spreadsheets
+ingest = [
+    "trafilatura>=1.6.0",   # URL / article content extraction
+    "requests>=2.31.0",     # HTTP fallback for URL scraping
+    "yt-dlp>=2024.1.0",     # YouTube audio download
+    "openpyxl>=3.1.0",      # Excel .xlsx support
+]
 # All optional extras at once
 all = [
     "chromadb>=0.4.0",
@@ -72,6 +79,10 @@ all = [
     "beautifulsoup4>=4.12.0",
     "pydub>=0.25.1",
     "edge-tts>=6.1.0",
+    "trafilatura>=1.6.0",
+    "requests>=2.31.0",
+    "yt-dlp>=2024.1.0",
+    "openpyxl>=3.1.0",
 ]
 
 [tool.pytest.ini_options]

@@ -41,37 +41,48 @@ The web GUI is now a complete, polished single-user application. You can run `pp
 
 ---
 
-## Phase 2 — Document Intelligence (NEXT)
+## Phase 2 — Document Intelligence (DONE)
 
 Make the converter pipeline smarter and support more input sources.
 
 ### 2.1 New Input Sources
-- [ ] **URL scraping** — Paste a URL, extract article content with `trafilatura`
-- [ ] **YouTube import** — `yt-dlp` to download audio, Whisper to transcribe, ingest transcript
-- [ ] **Google Docs** — Import via Google Drive API
-- [ ] **LaTeX** — Convert `.tex` to Markdown via pandoc subprocess
-- [ ] **CSV/Excel** — Import tabular data as structured Markdown tables
+- [x] **URL scraping** — `ppke/converter/url.py`: `convert_url()` uses `trafilatura`; BeautifulSoup fallback; auto-detects YouTube
+- [x] **YouTube import** — `ppke/converter/youtube.py`: `convert_youtube()` downloads audio via `yt-dlp`, transcribes via Whisper, prepends video metadata
+- [x] **LaTeX** — `@register(".tex")` in registry: pandoc subprocess → regex fallback; strips preamble, maps `\section` to headings
+- [x] **CSV** — `@register(".csv")` in registry: stdlib `csv` → Markdown table (max 500 rows)
+- [x] **Excel** — `@register(".xlsx")` / `@register(".xls")`: `openpyxl` → one Markdown table section per sheet
 
 ### 2.2 OCR Improvements
-- [ ] **Hybrid OCR** — Tesseract first, Vision LLM (Claude/GPT-4V) fallback for low-confidence pages
-- [ ] **Confidence scoring** — Flag low-confidence OCR pages for human review in the web UI
-- [ ] **Language detection** — Auto-configure Tesseract language from content
-- [ ] **Table detection** — Preserve table structure from PDFs as Markdown tables
-- [ ] **Image preprocessing** — Deskew, denoise, contrast enhancement with OpenCV
+- [x] **Hybrid OCR** — `ocr_image()` and `ocr_pdf_pages()`: Tesseract first → Vision LLM (Claude/GPT-4o) fallback when confidence < 55
+- [x] **Confidence scoring** — `_tesseract_with_confidence()` returns `(text, mean_confidence)`; low-confidence pages annotated with `<!-- OCR confidence: N% -->`
+- [x] **Language detection** — `_detect_language()` uses Tesseract OSD; maps script → language code; detected language reused across all pages of a PDF
+- [ ] **Table detection** — Preserve table structure from PDFs as Markdown tables *(deferred to Phase 4)*
+- [ ] **Image preprocessing** — Deskew, denoise, contrast enhancement with OpenCV *(deferred)*
 
 ### 2.3 Batch Processing
-- [ ] **Multi-file upload** — Upload ZIP or drag-drop multiple files
-- [ ] **Queue system** — Per-file progress tracking for bulk uploads
-- [ ] **Smart chapter detection** — Use PDF bookmarks/TOC for chapter splitting
+- [x] **Multi-file upload** — `/api/upload` now accepts `files: list[UploadFile]`; one job per file; returns `{"jobs": [...]}` for batch
+- [x] **Queue system** — Batch progress UI in upload.html: per-file job row with spinner → green checkmark + Open link
+- [x] **ZIP upload** — `@register(".zip")` in registry: extracts to tempdir, converts each supported member, concatenates Markdown
+- [ ] **Smart chapter detection** — Use PDF bookmarks/TOC for chapter splitting *(deferred to Phase 3)*
 
-### Implementation notes
-- URL scraping: Add `@register(".url")` pseudo-extension + web form field, use `trafilatura` for extraction
-- YouTube: New converter `_convert_youtube(url)` → download via yt-dlp → transcribe → return markdown
-- Batch: Modify `/api/upload` to accept multiple files, create one job per file
+### New Endpoints
+- `POST /api/import-url` — accepts `url`, auto-detects YouTube vs web page, starts background ingestion job
+
+### New UI
+- Upload page redesigned with three tabs: **File Upload**, **From URL**, **Batch Upload**
+- YouTube URL auto-detection badge (red YouTube icon appears when URL matches)
+- Batch file queue preview list with file sizes
+- Shared polling UI with per-job spinners → checkmarks
+
+### New Dependencies (`[ingest]`)
+- `trafilatura>=1.6.0` — article extraction
+- `requests>=2.31.0` — HTTP fallback
+- `yt-dlp>=2024.1.0` — YouTube audio download
+- `openpyxl>=3.1.0` — Excel support
 
 ---
 
-## Phase 3 — AI Chat Enhancements
+## Phase 3 — AI Chat Enhancements (NEXT)
 
 Make the query engine significantly smarter.
 
@@ -293,8 +304,8 @@ SaaS model for hosted deployment.
 |-------|----------------|--------|--------|--------|
 | 0 | Web GUI + Converters + Audio | Critical | Large | DONE |
 | 1 | Dark mode, SSE, Settings, Security | High | Medium | DONE |
-| 2 | URL/YouTube import, Hybrid OCR | High | Medium | Next |
-| 3 | Multi-turn chat, RAG, Flashcards | High | Medium | Planned |
+| 2 | URL/YouTube import, Hybrid OCR | High | Medium | DONE |
+| 3 | Multi-turn chat, RAG, Flashcards | High | Medium | Next |
 | 4 | Graph analytics, Path finder | Medium | Medium | Planned |
 | 5 | Full NotebookLM audio parity | Medium | Large | Planned |
 | 6 | PDF/DOCX/Slides export | Medium | Medium | Planned |

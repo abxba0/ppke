@@ -4,6 +4,9 @@ Phase 1 complete: dark mode, markdown chat, SSE streaming, toasts,
 keyboard shortcuts, settings page, error middleware, path traversal
 protection, mobile responsive.
 
+Phase 2 complete: URL/YouTube import, .tex/.csv/.xlsx/.zip converters,
+hybrid OCR with confidence scoring, multi-file upload.
+
 Run with:
     ppke serve
     uvicorn ppke.web.app:app --reload
@@ -20,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from typing import List as TypingList
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -456,59 +460,203 @@ async def api_search(q: str = Query(..., min_length=1), book: str | None = None)
 
 @app.post("/api/upload")
 async def api_upload(
-    file: UploadFile = File(...),
+    files: TypingList[UploadFile] = File(...),
     title: str = Form(...),
     author: str = Form(...),
     year: str = Form(""),
     domain: str = Form("philosophy"),
 ):
-    """Upload and ingest a document."""
-    from ppke.converter import convert_to_markdown
+    """Upload and ingest one or more documents.
 
-    # Sanitize filename
-    safe_filename = re.sub(r"[^\w\.\-]", "_", file.filename or "upload")
+    Accepts a list of files.  Each file gets its own background ingestion job.
+    Returns ``{"jobs": [...]}`` so the UI can poll each independently.
+    """
+    from ppke.converter import convert_to_markdown
 
     config = _get_config()
     upload_dir = config.vault_path / ".uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
-    temp_path = upload_dir / safe_filename
 
-    with open(temp_path, "wb") as f:
+    job_ids: list[str] = []
+
+    for file in files:
+        safe_filename = re.sub(r"[^\w\.\-]", "_", file.filename or "upload")
+        temp_path = upload_dir / safe_filename
+
         content = await file.read()
-        f.write(content)
+        temp_path.write_bytes(content)
 
-    try:
-        markdown_text = convert_to_markdown(temp_path)
-    except (ValueError, ImportError) as e:
-        temp_path.unlink(missing_ok=True)
-        raise HTTPException(400, str(e))
+        try:
+            markdown_text = convert_to_markdown(temp_path)
+        except (ValueError, ImportError) as e:
+            temp_path.unlink(missing_ok=True)
+            raise HTTPException(400, str(e))
 
-    md_path = upload_dir / f"{temp_path.stem}.md"
-    md_path.write_text(markdown_text)
+        # Use the original (unsuffixed) stem so we don't duplicate extensions
+        md_path = upload_dir / f"{temp_path.stem}.md"
+        md_path.write_text(markdown_text)
+
+        # Per-file title: use provided title for single uploads; append filename for batch
+        file_title = title if len(files) == 1 else f"{title} — {temp_path.stem}"
+
+        job_id = str(uuid.uuid4())[:8]
+        _jobs[job_id] = {
+            "status": "running",
+            "stage": "Starting ingestion...",
+            "progress": 0,
+            "book_folder": None,
+            "error": None,
+            "started": datetime.now().isoformat(),
+            "filename": safe_filename,
+        }
+        job_ids.append(job_id)
+
+        import threading
+
+        def _run_ingest(
+            jid=job_id,
+            tp=temp_path,
+            mp=md_path,
+            ftitle=file_title,
+        ):
+            try:
+                from ppke.parser.markdown import parse_markdown_book
+                from ppke.pipeline.orchestrator import ingest_book
+                from ppke.progress.tracker import ProgressTracker
+                from ppke.vectordb.store import VectorStore
+                from ppke.graph.knowledge_graph import KnowledgeGraph
+
+                book = parse_markdown_book(mp, ftitle, author, year or None)
+                _jobs[jid]["stage"] = f"Parsed: {len(book.chapters)} chapters"
+                _jobs[jid]["progress"] = 10
+
+                tracker = ProgressTracker()
+                vector_store = VectorStore(config.vault_path) if config.enable_vector_search else None
+                knowledge_graph = KnowledgeGraph(config.vault_path) if config.enable_knowledge_graph else None
+
+                def progress_cb(stage: str, detail: str):
+                    _jobs[jid]["stage"] = f"[{stage}] {detail}"
+
+                book_dir = ingest_book(
+                    book, config,
+                    domain=domain,
+                    progress_callback=progress_cb,
+                    tracker=tracker,
+                    vector_store=vector_store,
+                    knowledge_graph=knowledge_graph,
+                )
+
+                _jobs[jid]["status"] = "completed"
+                _jobs[jid]["progress"] = 100
+                _jobs[jid]["book_folder"] = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
+                _jobs[jid]["stage"] = "Ingestion complete!"
+
+            except Exception as e:
+                logger.exception("Ingestion failed for job %s", jid)
+                _jobs[jid]["status"] = "failed"
+                _jobs[jid]["error"] = str(e)
+                _jobs[jid]["stage"] = f"Failed: {e}"
+            finally:
+                tp.unlink(missing_ok=True)
+                mp.unlink(missing_ok=True)
+
+        threading.Thread(target=_run_ingest, daemon=True).start()
+
+    # Backwards-compatible: single file → return {job_id, status}
+    # Multiple files → return {jobs: [...], status}
+    if len(job_ids) == 1:
+        return {"job_id": job_ids[0], "status": "running"}
+    return {"jobs": job_ids, "status": "running", "count": len(job_ids)}
+
+
+@app.post("/api/import-url")
+async def api_import_url(
+    url: str = Form(...),
+    title: str = Form(""),
+    author: str = Form(""),
+    year: str = Form(""),
+    domain: str = Form("philosophy"),
+):
+    """Import a web page or YouTube video URL and ingest it.
+
+    Detects YouTube URLs automatically and uses yt-dlp + Whisper.
+    All other URLs are scraped with trafilatura.
+
+    Returns ``{"job_id": ..., "status": "running"}``.
+    """
+    # Basic URL validation
+    url = url.strip()
+    if not url.startswith(("http://", "https://", "www.")):
+        raise HTTPException(400, "Please provide a valid URL starting with http:// or https://")
+
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
+    from ppke.converter.url import is_youtube_url
+
+    is_yt = is_youtube_url(url)
+
+    config = _get_config()
+    upload_dir = config.vault_path / ".uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
 
     job_id = str(uuid.uuid4())[:8]
     _jobs[job_id] = {
         "status": "running",
-        "stage": "Starting ingestion...",
+        "stage": "Fetching URL...",
         "progress": 0,
         "book_folder": None,
         "error": None,
         "started": datetime.now().isoformat(),
+        "url": url,
+        "source_type": "youtube" if is_yt else "web",
     }
 
     import threading
 
-    def _run_ingest():
+    def _run_url_ingest():
+        md_path: Path | None = None
         try:
+            _jobs[job_id]["stage"] = "Downloading content..."
+            _jobs[job_id]["progress"] = 5
+
+            if is_yt:
+                from ppke.converter.youtube import convert_youtube
+                markdown_text = convert_youtube(url)
+            else:
+                from ppke.converter.url import convert_url
+                markdown_text = convert_url(url)
+
+            _jobs[job_id]["stage"] = "Content extracted — starting ingestion..."
+            _jobs[job_id]["progress"] = 20
+
+            # Derive title from Markdown h1 if not provided
+            ingest_title = title.strip()
+            if not ingest_title:
+                for line in markdown_text.splitlines():
+                    if line.startswith("# "):
+                        ingest_title = line[2:].strip()
+                        break
+                if not ingest_title:
+                    from urllib.parse import urlparse
+                    ingest_title = urlparse(url).netloc or "Imported Article"
+
+            ingest_author = author.strip() or "Web Import"
+
+            # Write to temp .md file
+            safe_stem = re.sub(r"[^\w\-]", "_", ingest_title)[:60]
+            md_path = upload_dir / f"{safe_stem}_{job_id}.md"
+            md_path.write_text(markdown_text)
+
             from ppke.parser.markdown import parse_markdown_book
             from ppke.pipeline.orchestrator import ingest_book
             from ppke.progress.tracker import ProgressTracker
             from ppke.vectordb.store import VectorStore
             from ppke.graph.knowledge_graph import KnowledgeGraph
 
-            book = parse_markdown_book(md_path, title, author, year or None)
+            book = parse_markdown_book(md_path, ingest_title, ingest_author, year or None)
             _jobs[job_id]["stage"] = f"Parsed: {len(book.chapters)} chapters"
-            _jobs[job_id]["progress"] = 10
+            _jobs[job_id]["progress"] = 30
 
             tracker = ProgressTracker()
             vector_store = VectorStore(config.vault_path) if config.enable_vector_search else None
@@ -532,18 +680,17 @@ async def api_upload(
             _jobs[job_id]["stage"] = "Ingestion complete!"
 
         except Exception as e:
-            logger.exception("Ingestion failed for job %s", job_id)
+            logger.exception("URL ingestion failed for job %s (url=%s)", job_id, url)
             _jobs[job_id]["status"] = "failed"
             _jobs[job_id]["error"] = str(e)
             _jobs[job_id]["stage"] = f"Failed: {e}"
         finally:
-            temp_path.unlink(missing_ok=True)
-            md_path.unlink(missing_ok=True)
+            if md_path is not None:
+                md_path.unlink(missing_ok=True)
 
-    thread = threading.Thread(target=_run_ingest, daemon=True)
-    thread.start()
+    threading.Thread(target=_run_url_ingest, daemon=True).start()
 
-    return {"job_id": job_id, "status": "running"}
+    return {"job_id": job_id, "status": "running", "source_type": "youtube" if is_yt else "web"}
 
 
 @app.get("/api/jobs/{job_id}")

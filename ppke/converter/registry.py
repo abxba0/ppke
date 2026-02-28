@@ -228,6 +228,170 @@ for _ext in (".mp3", ".mp4", ".m4a", ".wav", ".webm", ".mpeg", ".mpga", ".ogg"):
         return transcribe(path)
 
 
+@register(".tex")
+def _convert_latex(path: Path) -> str:
+    """Convert LaTeX source to Markdown via pandoc (falls back to regex strip)."""
+    import re
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["pandoc", str(path), "-f", "latex", "-t", "markdown", "--wrap=none"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return f"# {path.stem}\n\n{result.stdout}"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        logger.warning("pandoc not available or timed out — falling back to regex LaTeX strip")
+
+    # Regex fallback: strip common LaTeX commands and recover text
+    text = path.read_text(encoding="utf-8", errors="replace")
+    # Remove preamble
+    body_match = re.search(r"\\begin\{document\}(.*?)\\end\{document\}", text, re.DOTALL)
+    if body_match:
+        text = body_match.group(1)
+    # \section{title} → ## title
+    text = re.sub(r"\\(?:sub)*section\*?\{([^}]*)\}", lambda m: "## " + m.group(1), text)
+    # \emph{x}, \textbf{x}, \textit{x} → x
+    text = re.sub(r"\\(?:emph|textbf|textit|text)\{([^}]*)\}", r"\1", text)
+    # Generic \cmd{arg} → arg
+    text = re.sub(r"\\[a-zA-Z]+\{([^}]*)\}", r"\1", text)
+    # Lone commands
+    text = re.sub(r"\\[a-zA-Z]+\*?", "", text)
+    # Remaining braces
+    text = re.sub(r"[{}]", "", text)
+    # Collapse whitespace
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return f"# {path.stem}\n\n{text}"
+
+
+@register(".csv")
+def _convert_csv(path: Path) -> str:
+    """Convert a CSV file to a Markdown table (max 500 data rows)."""
+    import csv
+
+    rows: list[list[str]] = []
+    with open(path, newline="", encoding="utf-8-sig", errors="replace") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            rows.append(row)
+
+    if not rows:
+        return f"# {path.stem}\n\n*(empty file)*"
+
+    header = rows[0]
+    data_rows = rows[1:]
+    col_count = len(header)
+
+    lines: list[str] = [f"# {path.stem}", ""]
+    lines.append("| " + " | ".join(header) + " |")
+    lines.append("| " + " | ".join("---" for _ in header) + " |")
+    for row in data_rows[:500]:
+        # Pad or trim to match header width
+        padded = (row + [""] * col_count)[:col_count]
+        lines.append("| " + " | ".join(c.replace("|", "\\|") for c in padded) + " |")
+    if len(data_rows) > 500:
+        lines.append(f"\n*({len(data_rows) - 500} additional rows not shown)*")
+
+    return "\n".join(lines)
+
+
+@register(".xlsx")
+@register(".xls")
+def _convert_excel(path: Path) -> str:
+    """Convert an Excel workbook to Markdown tables (one section per sheet)."""
+    try:
+        import openpyxl
+    except ImportError:
+        raise ImportError(
+            "Excel support requires openpyxl. Install with: pip install openpyxl"
+        )
+
+    try:
+        wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+    except Exception as exc:
+        raise ValueError(f"Could not open Excel file '{path.name}': {exc}") from exc
+
+    sheets_md: list[str] = []
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        rows: list[list[str]] = []
+        for row in ws.iter_rows(values_only=True):
+            rows.append([str(v) if v is not None else "" for v in row])
+
+        if not rows:
+            continue
+
+        header = rows[0]
+        data_rows = rows[1:]
+        col_count = len(header)
+
+        lines: list[str] = [f"## {sheet_name}", ""]
+        lines.append("| " + " | ".join(header) + " |")
+        lines.append("| " + " | ".join("---" for _ in header) + " |")
+        for row in data_rows[:500]:
+            padded = (row + [""] * col_count)[:col_count]
+            lines.append("| " + " | ".join(c.replace("|", "\\|") for c in padded) + " |")
+        if len(data_rows) > 500:
+            lines.append(f"\n*({len(data_rows) - 500} additional rows not shown)*")
+
+        sheets_md.append("\n".join(lines))
+
+    wb.close()
+
+    title = path.stem.replace("_", " ").replace("-", " ").title()
+    if not sheets_md:
+        return f"# {title}\n\n*(empty workbook)*"
+    return f"# {title}\n\n" + "\n\n".join(sheets_md)
+
+
+@register(".zip")
+def _convert_zip(path: Path) -> str:
+    """Extract a ZIP archive and convert each supported file inside it.
+
+    Returns a single combined Markdown document with each file as a section.
+    Raises ``ValueError`` if the archive contains no supported files.
+    """
+    import zipfile
+
+    results: list[str] = []
+
+    with zipfile.ZipFile(str(path), "r") as zf:
+        for member in zf.namelist():
+            member_path = Path(member)
+            ext = member_path.suffix.lower()
+
+            # Skip directories, hidden files, and unsupported formats
+            if member.endswith("/") or member_path.name.startswith("."):
+                continue
+            if ext not in _CONVERTERS:
+                continue
+
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                extracted = Path(tmp_dir) / member_path.name
+                extracted.write_bytes(zf.read(member))
+                try:
+                    content = _CONVERTERS[ext](extracted)
+                    results.append(
+                        f"---\n\n<!-- file: {member} -->\n\n{content}"
+                    )
+                except Exception as exc:
+                    logger.warning("Skipping '%s' in ZIP: %s", member, exc)
+
+    if not results:
+        raise ValueError(
+            f"ZIP archive '{path.name}' contains no supported files. "
+            f"Supported: {sorted(SUPPORTED_EXTENSIONS)}"
+        )
+
+    title = path.stem.replace("_", " ").replace("-", " ").title()
+    return f"# {title}\n\n" + "\n\n".join(results)
+
+
 # ------------------------------------------------------------------
 # Public API
 # ------------------------------------------------------------------
