@@ -149,35 +149,51 @@ Fixed `api_graph_data` to handle both `src`/`dst` and `source`/`target` edge key
 
 ---
 
-## Phase 5 — Audio & Multimedia (NEXT)
+## Phase 5 — Audio & Multimedia (DONE)
 
 Reach full NotebookLM feature parity and beyond.
 
 ### 5.1 Audio Input
-- [ ] **YouTube transcript import** — Paste YouTube URL → download audio → transcribe → ingest
-- [ ] **Podcast RSS import** — Paste RSS feed → auto-transcribe recent episodes
-- [ ] **Browser recording** — Record voice input directly in the web UI (Web Audio API)
-- [ ] **Speaker diarization** — Identify speakers using `pyannote.audio`
+- [x] **YouTube transcript import** — Already implemented in Phase 2 (`ppke/converter/youtube.py`)
+- [x] **Podcast RSS import** — New `ppke/audio/rss.py`: `parse_feed()` + `download_and_transcribe()`; `POST /api/import-rss` endpoint; "Podcast RSS" tab in upload.html with feed preview + batch episode download
+- [x] **Browser recording** — MediaRecorder API in upload.html "Record" tab; records WebM audio → `POST /api/audio/upload-recording` → Whisper transcription → ingestion as book
+- [ ] **Speaker diarization** — Deferred *(requires heavy `pyannote.audio` dependency)*
 
 ### 5.2 Audio Output
-- [ ] **Voice selection UI** — Pick from multiple voice pairs for podcast generation
-- [ ] **Length control** — Short (2 min) / Medium (5 min) / Long (10 min) overviews
-- [ ] **Topic-focused audio** — "Generate audio about [specific concept]"
-- [ ] **Cross-book podcast** — Compare two books in a single podcast episode
-- [ ] **Playback controls** — Speed control (0.5x-2x), audio bookmarks linked to transcript
+- [x] **Voice selection UI** — 7 named presets in `VOICE_PRESETS` (4 Edge TTS: Natural/Professional/British/Australian; 3 OpenAI: Classic/Warm/Dynamic); dropdown in audio modal; `GET /api/audio/presets`
+- [x] **Length control** — 3 presets in `LENGTH_PRESETS` (Short ~2min/400w, Medium ~5min/1000w, Long ~10min/2000w); dropdown in audio modal; word target passed to LLM prompt
+- [x] **Topic-focused audio** — Optional topic text input in audio modal; when set, LLM prompt focuses 60%+ of conversation on that topic
+- [x] **Cross-book podcast** — `generate_cross_book_script()` in overview.py + `POST /api/audio-overview/cross-book` endpoint; takes two book folders, generates comparative discussion
+- [x] **Playback controls** — 5 speed buttons (0.75×, 1×, 1.25×, 1.5×, 2×) below audio player; collapsible transcript panel with `GET /api/audio/{folder}/transcript`; `script_to_transcript()` renders Markdown
 
 ### 5.3 Video (Future)
-- [ ] **Lecture video import** — Extract audio + OCR slide content
-- [ ] **Video summaries** — Generate narrated slideshows from book analysis
+- [ ] **Lecture video import** — *(deferred to later phase)*
+- [ ] **Video summaries** — *(deferred to later phase)*
 
-### Implementation notes
-- YouTube: `yt-dlp -x --audio-format mp3 URL` → pipe to existing `transcribe()`
-- Voice selection: Add voice picker to audio modal, pass to `synthesize_audio()`
-- Length control: Vary `max_tokens` in script generation prompt (800 words ≈ 5 min)
+### Enhanced Module: `ppke/audio/overview.py`
+- `VOICE_PRESETS` — 7 named voice pairs (Edge TTS + OpenAI TTS)
+- `LENGTH_PRESETS` — short/medium/long with word targets + max_tokens
+- `generate_script()` — now accepts `length` and `topic` params
+- `generate_cross_book_script()` — comparative podcast for 2 books
+- `synthesize_from_preset()` — convenience wrapper using preset names
+- `script_to_transcript()` — script → readable Markdown
+
+### New Module: `ppke/audio/rss.py`
+- `parse_feed()` — parse RSS, find audio enclosures, return episode metadata
+- `download_and_transcribe()` — download episode audio, Whisper transcribe, return Markdown
+
+### New Endpoints (6)
+`POST /api/audio-overview/cross-book` · `GET /api/audio/{folder}/transcript` · `GET /api/audio/presets` · `POST /api/import-rss` · `POST /api/audio/upload-recording` · Modified `POST /api/audio-overview` (voice_preset, length, topic params)
+
+### New UI
+- **upload.html**: 5 tabs (File Upload, From URL, Batch Upload, **Podcast RSS**, **Record**)
+  - Podcast RSS: feed URL input, episode count, preview button, batch import
+  - Record: MediaRecorder UI with timer, playback preview, title/author fields, discard/submit
+- **notebook.html audio modal**: voice preset dropdown, length dropdown, topic focus input, speed buttons (0.75–2×), collapsible transcript panel
 
 ---
 
-## Phase 6 — Export & Content Generation
+## Phase 6 — Export & Content Generation (NEXT)
 
 Turn analysis into publishable outputs.
 
@@ -319,8 +335,8 @@ SaaS model for hosted deployment.
 | 2 | URL/YouTube import, Hybrid OCR | High | Medium | DONE |
 | 3 | Multi-turn chat, RAG, Flashcards | High | Medium | DONE |
 | 4 | Graph analytics, Path finder | Medium | Medium | DONE |
-| 5 | Full NotebookLM audio parity | Medium | Large | Next |
-| 6 | PDF/DOCX/Slides export | Medium | Medium | Planned |
+| 5 | Full NotebookLM audio parity | Medium | Large | DONE |
+| 6 | PDF/DOCX/Slides export | Medium | Medium | Next |
 | 7 | Multi-user auth & collab | High | Large | Planned |
 | 8 | Docker, Celery, Monitoring | High | Large | Planned |
 | 9 | SaaS monetization | Variable | Large | Optional |

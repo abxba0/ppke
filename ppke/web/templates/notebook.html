@@ -226,37 +226,89 @@
 
 <!-- Audio Overview Modal -->
 <div id="audio-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
         <div class="flex justify-between items-center mb-4">
             <h3 class="text-lg font-bold text-gray-900 dark:text-white">Audio Overview</h3>
             <button onclick="document.getElementById('audio-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         </div>
+
+        <!-- Generation options -->
         <div id="audio-content">
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
                 Generate a podcast-style audio conversation about this book.
             </p>
-            <div class="flex items-center space-x-3 mb-4">
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">TTS Engine:</label>
-                <select id="tts-provider" class="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
-                    <option value="edge">Edge TTS (Free)</option>
-                    <option value="openai">OpenAI TTS HD ($)</option>
-                </select>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <!-- Voice preset -->
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Voice Pair</label>
+                    <select id="audio-voice-preset" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                        <optgroup label="Free (Edge TTS)">
+                            <option value="natural" selected>Natural Pair</option>
+                            <option value="professional">Professional</option>
+                            <option value="british">British</option>
+                            <option value="australian">Australian</option>
+                        </optgroup>
+                        <optgroup label="Paid (OpenAI TTS)">
+                            <option value="classic">Classic</option>
+                            <option value="warm">Warm</option>
+                            <option value="dynamic">Dynamic</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <!-- Length -->
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Length</label>
+                    <select id="audio-length" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                        <option value="short">Short (~2 min)</option>
+                        <option value="medium" selected>Medium (~5 min)</option>
+                        <option value="long">Long (~10 min)</option>
+                    </select>
+                </div>
             </div>
+
+            <!-- Topic focus -->
+            <div class="mb-4">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Topic Focus <span class="text-gray-400">(optional)</span></label>
+                <input type="text" id="audio-topic" placeholder="e.g. the concept of Dasein, chapter 3…"
+                       class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+            </div>
+
             <button onclick="generateAudio()" id="audio-generate-btn"
                     class="w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium text-sm">
                 Generate Audio Overview
             </button>
         </div>
+
+        <!-- Progress -->
         <div id="audio-progress" class="hidden text-center py-6">
-            <div class="spinner mb-3"></div>
+            <div class="spinner mb-3 mx-auto"></div>
             <p class="text-sm text-gray-600 dark:text-gray-400">Generating audio overview…</p>
         </div>
+
+        <!-- Player + controls -->
         <div id="audio-player-section" class="hidden mt-4">
-            <audio id="audio-player" controls class="w-full">
+            <audio id="audio-player" controls class="w-full mb-3">
                 <source src="/api/audio/{{ folder }}" type="audio/mpeg">
             </audio>
+            <!-- Speed control -->
+            <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-3">
+                <span>Playback speed:</span>
+                <div class="flex gap-1">
+                    <button onclick="setSpeed(0.75)" class="speed-btn px-2 py-0.5 rounded border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">0.75×</button>
+                    <button onclick="setSpeed(1)" class="speed-btn px-2 py-0.5 rounded border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 font-semibold">1×</button>
+                    <button onclick="setSpeed(1.25)" class="speed-btn px-2 py-0.5 rounded border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">1.25×</button>
+                    <button onclick="setSpeed(1.5)" class="speed-btn px-2 py-0.5 rounded border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">1.5×</button>
+                    <button onclick="setSpeed(2)" class="speed-btn px-2 py-0.5 rounded border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">2×</button>
+                </div>
+            </div>
+            <!-- Transcript toggle -->
+            <button onclick="toggleTranscript()" class="w-full text-left text-sm text-purple-600 dark:text-purple-400 hover:underline font-medium mb-2">
+                Show Transcript ▾
+            </button>
+            <div id="audio-transcript" class="hidden max-h-60 overflow-y-auto bg-gray-50 dark:bg-gray-900 rounded-lg p-3 text-sm text-gray-700 dark:text-gray-300 leading-relaxed"></div>
         </div>
     </div>
 </div>
@@ -571,10 +623,15 @@ function renderGlossaryTable(terms) {
 // ── Audio generation ──
 async function generateAudio() {
     document.getElementById('audio-generate-btn').disabled = true;
+    document.getElementById('audio-content').classList.add('hidden');
     document.getElementById('audio-progress').classList.remove('hidden');
+
     const formData = new FormData();
     formData.append('folder', FOLDER);
-    formData.append('tts_provider', document.getElementById('tts-provider').value);
+    formData.append('voice_preset', document.getElementById('audio-voice-preset').value);
+    formData.append('length', document.getElementById('audio-length').value);
+    formData.append('topic', document.getElementById('audio-topic').value);
+
     try {
         const resp = await fetch('/api/audio-overview', { method: 'POST', body: formData });
         const data = await resp.json();
@@ -584,11 +641,46 @@ async function generateAudio() {
             document.getElementById('audio-player').load();
             showToast('Audio overview generated!', 'success');
         } else {
+            document.getElementById('audio-content').classList.remove('hidden');
+            document.getElementById('audio-generate-btn').disabled = false;
             showToast('Audio generation failed: ' + (data.detail || 'Unknown'), 'error');
         }
     } catch (err) {
         document.getElementById('audio-progress').classList.add('hidden');
+        document.getElementById('audio-content').classList.remove('hidden');
+        document.getElementById('audio-generate-btn').disabled = false;
         showToast('Audio generation failed: ' + err.message, 'error');
+    }
+}
+
+function setSpeed(rate) {
+    const player = document.getElementById('audio-player');
+    player.playbackRate = rate;
+    document.querySelectorAll('.speed-btn').forEach(b => {
+        b.classList.remove('bg-gray-100', 'dark:bg-gray-700', 'font-semibold');
+    });
+    event.target.classList.add('bg-gray-100', 'dark:bg-gray-700', 'font-semibold');
+}
+
+async function toggleTranscript() {
+    const el = document.getElementById('audio-transcript');
+    if (!el.classList.contains('hidden')) {
+        el.classList.add('hidden');
+        return;
+    }
+    if (!el.dataset.loaded) {
+        el.innerHTML = '<p class="text-gray-400 italic">Loading transcript…</p>';
+        el.classList.remove('hidden');
+        try {
+            const resp = await fetch(`/api/audio/${FOLDER}/transcript`);
+            const data = await resp.json();
+            el.innerHTML = renderMarkdown(data.transcript || 'No transcript available.');
+            el.dataset.loaded = 'true';
+        } catch (err) {
+            el.innerHTML = '<p class="text-gray-400 italic">Transcript not available yet — generate an audio overview first.</p>';
+        }
+    } else {
+        el.classList.remove('hidden');
     }
 }
 </script>

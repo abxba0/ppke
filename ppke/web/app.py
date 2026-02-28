@@ -917,9 +917,18 @@ async def api_graph_data(book: str | None = None):
 async def api_generate_audio_overview(
     folder: str = Form(...),
     tts_provider: str = Form("edge"),
+    voice_preset: str = Form("natural"),
+    length: str = Form("medium"),
+    topic: str = Form(""),
 ):
+    """Generate a podcast-style audio overview with voice/length/topic options."""
     folder = _safe_folder(folder)
-    from ppke.audio.overview import generate_script, synthesize_audio
+    from ppke.audio.overview import (
+        VOICE_PRESETS,
+        generate_script,
+        synthesize_from_preset,
+        synthesize_audio,
+    )
     from ppke.llm.client import LLMClient
 
     config = _get_config()
@@ -930,7 +939,12 @@ async def api_generate_audio_overview(
     client = LLMClient(config.llm)
 
     try:
-        script = generate_script(book_dir, client)
+        script = generate_script(
+            book_dir,
+            client,
+            length=length,
+            topic=topic.strip() or None,
+        )
     except Exception as e:
         raise HTTPException(500, f"Script generation failed: {e}")
 
@@ -939,7 +953,10 @@ async def api_generate_audio_overview(
 
     audio_path = book_dir / "audio_overview.mp3"
     try:
-        synthesize_audio(script, audio_path, provider=tts_provider)
+        if voice_preset in VOICE_PRESETS:
+            synthesize_from_preset(script, audio_path, voice_preset)
+        else:
+            synthesize_audio(script, audio_path, provider=tts_provider)
     except Exception as e:
         raise HTTPException(500, f"Audio synthesis failed: {e}")
 
@@ -948,6 +965,261 @@ async def api_generate_audio_overview(
         "audio_path": str(audio_path),
         "script": script,
     }
+
+
+@app.post("/api/audio-overview/cross-book")
+async def api_generate_cross_book_audio(
+    folder_a: str = Form(...),
+    folder_b: str = Form(...),
+    voice_preset: str = Form("natural"),
+    length: str = Form("medium"),
+):
+    """Generate a comparative podcast episode for two books."""
+    folder_a = _safe_folder(folder_a)
+    folder_b = _safe_folder(folder_b)
+    from ppke.audio.overview import (
+        VOICE_PRESETS,
+        generate_cross_book_script,
+        synthesize_from_preset,
+    )
+    from ppke.llm.client import LLMClient
+
+    config = _get_config()
+    vault = _vault_path()
+    book_dir_a = vault / folder_a
+    book_dir_b = vault / folder_b
+    if not book_dir_a.exists():
+        raise HTTPException(404, f"Book not found: {folder_a}")
+    if not book_dir_b.exists():
+        raise HTTPException(404, f"Book not found: {folder_b}")
+
+    client = LLMClient(config.llm)
+
+    try:
+        script = generate_cross_book_script(book_dir_a, book_dir_b, client, length=length)
+    except Exception as e:
+        raise HTTPException(500, f"Cross-book script generation failed: {e}")
+
+    # Save to first book's directory
+    out_dir = book_dir_a
+    script_path = out_dir / "cross_book_script.json"
+    script_path.write_text(json.dumps(script, indent=2))
+
+    audio_path = out_dir / "cross_book_audio.mp3"
+    try:
+        synthesize_from_preset(script, audio_path, voice_preset)
+    except Exception as e:
+        raise HTTPException(500, f"Audio synthesis failed: {e}")
+
+    return {
+        "status": "completed",
+        "audio_path": str(audio_path),
+        "script": script,
+        "folder": folder_a,
+    }
+
+
+@app.get("/api/audio/{folder}/transcript")
+async def api_audio_transcript(folder: str):
+    """Return the audio script as a readable Markdown transcript."""
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    script_path = book_dir / "audio_script.json"
+    if not script_path.exists():
+        raise HTTPException(404, "No audio script found — generate an audio overview first")
+
+    from ppke.audio.overview import script_to_transcript
+
+    script = json.loads(script_path.read_text())
+    return {"transcript": script_to_transcript(script), "turns": len(script)}
+
+
+@app.get("/api/audio/presets")
+async def api_audio_presets():
+    """Return available voice presets and length options."""
+    from ppke.audio.overview import VOICE_PRESETS, LENGTH_PRESETS
+
+    return {
+        "voices": {k: {"label": v["label"], "provider": v["provider"]} for k, v in VOICE_PRESETS.items()},
+        "lengths": {k: v["label"] for k, v in LENGTH_PRESETS.items()},
+    }
+
+
+@app.post("/api/import-rss")
+async def api_import_rss(
+    rss_url: str = Form(...),
+    max_episodes: int = Form(3),
+    domain: str = Form("philosophy"),
+):
+    """Import podcast episodes from an RSS feed.
+
+    Parses the feed, downloads the most recent audio episodes, transcribes
+    them via Whisper, and ingests each as a separate book.
+    """
+    from ppke.audio.rss import parse_feed, download_and_transcribe
+
+    try:
+        feed_info = parse_feed(rss_url, max_episodes=min(max_episodes, 5))
+    except Exception as e:
+        raise HTTPException(400, f"Failed to parse RSS feed: {e}")
+
+    if not feed_info["episodes"]:
+        raise HTTPException(400, "No audio episodes found in this RSS feed")
+
+    # Start background jobs for each episode
+    job_ids: list[str] = []
+    for ep in feed_info["episodes"]:
+        job_id = _start_rss_episode_job(
+            ep, feed_info["title"], feed_info["author"], domain
+        )
+        job_ids.append(job_id)
+
+    return {
+        "status": "queued",
+        "podcast": feed_info["title"],
+        "episodes": len(feed_info["episodes"]),
+        "jobs": job_ids,
+    }
+
+
+def _start_rss_episode_job(
+    episode: dict, podcast_title: str, podcast_author: str, domain: str
+) -> str:
+    """Start a background ingestion job for one podcast episode."""
+    import threading
+    import uuid
+
+    job_id = str(uuid.uuid4())[:8]
+    _jobs[job_id] = {"status": "running", "progress": 0, "stage": "Downloading episode…"}
+
+    def _worker():
+        try:
+            from ppke.audio.rss import download_and_transcribe
+
+            _jobs[job_id]["stage"] = f"Downloading: {episode['title'][:40]}…"
+            _jobs[job_id]["progress"] = 10
+
+            markdown = download_and_transcribe(
+                episode["url"],
+                episode_title=episode["title"],
+                podcast_title=podcast_title,
+                podcast_author=podcast_author,
+            )
+
+            _jobs[job_id]["stage"] = "Transcription complete — starting ingestion…"
+            _jobs[job_id]["progress"] = 50
+
+            # Create book from markdown
+            from ppke.parser.markdown_parser import parse_markdown
+            from ppke.config import PPKEConfig
+
+            config = _get_config()
+            book = parse_markdown(markdown)
+            book.title = episode["title"]
+            book.author = podcast_author
+
+            # Run ingestion
+            from ppke.pipeline.orchestrator import ingest_book
+
+            folder = ingest_book(
+                book, config,
+                progress_callback=lambda p, s: (
+                    _jobs[job_id].update({"progress": 50 + int(p * 0.5), "stage": s})
+                ),
+            )
+
+            _jobs[job_id].update({
+                "status": "completed",
+                "progress": 100,
+                "stage": "Done",
+                "book_folder": folder,
+            })
+        except Exception as exc:
+            logger.exception("RSS episode ingestion failed: %s", exc)
+            _jobs[job_id].update({
+                "status": "failed",
+                "stage": str(exc),
+                "error": str(exc),
+            })
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return job_id
+
+
+@app.post("/api/audio/upload-recording")
+async def api_upload_recording(
+    recording: UploadFile = File(...),
+    title: str = Form("Voice Recording"),
+    author: str = Form("User"),
+    domain: str = Form("philosophy"),
+):
+    """Accept a browser audio recording (WebM/MP3 blob), transcribe, and ingest."""
+    import tempfile
+    import threading
+    import uuid
+
+    # Save uploaded blob to temp file
+    suffix = ".webm" if "webm" in (recording.content_type or "") else ".mp3"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        content = await recording.read()
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    job_id = str(uuid.uuid4())[:8]
+    _jobs[job_id] = {"status": "running", "progress": 0, "stage": "Transcribing recording…"}
+
+    def _worker():
+        try:
+            from ppke.audio.transcriber import transcribe
+
+            _jobs[job_id]["progress"] = 10
+            markdown = transcribe(tmp_path)
+
+            _jobs[job_id]["stage"] = "Transcription complete — starting ingestion…"
+            _jobs[job_id]["progress"] = 50
+
+            # Clean up temp file
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+            from ppke.parser.markdown_parser import parse_markdown
+
+            config = _get_config()
+            book = parse_markdown(f"# {title}\n\n**Author:** {author}\n\n---\n\n{markdown}")
+            book.title = title
+            book.author = author
+
+            from ppke.pipeline.orchestrator import ingest_book
+
+            folder = ingest_book(
+                book, config,
+                progress_callback=lambda p, s: (
+                    _jobs[job_id].update({"progress": 50 + int(p * 0.5), "stage": s})
+                ),
+            )
+
+            _jobs[job_id].update({
+                "status": "completed",
+                "progress": 100,
+                "stage": "Done",
+                "book_folder": folder,
+            })
+        except Exception as exc:
+            logger.exception("Recording ingestion failed: %s", exc)
+            _jobs[job_id].update({
+                "status": "failed",
+                "stage": str(exc),
+                "error": str(exc),
+            })
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return {"job_id": job_id, "status": "running"}
 
 
 @app.get("/api/audio/{folder}")
