@@ -127,6 +127,67 @@ def _load_extractions(book_dir: Path) -> list[dict]:
     return []
 
 
+# ── Chat history helpers ──
+
+def _load_history(book_dir: Path) -> list[dict]:
+    """Load per-book chat history (list of {role, content, ts} dicts)."""
+    path = book_dir / "chat_history.json"
+    if path.exists():
+        try:
+            return json.loads(path.read_text()) or []
+        except Exception:
+            return []
+    return []
+
+
+def _save_history(book_dir: Path, messages: list[dict]) -> None:
+    """Persist chat history, capping at 100 messages to bound file size."""
+    if len(messages) > 100:
+        messages = messages[-100:]
+    (book_dir / "chat_history.json").write_text(
+        json.dumps(messages, indent=2, ensure_ascii=False)
+    )
+
+
+def _history_context_block(history: list[dict], max_turns: int = 6) -> str:
+    """Format last N history turns as a context block for the LLM prompt."""
+    if not history:
+        return ""
+    turns = history[-(max_turns * 2):]
+    lines = ["CONVERSATION HISTORY (most recent exchanges):"]
+    for msg in turns:
+        role = msg.get("role", "user").capitalize()
+        content = (msg.get("content") or "")[:600]
+        lines.append(f"{role}: {content}")
+    return "\n".join(lines) + "\n\n---\n\n"
+
+
+def _rag_context_block(
+    folder: str, question: str, config: Any, n_results: int = 5
+) -> tuple[list[dict], str]:
+    """Run vector search and return (hits, formatted context block).
+
+    Returns ([], "") gracefully when ChromaDB is unavailable or the book
+    has no indexed vectors.
+    """
+    try:
+        from ppke.vectordb.store import VectorStore
+
+        store = VectorStore(config.vault_path)
+        if not store.available:
+            return [], ""
+        hits = store.search(question, n_results=n_results, book_filter=folder)
+        if not hits:
+            return [], ""
+        lines = ["SEMANTICALLY RELEVANT PASSAGES (vector search):"]
+        for h in hits:
+            lines.append(f"  [{h['paragraph_id']}] {h['document'][:280]}")
+        return hits, "\n".join(lines) + "\n\n"
+    except Exception as exc:
+        logger.debug("RAG search skipped: %s", exc)
+        return [], ""
+
+
 # ── HTML pages ──
 
 
@@ -295,7 +356,7 @@ async def api_query(
     book: str = Form(...),
     question: str = Form(...),
 ):
-    """Query a single book — returns structured answer with evidence."""
+    """Query a single book with conversation history and RAG context."""
     book = _safe_folder(book)
     from ppke.llm.client import LLMClient
     from ppke.llm.prompts import SINGLE_BOOK_QUERY_SYSTEM, SINGLE_BOOK_QUERY_USER
@@ -310,7 +371,10 @@ async def api_query(
     logical_path = book_dir / "02_Logical_Map.md"
     concept_path = book_dir / "03_Concept_Index.md"
 
-    user_prompt = SINGLE_BOOK_QUERY_USER.format(
+    history = _load_history(book_dir)
+    rag_hits, rag_block = _rag_context_block(book, question, config)
+
+    base_prompt = SINGLE_BOOK_QUERY_USER.format(
         book_title=meta.get("title", "Unknown"),
         author=meta.get("author", "Unknown"),
         question=question,
@@ -318,9 +382,29 @@ async def api_query(
         logical_map=logical_path.read_text()[:4000] if logical_path.exists() else "N/A",
         concept_index=concept_path.read_text()[:4000] if concept_path.exists() else "N/A",
     )
+    user_prompt = (
+        _history_context_block(history)
+        + rag_block
+        + base_prompt
+        + '\n\nAlso include "follow_up_questions":["Q?","Q?","Q?"] — '
+          "3 concise follow-up questions a reader might ask next."
+    )
 
     client = LLMClient(config.llm)
     result = client.complete_json(SINGLE_BOOK_QUERY_SYSTEM, user_prompt)
+
+    # Persist to chat history
+    ts = datetime.now().isoformat()
+    history.append({"role": "user", "content": question, "ts": ts})
+    history.append({
+        "role": "assistant",
+        "content": result.get("answer", ""),
+        "ts": ts,
+        "sources": len(rag_hits),
+    })
+    _save_history(book_dir, history)
+
+    result["rag_sources"] = len(rag_hits)
     return result
 
 
@@ -329,10 +413,15 @@ async def api_query_stream(
     book: str = Query(...),
     question: str = Query(...),
 ):
-    """SSE streaming endpoint for book queries.
+    """SSE streaming endpoint for book queries with history and RAG.
 
-    Returns server-sent events with tokens as they arrive, providing
-    a real-time typing effect in the chat UI.
+    Returns server-sent events for:
+      - ``token``       — answer tokens (word chunks)
+      - ``quotes``      — verbatim quotes from the book
+      - ``confidence``  — high / medium / low
+      - ``suggestions`` — 3 follow-up question strings
+      - ``sources``     — number of RAG paragraph hits used
+      - ``[DONE]``      — stream terminator
     """
     book = _safe_folder(book)
     from ppke.llm.client import LLMClient
@@ -348,7 +437,10 @@ async def api_query_stream(
     logical_path = book_dir / "02_Logical_Map.md"
     concept_path = book_dir / "03_Concept_Index.md"
 
-    user_prompt = SINGLE_BOOK_QUERY_USER.format(
+    history = _load_history(book_dir)
+    rag_hits, rag_block = _rag_context_block(book, question, config)
+
+    base_prompt = SINGLE_BOOK_QUERY_USER.format(
         book_title=meta.get("title", "Unknown"),
         author=meta.get("author", "Unknown"),
         question=question,
@@ -356,23 +448,27 @@ async def api_query_stream(
         logical_map=logical_path.read_text()[:4000] if logical_path.exists() else "N/A",
         concept_index=concept_path.read_text()[:4000] if concept_path.exists() else "N/A",
     )
+    user_prompt = (
+        _history_context_block(history)
+        + rag_block
+        + base_prompt
+        + '\n\nAlso include "follow_up_questions":["Q?","Q?","Q?"] — '
+          "3 concise follow-up questions a reader might ask next."
+    )
 
     async def event_generator():
-        """Generate SSE events. Falls back to single JSON response."""
         try:
             client = LLMClient(config.llm)
 
-            # Try streaming if the client supports it
             if hasattr(client, 'complete_stream'):
                 for token in client.complete_stream(SINGLE_BOOK_QUERY_SYSTEM, user_prompt):
                     yield f"data: {json.dumps({'token': token})}\n\n"
             else:
-                # Non-streaming fallback: get full result and send as single event
                 result = client.complete_json(SINGLE_BOOK_QUERY_SYSTEM, user_prompt)
                 answer = result.get("answer", "No answer generated.")
-                # Send answer in chunks to simulate streaming
+                # Simulate streaming by chunking 3 words at a time
                 words = answer.split(" ")
-                chunk = []
+                chunk: list[str] = []
                 for word in words:
                     chunk.append(word)
                     if len(chunk) >= 3:
@@ -381,13 +477,31 @@ async def api_query_stream(
                 if chunk:
                     yield f"data: {json.dumps({'token': ' '.join(chunk)})}\n\n"
 
-                # Send metadata
+                # Rich metadata events
                 quotes = result.get("verbatim_quotes", [])
                 if quotes:
                     yield f"data: {json.dumps({'quotes': quotes})}\n\n"
                 confidence = result.get("confidence")
                 if confidence:
                     yield f"data: {json.dumps({'confidence': confidence})}\n\n"
+                suggestions = result.get("follow_up_questions", [])
+                if suggestions:
+                    yield f"data: {json.dumps({'suggestions': suggestions})}\n\n"
+
+                # Persist to history
+                ts = datetime.now().isoformat()
+                history.append({"role": "user", "content": question, "ts": ts})
+                history.append({
+                    "role": "assistant",
+                    "content": answer,
+                    "ts": ts,
+                    "sources": len(rag_hits),
+                })
+                _save_history(book_dir, history)
+
+            # Always send RAG source count
+            if rag_hits:
+                yield f"data: {json.dumps({'sources': len(rag_hits)})}\n\n"
 
             yield "data: [DONE]\n\n"
 
@@ -885,6 +999,267 @@ async def api_update_settings(
         save_env_file({env_var: api_key.strip()})
 
     return {"status": "ok", "message": "Settings saved"}
+
+
+# ── Chat history endpoints ──
+
+
+@app.get("/api/history/{folder}")
+async def api_get_history(folder: str):
+    """Return the full chat history for a book as a list of messages."""
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+    return {"folder": folder, "messages": _load_history(book_dir)}
+
+
+@app.delete("/api/history/{folder}")
+async def api_clear_history(folder: str):
+    """Delete the chat history for a book."""
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    path = book_dir / "chat_history.json"
+    if path.exists():
+        path.unlink()
+    return {"status": "cleared", "folder": folder}
+
+
+# ── Content generation endpoints ──
+
+
+@app.get("/api/summary/{folder}")
+async def api_get_summary(folder: str):
+    """Return cached executive summary, or ``{status: not_generated}``."""
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    path = book_dir / "summary.md"
+    if not path.exists():
+        return {"status": "not_generated", "content": None}
+    return {"status": "ready", "content": path.read_text()}
+
+
+@app.post("/api/summary/{folder}")
+async def api_generate_summary(folder: str):
+    """Generate and cache a one-page executive summary for a book."""
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+
+    from ppke.llm.client import LLMClient
+
+    config = _get_config()
+    meta = _load_book_meta(book_dir)
+    raw_path = book_dir / "01_Raw_Structure.md"
+    logical_path = book_dir / "02_Logical_Map.md"
+    concept_path = book_dir / "03_Concept_Index.md"
+
+    system = (
+        "You are an expert academic summarizer. "
+        "Write clear, structured Markdown. Be concise and precise."
+    )
+    user = f"""Write a one-page executive summary of "{meta.get('title', 'Unknown')}" by {meta.get('author', 'Unknown')}.
+
+Use this Markdown structure exactly:
+# Executive Summary: {meta.get('title', 'Unknown')}
+*{meta.get('author', 'Unknown')}{f", {meta.get('year')}" if meta.get('year') else ""}*
+
+## Core Thesis
+[1–2 sentences stating the central argument]
+
+## Key Arguments
+[3–5 bullet points — the main argumentative moves]
+
+## Central Concepts
+[3–5 bullet points — key terms and their meanings in this work]
+
+## Critical Insights
+[2–3 bullets — surprising, counter-intuitive, or especially original claims]
+
+## Significance
+[Why this work matters — intellectual, historical, or practical impact]
+
+---
+SOURCE MATERIAL:
+
+Raw structure (first 6000 chars):
+{raw_path.read_text()[:6000] if raw_path.exists() else "N/A"}
+
+Logical map (first 3000 chars):
+{logical_path.read_text()[:3000] if logical_path.exists() else "N/A"}
+
+Concept index (first 2000 chars):
+{concept_path.read_text()[:2000] if concept_path.exists() else "N/A"}"""
+
+    client = LLMClient(config.llm)
+    content = client.complete(system, user)
+
+    summary_path = book_dir / "summary.md"
+    summary_path.write_text(content)
+    return {"status": "ready", "content": content}
+
+
+@app.post("/api/study-guide/{folder}")
+async def api_generate_study_guide(folder: str):
+    """Generate and cache a chapter-by-chapter study guide."""
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+
+    path = book_dir / "study_guide.md"
+    if path.exists():
+        return {"status": "ready", "content": path.read_text()}
+
+    from ppke.llm.client import LLMClient
+
+    config = _get_config()
+    meta = _load_book_meta(book_dir)
+    raw_path = book_dir / "01_Raw_Structure.md"
+    extractions = _load_extractions(book_dir)
+
+    # Group extractions by chapter
+    chapters: dict[str, list[dict]] = {}
+    for ext in extractions:
+        pid = ext.get("paragraph_id", "")
+        ch = pid.split(".")[0].strip("{}") if "." in pid else "00"
+        chapters.setdefault(ch, []).append(ext)
+
+    chapter_summaries = []
+    for ch_num in sorted(chapters.keys())[:20]:  # cap at 20 chapters
+        paras = chapters[ch_num]
+        claims = []
+        concepts = []
+        for p in paras[:10]:
+            claims.extend(p.get("explicit_claims", [])[:2])
+            concepts.extend(p.get("defined_concepts", [])[:2])
+        chapter_summaries.append(
+            f"Chapter {ch_num}: {len(paras)} paragraphs | "
+            f"Claims: {'; '.join(claims[:3])} | "
+            f"Concepts: {', '.join(set(concepts)[:5])}"
+        )
+
+    system = "You are an academic study guide writer. Write clear, student-friendly Markdown."
+    user = f"""Write a study guide for "{meta.get('title', 'Unknown')}" by {meta.get('author', 'Unknown')}.
+
+Chapter data:
+{chr(10).join(chapter_summaries)}
+
+For each chapter produce:
+## Chapter [N]: [Inferred Title]
+**Key Claims:** [bullet list]
+**Defined Concepts:** [bullet list with brief definitions]
+**Discussion Questions:** [2–3 questions]
+**Important Quotes to Find:** [describe what to look for]
+
+End with a ## Review section with 5 essay questions spanning the whole work."""
+
+    client = LLMClient(config.llm)
+    content = client.complete(system, user)
+
+    path.write_text(content)
+    return {"status": "ready", "content": content}
+
+
+@app.get("/api/study-guide/{folder}")
+async def api_get_study_guide(folder: str):
+    """Return cached study guide, or ``{status: not_generated}``."""
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    path = book_dir / "study_guide.md"
+    if not path.exists():
+        return {"status": "not_generated", "content": None}
+    return {"status": "ready", "content": path.read_text()}
+
+
+@app.get("/api/glossary/{folder}")
+async def api_get_glossary(folder: str):
+    """Return an auto-generated glossary from concept extraction data.
+
+    No LLM call required — builds from ``extractions.json`` directly.
+    Returns ``{"terms": [{"concept": str, "definition": str, "paragraph_id": str}]}``.
+    """
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+
+    extractions = _load_extractions(book_dir)
+    terms: dict[str, dict] = {}
+
+    for ext in extractions:
+        pid = ext.get("paragraph_id", "?")
+        original = ext.get("original_text", "")
+        for concept in ext.get("defined_concepts", []):
+            key = concept.lower().strip()
+            if key in terms:
+                continue  # keep first definition only
+            # Try to find a sentence in original_text that defines this concept
+            definition = ""
+            for sentence in original.split(". "):
+                if concept.lower() in sentence.lower():
+                    definition = sentence.strip().rstrip(".") + "."
+                    break
+            terms[key] = {
+                "concept": concept,
+                "definition": definition or f"Defined/discussed in paragraph {pid}.",
+                "paragraph_id": pid,
+            }
+
+    sorted_terms = sorted(terms.values(), key=lambda t: t["concept"].lower())
+    return {"folder": folder, "total": len(sorted_terms), "terms": sorted_terms}
+
+
+@app.get("/api/flashcards/{folder}")
+async def api_get_flashcards(folder: str):
+    """Return Anki-importable flashcards as a TSV download.
+
+    Each card is:  Front (concept) → Back (definition + paragraph ID).
+    The ``Content-Disposition`` header triggers browser download.
+    """
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+
+    meta = _load_book_meta(book_dir)
+    extractions = _load_extractions(book_dir)
+
+    lines: list[str] = []
+    seen: set[str] = set()
+    for ext in extractions:
+        pid = ext.get("paragraph_id", "?")
+        original = ext.get("original_text", "")
+        for concept in ext.get("defined_concepts", []):
+            key = concept.lower().strip()
+            if key in seen:
+                continue
+            seen.add(key)
+            # Find a defining sentence
+            definition = ""
+            for sentence in original.split(". "):
+                if concept.lower() in sentence.lower():
+                    definition = sentence.strip().rstrip(".")
+                    break
+            if not definition:
+                definition = f"See paragraph {pid}"
+            front = concept.replace("\t", " ").replace("\n", " ")
+            back = f"{definition} [{pid}]".replace("\t", " ").replace("\n", " ")
+            source = meta.get("title", folder).replace("\t", " ")
+            lines.append(f"{front}\t{back}\t{source}")
+
+    tsv_content = "\n".join(lines)
+    safe_title = re.sub(r"[^\w\-]", "_", meta.get("title", folder))
+    filename = f"{safe_title}_flashcards.tsv"
+
+    from fastapi.responses import Response
+
+    return Response(
+        content=tsv_content,
+        media_type="text/tab-separated-values",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/health")

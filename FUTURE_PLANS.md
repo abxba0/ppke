@@ -82,34 +82,36 @@ Make the converter pipeline smarter and support more input sources.
 
 ---
 
-## Phase 3 — AI Chat Enhancements (NEXT)
+## Phase 3 — AI Chat Enhancements (DONE)
 
 Make the query engine significantly smarter.
 
 ### 3.1 Conversation Memory
-- [ ] **Multi-turn chat** — Store chat history per book in a JSON file, send last N turns as context
-- [ ] **Follow-up suggestions** — LLM generates 3 related questions after each answer
-- [ ] **Query templates** — Pre-built buttons: "Summarize chapter N", "Compare X and Y", "Find all claims about Z"
+- [x] **Multi-turn chat** — `chat_history.json` per book; `_load_history()` + `_save_history()`; last 6 turns injected as `CONVERSATION HISTORY` block into every query prompt
+- [x] **Follow-up suggestions** — LLM asked to include `follow_up_questions:[...]` in JSON; sent as SSE `suggestions` event; rendered as clickable chip buttons below each answer
+- [x] **Query templates** — 5 pre-built template chips in chat toolbar: "Summarize this book", "Key claims", "Main concepts", "Open questions", "Strongest argument"
 
 ### 3.2 RAG Pipeline
-- [ ] **Vector-enhanced queries** — Use ChromaDB to retrieve top-K relevant paragraphs before querying LLM
-- [ ] **Hybrid search** — Combine full-text search + vector similarity for retrieval
-- [ ] **Citation highlighting** — Click a paragraph ID in chat to jump to the source text in the Structure tab
+- [x] **Vector-enhanced queries** — `_rag_context_block()` calls `VectorStore.search(question, book_filter=folder)`; top-5 hits prepended to prompt as `SEMANTICALLY RELEVANT PASSAGES` block; degrades gracefully when ChromaDB unavailable
+- [x] **Sources badge** — `sources` SSE event; rendered as "N vector sources used" indigo badge on assistant bubble
+- [x] **Citation jump** — Clicking a paragraph ID in quotes switches to Structure tab
+- [ ] **Hybrid search** — Full-text + vector combined retrieval *(deferred to Phase 4)*
 
 ### 3.3 Content Generation
-- [ ] **Executive summaries** — One-page summary button on each notebook
-- [ ] **Flashcard generation** — Generate Anki-compatible `.apkg` deck from concept index
-- [ ] **Study guide** — Chapter-by-chapter notes with key concepts, claims, and questions
-- [ ] **Glossary** — Auto-generated term definitions from extraction data
+- [x] **Executive summaries** — `POST /api/summary/{folder}` generates via LLM (cached `summary.md`); `GET` serves it; "Generate" button in Summary tab with Markdown rendering
+- [x] **Flashcard generation** — `GET /api/flashcards/{folder}` → Anki-importable TSV (concept→definition+pid); download button in book header
+- [x] **Study guide** — `POST /api/study-guide/{folder}` → chapter-by-chapter notes via LLM (cached `study_guide.md`); Study Guide tab with "Generate" button
+- [x] **Glossary** — `GET /api/glossary/{folder}` → built from `extractions.json` (no LLM); searchable table in Glossary tab with paragraph ID jump links
 
-### Implementation notes
-- Chat history: Store in `{book_dir}/chat_history.json`, load last 10 turns into LLM context
-- RAG: Already have VectorStore — pipe `store.search(question)` results into the query prompt
-- Flashcards: Use `genanki` library to produce `.apkg` files downloadable from the UI
+### New Endpoints (7)
+`GET/DELETE /api/history/{folder}` · `GET/POST /api/summary/{folder}` · `GET/POST /api/study-guide/{folder}` · `GET /api/glossary/{folder}` · `GET /api/flashcards/{folder}`
+
+### New UI (notebook.html)
+8 tabs · query template chips · follow-up suggestion chips · clear history button · RAG badge · flashcards download
 
 ---
 
-## Phase 4 — Knowledge Graph Intelligence
+## Phase 4 — Knowledge Graph Intelligence (NEXT)
 
 Make the graph view a real analytical tool, not just visualization.
 
@@ -305,8 +307,8 @@ SaaS model for hosted deployment.
 | 0 | Web GUI + Converters + Audio | Critical | Large | DONE |
 | 1 | Dark mode, SSE, Settings, Security | High | Medium | DONE |
 | 2 | URL/YouTube import, Hybrid OCR | High | Medium | DONE |
-| 3 | Multi-turn chat, RAG, Flashcards | High | Medium | Next |
-| 4 | Graph analytics, Path finder | Medium | Medium | Planned |
+| 3 | Multi-turn chat, RAG, Flashcards | High | Medium | DONE |
+| 4 | Graph analytics, Path finder | Medium | Medium | Next |
 | 5 | Full NotebookLM audio parity | Medium | Large | Planned |
 | 6 | PDF/DOCX/Slides export | Medium | Medium | Planned |
 | 7 | Multi-user auth & collab | High | Large | Planned |

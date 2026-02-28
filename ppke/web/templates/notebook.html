@@ -36,56 +36,72 @@
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
                 View Graph
             </a>
+            <!-- Download flashcards -->
+            <a href="/api/flashcards/{{ folder }}" download
+               class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-medium">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Flashcards
+            </a>
         </div>
     </div>
 </div>
 
-<!-- Main content area: Tabs -->
+<!-- Main content: Tabs -->
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden fade-in transition-colors">
-    <!-- Tab navigation -->
+    <!-- Tab nav -->
     <div class="border-b border-gray-200 dark:border-gray-700">
         <nav class="flex -mb-px overflow-x-auto" id="tab-nav">
-            <button onclick="switchTab('chat')" data-tab="chat"
-                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-brand-600 text-brand-600 dark:text-brand-400 whitespace-nowrap">
-                Chat
+            {% set tabs = [('chat','Chat'),('structure','Structure'),('concepts','Concepts'),('logic','Logical Map'),('patterns','Patterns'),('summary','Summary'),('glossary','Glossary'),('studyguide','Study Guide')] %}
+            {% for tid, tlabel in tabs %}
+            <button onclick="switchTab('{{ tid }}')" data-tab="{{ tid }}"
+                    class="tab-btn px-5 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors
+                    {% if tid == 'chat' %}border-brand-600 text-brand-600 dark:text-brand-400{% else %}border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300{% endif %}">
+                {{ tlabel }}
             </button>
-            <button onclick="switchTab('structure')" data-tab="structure"
-                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">
-                Structure
-            </button>
-            <button onclick="switchTab('concepts')" data-tab="concepts"
-                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">
-                Concepts
-            </button>
-            <button onclick="switchTab('logic')" data-tab="logic"
-                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">
-                Logical Map
-            </button>
-            <button onclick="switchTab('patterns')" data-tab="patterns"
-                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">
-                Patterns
-            </button>
+            {% endfor %}
         </nav>
     </div>
 
-    <!-- Tab: Chat -->
+    <!-- ─── Tab: Chat ─── -->
     <div id="tab-chat" class="tab-panel">
-        <div class="flex flex-col h-[600px]">
-            <div id="chat-messages" class="flex-1 overflow-y-auto p-6 space-y-4">
+        <div class="flex flex-col" style="height:640px">
+            <!-- Chat toolbar -->
+            <div class="flex items-center justify-between px-4 py-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                <div class="flex flex-wrap gap-1.5" id="query-templates">
+                    {% set templates = [("Summarize this book","What is the overall argument and structure of this book?"),("Key claims","What are the most important explicit claims made in this book?"),("Main concepts","What are the central concepts defined or used in this book?"),("Open questions","What questions does this book leave unanswered or unresolved?"),("Strongest argument","What is the strongest argument made in this book?")] %}
+                    {% for label, prompt in templates %}
+                    <button onclick="fillTemplate({{ prompt | tojson }})"
+                            class="px-2.5 py-1 text-xs font-medium bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full text-gray-600 dark:text-gray-300 hover:border-brand-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors">
+                        {{ label }}
+                    </button>
+                    {% endfor %}
+                </div>
+                <button onclick="clearHistory()" title="Clear chat history"
+                        class="flex-shrink-0 ml-2 p-1.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 rounded transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Messages area -->
+            <div id="chat-messages" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
                 <div class="flex justify-start">
-                    <div class="chat-bubble bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-none px-4 py-3">
+                    <div class="chat-bubble bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%]">
                         <p class="text-sm text-gray-800 dark:text-gray-200">
                             Ask me anything about <strong>{{ meta.title }}</strong>.
-                            I'll answer with verbatim evidence from the text.
+                            I'll answer with verbatim evidence, confidence ratings, and follow-up suggestions.
                         </p>
                     </div>
                 </div>
             </div>
 
+            <!-- Input bar -->
             <div class="border-t border-gray-200 dark:border-gray-700 p-4">
                 <form id="chat-form" class="flex space-x-3">
                     <input type="hidden" name="book" value="{{ folder }}">
-                    <input type="text" name="question" id="chat-input" placeholder="Ask a question about this book..."
+                    <input type="text" name="question" id="chat-input"
+                           placeholder="Ask a question about this book..."
                            class="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                            autocomplete="off">
                     <button type="submit" id="chat-submit"
@@ -97,52 +113,113 @@
         </div>
     </div>
 
-    <!-- Tab: Structure -->
+    <!-- ─── Tab: Structure ─── -->
     <div id="tab-structure" class="tab-panel hidden">
-        <div class="p-6 prose max-w-none text-sm leading-relaxed max-h-[600px] overflow-y-auto dark:text-gray-300">
+        <div class="p-6 max-h-[640px] overflow-y-auto">
             {% if files['01_Raw_Structure.md'] %}
-                <pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">{{ files['01_Raw_Structure.md'][:8000] | e }}</pre>
+                <pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg leading-relaxed">{{ files['01_Raw_Structure.md'][:8000] | e }}</pre>
                 {% if files['01_Raw_Structure.md'] | length > 8000 %}
-                <div class="mt-4 text-center">
-                    <span class="text-gray-400 text-xs">Showing first 8000 characters. Full file available in vault.</span>
-                </div>
+                <p class="mt-3 text-center text-xs text-gray-400">Showing first 8000 characters. Full file available in vault.</p>
                 {% endif %}
             {% else %}
-                <p class="text-gray-500">No structure data available.</p>
+                <p class="text-gray-500 dark:text-gray-400">No structure data available.</p>
             {% endif %}
         </div>
     </div>
 
-    <!-- Tab: Concepts -->
+    <!-- ─── Tab: Concepts ─── -->
     <div id="tab-concepts" class="tab-panel hidden">
-        <div class="p-6 prose max-w-none text-sm leading-relaxed max-h-[600px] overflow-y-auto dark:text-gray-300">
+        <div class="p-6 max-h-[640px] overflow-y-auto">
             {% if files['03_Concept_Index.md'] %}
-                <pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">{{ files['03_Concept_Index.md'][:8000] | e }}</pre>
+                <pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg leading-relaxed">{{ files['03_Concept_Index.md'][:8000] | e }}</pre>
             {% else %}
-                <p class="text-gray-500">No concept data available.</p>
+                <p class="text-gray-500 dark:text-gray-400">No concept data available.</p>
             {% endif %}
         </div>
     </div>
 
-    <!-- Tab: Logical Map -->
+    <!-- ─── Tab: Logical Map ─── -->
     <div id="tab-logic" class="tab-panel hidden">
-        <div class="p-6 prose max-w-none text-sm leading-relaxed max-h-[600px] overflow-y-auto dark:text-gray-300">
+        <div class="p-6 max-h-[640px] overflow-y-auto">
             {% if files['02_Logical_Map.md'] %}
-                <pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">{{ files['02_Logical_Map.md'][:8000] | e }}</pre>
+                <pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg leading-relaxed">{{ files['02_Logical_Map.md'][:8000] | e }}</pre>
             {% else %}
-                <p class="text-gray-500">No logical map data available.</p>
+                <p class="text-gray-500 dark:text-gray-400">No logical map data available.</p>
             {% endif %}
         </div>
     </div>
 
-    <!-- Tab: Patterns -->
+    <!-- ─── Tab: Patterns ─── -->
     <div id="tab-patterns" class="tab-panel hidden">
-        <div class="p-6 prose max-w-none text-sm leading-relaxed max-h-[600px] overflow-y-auto dark:text-gray-300">
+        <div class="p-6 max-h-[640px] overflow-y-auto">
             {% if files['06_Patterns.md'] %}
-                <pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">{{ files['06_Patterns.md'][:8000] | e }}</pre>
+                <pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg leading-relaxed">{{ files['06_Patterns.md'][:8000] | e }}</pre>
             {% else %}
-                <p class="text-gray-500">No pattern data available.</p>
+                <p class="text-gray-500 dark:text-gray-400">No pattern data available.</p>
             {% endif %}
+        </div>
+    </div>
+
+    <!-- ─── Tab: Summary ─── -->
+    <div id="tab-summary" class="tab-panel hidden">
+        <div class="p-6 max-h-[640px] overflow-y-auto">
+            <div id="summary-loading" class="hidden text-center py-10">
+                <div class="spinner mb-3 mx-auto"></div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Generating executive summary…</p>
+            </div>
+            <div id="summary-content" class="hidden prose dark:prose-invert max-w-none text-sm leading-relaxed"></div>
+            <div id="summary-empty" class="text-center py-10">
+                <svg class="mx-auto w-12 h-12 text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <p class="text-gray-500 dark:text-gray-400 mb-4">No executive summary generated yet.</p>
+                <button onclick="generateSummary()"
+                        class="px-6 py-2.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 text-sm font-medium shadow-sm">
+                    Generate Executive Summary
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Tab: Glossary ─── -->
+    <div id="tab-glossary" class="tab-panel hidden">
+        <div class="p-6 max-h-[640px] overflow-y-auto">
+            <div id="glossary-loading" class="hidden text-center py-10">
+                <div class="spinner mb-3 mx-auto"></div>
+            </div>
+            <div id="glossary-empty" class="text-center py-10 hidden">
+                <p class="text-gray-500 dark:text-gray-400">No concept definitions found.</p>
+            </div>
+            <div id="glossary-content" class="hidden">
+                <div class="flex items-center justify-between mb-4">
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300" id="glossary-count"></p>
+                    <input type="text" id="glossary-search" placeholder="Filter terms…"
+                           class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent w-48"
+                           oninput="filterGlossary()">
+                </div>
+                <div id="glossary-table" class="space-y-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Tab: Study Guide ─── -->
+    <div id="tab-studyguide" class="tab-panel hidden">
+        <div class="p-6 max-h-[640px] overflow-y-auto">
+            <div id="studyguide-loading" class="hidden text-center py-10">
+                <div class="spinner mb-3 mx-auto"></div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Generating study guide…</p>
+            </div>
+            <div id="studyguide-content" class="hidden prose dark:prose-invert max-w-none text-sm leading-relaxed"></div>
+            <div id="studyguide-empty" class="text-center py-10">
+                <svg class="mx-auto w-12 h-12 text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                </svg>
+                <p class="text-gray-500 dark:text-gray-400 mb-4">No study guide generated yet.</p>
+                <button onclick="generateStudyGuide()"
+                        class="px-6 py-2.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 text-sm font-medium shadow-sm">
+                    Generate Study Guide
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -159,7 +236,6 @@
         <div id="audio-content">
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
                 Generate a podcast-style audio conversation about this book.
-                Two AI hosts will discuss the key concepts, arguments, and patterns.
             </p>
             <div class="flex items-center space-x-3 mb-4">
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">TTS Engine:</label>
@@ -175,7 +251,7 @@
         </div>
         <div id="audio-progress" class="hidden text-center py-6">
             <div class="spinner mb-3"></div>
-            <p class="text-sm text-gray-600 dark:text-gray-400">Generating audio overview... This may take a few minutes.</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Generating audio overview…</p>
         </div>
         <div id="audio-player-section" class="hidden mt-4">
             <audio id="audio-player" controls class="w-full">
@@ -186,6 +262,8 @@
 </div>
 
 <script>
+const FOLDER = {{ folder | tojson }};
+
 // ── Tab switching ──
 function switchTab(tab) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
@@ -195,8 +273,33 @@ function switchTab(tab) {
     });
     document.getElementById('tab-' + tab).classList.remove('hidden');
     const btn = document.querySelector('[data-tab="' + tab + '"]');
-    btn.classList.add('border-brand-600', 'text-brand-600', 'dark:text-brand-400');
-    btn.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+    if (btn) {
+        btn.classList.add('border-brand-600', 'text-brand-600', 'dark:text-brand-400');
+        btn.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+    }
+    // Lazy-load data tabs on first visit
+    if (tab === 'glossary') loadGlossary();
+    if (tab === 'summary') checkSummary();
+    if (tab === 'studyguide') checkStudyGuide();
+}
+
+// ── Query templates ──
+function fillTemplate(prompt) {
+    document.getElementById('chat-input').value = prompt;
+    document.getElementById('chat-input').focus();
+}
+
+// ── Clear chat history ──
+async function clearHistory() {
+    if (!confirm('Clear chat history for this book?')) return;
+    await fetch(`/api/history/${FOLDER}`, { method: 'DELETE' });
+    document.getElementById('chat-messages').innerHTML = `
+        <div class="flex justify-start">
+          <div class="chat-bubble bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%]">
+            <p class="text-sm text-gray-800 dark:text-gray-200">Chat history cleared. Ask me anything about this book.</p>
+          </div>
+        </div>`;
+    showToast('Chat history cleared', 'info');
 }
 
 // ── Chat with SSE streaming ──
@@ -211,14 +314,14 @@ document.getElementById('chat-form').addEventListener('submit', async function(e
     // User bubble
     const userDiv = document.createElement('div');
     userDiv.className = 'flex justify-end';
-    userDiv.innerHTML = `<div class="chat-bubble bg-brand-600 text-white rounded-2xl rounded-tr-none px-4 py-3"><p class="text-sm">${escapeHtml(question)}</p></div>`;
+    userDiv.innerHTML = `<div class="chat-bubble bg-brand-600 text-white rounded-2xl rounded-tr-none px-4 py-3 max-w-[85%]"><p class="text-sm">${escapeHtml(question)}</p></div>`;
     messages.appendChild(userDiv);
 
-    // Assistant bubble (streaming target)
+    // Assistant bubble
     const assistDiv = document.createElement('div');
     assistDiv.className = 'flex justify-start fade-in';
     const bubble = document.createElement('div');
-    bubble.className = 'chat-bubble bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-none px-4 py-3';
+    bubble.className = 'chat-bubble bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%]';
     bubble.innerHTML = '<div class="spinner"></div>';
     assistDiv.appendChild(bubble);
     messages.appendChild(assistDiv);
@@ -228,13 +331,9 @@ document.getElementById('chat-form').addEventListener('submit', async function(e
     document.getElementById('chat-submit').disabled = true;
 
     try {
-        // Try SSE streaming first
-        const resp = await fetch('/api/query/stream?' + new URLSearchParams({
-            book: '{{ folder }}', question: question
-        }));
+        const resp = await fetch('/api/query/stream?' + new URLSearchParams({ book: FOLDER, question }));
 
         if (resp.ok && resp.headers.get('content-type')?.includes('text/event-stream')) {
-            // SSE streaming path
             bubble.innerHTML = '<div class="chat-md text-sm text-gray-800 dark:text-gray-200"></div>';
             const mdContainer = bubble.querySelector('.chat-md');
             let fullText = '';
@@ -246,46 +345,35 @@ document.getElementById('chat-form').addEventListener('submit', async function(e
                 const { done, value } = await reader.read();
                 if (done) break;
                 const chunk = decoder.decode(value, { stream: true });
-                // Parse SSE events
-                const lines = chunk.split('\n');
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6);
-                        if (data === '[DONE]') break;
-                        try {
-                            const parsed = JSON.parse(data);
-                            if (parsed.token) {
-                                fullText += parsed.token;
-                                mdContainer.innerHTML = renderMarkdown(fullText);
-                            }
-                            if (parsed.quotes) {
-                                renderQuotes(bubble, parsed.quotes);
-                            }
-                            if (parsed.confidence) {
-                                renderConfidence(bubble, parsed.confidence);
-                            }
-                        } catch(pe) {
-                            // Non-JSON data line, treat as text token
-                            fullText += data;
+                for (const line of chunk.split('\n')) {
+                    if (!line.startsWith('data: ')) continue;
+                    const raw = line.slice(6);
+                    if (raw === '[DONE]') break;
+                    try {
+                        const ev = JSON.parse(raw);
+                        if (ev.token) {
+                            fullText += ev.token;
                             mdContainer.innerHTML = renderMarkdown(fullText);
                         }
+                        if (ev.quotes)       renderQuotes(bubble, ev.quotes);
+                        if (ev.confidence)   renderConfidence(bubble, ev.confidence);
+                        if (ev.sources)      renderSources(bubble, ev.sources);
+                        if (ev.suggestions)  renderSuggestions(assistDiv, ev.suggestions);
+                    } catch (_) {
+                        fullText += raw;
+                        mdContainer.innerHTML = renderMarkdown(fullText);
                     }
                 }
                 messages.scrollTop = messages.scrollHeight;
             }
         } else {
-            // Fallback: regular JSON response
             const data = await resp.json();
-            let html = '<div class="chat-md text-sm text-gray-800 dark:text-gray-200">' +
-                       renderMarkdown(data.answer || 'No answer generated.') + '</div>';
-            bubble.innerHTML = html;
-
-            if (data.verbatim_quotes && data.verbatim_quotes.length > 0) {
-                renderQuotes(bubble, data.verbatim_quotes);
-            }
-            if (data.confidence) {
-                renderConfidence(bubble, data.confidence);
-            }
+            bubble.innerHTML = '<div class="chat-md text-sm text-gray-800 dark:text-gray-200">'
+                + renderMarkdown(data.answer || 'No answer generated.') + '</div>';
+            if (data.verbatim_quotes?.length) renderQuotes(bubble, data.verbatim_quotes);
+            if (data.confidence)               renderConfidence(bubble, data.confidence);
+            if (data.rag_sources)              renderSources(bubble, data.rag_sources);
+            if (data.follow_up_questions?.length) renderSuggestions(assistDiv, data.follow_up_questions);
         }
     } catch (err) {
         bubble.innerHTML = `<p class="text-sm text-red-600 dark:text-red-400">Error: ${escapeHtml(err.message)}</p>`;
@@ -296,52 +384,207 @@ document.getElementById('chat-form').addEventListener('submit', async function(e
     messages.scrollTop = messages.scrollHeight;
 });
 
+// ── Chat rendering helpers ──
+
 function renderQuotes(container, quotes) {
-    const quotesDiv = document.createElement('div');
-    quotesDiv.className = 'mt-3 space-y-2';
+    const d = document.createElement('div');
+    d.className = 'mt-3 space-y-1.5';
     quotes.forEach(q => {
-        quotesDiv.innerHTML += `<div class="border-l-2 border-brand-400 pl-3 text-xs text-gray-600 dark:text-gray-400">
-            <span class="font-medium text-brand-600 dark:text-brand-400">${escapeHtml(q.paragraph_id || '?')}</span>: "${escapeHtml(q.quote || '')}"
+        const pid = escapeHtml(q.paragraph_id || '?');
+        const quote = escapeHtml(q.quote || '');
+        d.innerHTML += `<div class="border-l-2 border-brand-400 pl-3 text-xs text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600/30 rounded-r" onclick="jumpToParagraph('${pid}')">
+            <span class="font-medium text-brand-600 dark:text-brand-400">${pid}</span>: "${quote}"
         </div>`;
     });
-    container.appendChild(quotesDiv);
+    container.appendChild(d);
 }
 
 function renderConfidence(container, confidence) {
-    const colors = { high: 'text-green-600 dark:text-green-400', medium: 'text-yellow-600 dark:text-yellow-400', low: 'text-red-600 dark:text-red-400' };
-    const confDiv = document.createElement('div');
-    confDiv.className = `mt-2 text-xs ${colors[confidence] || 'text-gray-500'}`;
-    confDiv.textContent = `Confidence: ${confidence}`;
-    container.appendChild(confDiv);
+    const colors = { high: 'text-green-600 dark:text-green-400', medium: 'text-yellow-600 dark:text-yellow-400', low: 'text-red-500 dark:text-red-400' };
+    const d = document.createElement('div');
+    d.className = `mt-2 text-xs font-medium ${colors[confidence] || 'text-gray-500'}`;
+    d.textContent = `Confidence: ${confidence}`;
+    container.appendChild(d);
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+function renderSources(container, count) {
+    if (!count) return;
+    const d = document.createElement('div');
+    d.className = 'mt-1.5 text-xs text-indigo-600 dark:text-indigo-400';
+    d.innerHTML = `<svg class="inline w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>${count} vector source${count !== 1 ? 's' : ''} used`;
+    container.appendChild(d);
+}
+
+function renderSuggestions(wrapper, suggestions) {
+    if (!suggestions?.length) return;
+    const d = document.createElement('div');
+    d.className = 'mt-2 flex flex-wrap gap-1.5';
+    suggestions.forEach(q => {
+        const btn = document.createElement('button');
+        btn.className = 'px-2.5 py-1 text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full text-gray-600 dark:text-gray-300 hover:border-brand-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors text-left';
+        btn.textContent = q;
+        btn.onclick = () => {
+            document.getElementById('chat-input').value = q;
+            document.getElementById('chat-input').focus();
+        };
+        d.appendChild(btn);
+    });
+    wrapper.appendChild(d);
+}
+
+function jumpToParagraph(pid) {
+    switchTab('structure');
+    showToast(`Jumped to Structure tab — search for paragraph ${pid}`, 'info');
+}
+
+function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+// ── Summary tab ──
+async function checkSummary() {
+    const resp = await fetch(`/api/summary/${FOLDER}`);
+    const data = await resp.json();
+    if (data.status === 'ready') showSummaryContent(data.content);
+}
+
+async function generateSummary() {
+    document.getElementById('summary-empty').classList.add('hidden');
+    document.getElementById('summary-loading').classList.remove('hidden');
+    try {
+        const resp = await fetch(`/api/summary/${FOLDER}`, { method: 'POST' });
+        const data = await resp.json();
+        document.getElementById('summary-loading').classList.add('hidden');
+        if (data.status === 'ready') {
+            showSummaryContent(data.content);
+            showToast('Executive summary generated!', 'success');
+        } else {
+            throw new Error('Generation failed');
+        }
+    } catch (err) {
+        document.getElementById('summary-loading').classList.add('hidden');
+        document.getElementById('summary-empty').classList.remove('hidden');
+        showToast('Summary generation failed: ' + err.message, 'error');
+    }
+}
+
+function showSummaryContent(markdown) {
+    document.getElementById('summary-empty').classList.add('hidden');
+    document.getElementById('summary-loading').classList.add('hidden');
+    const el = document.getElementById('summary-content');
+    el.innerHTML = renderMarkdown(markdown);
+    el.classList.remove('hidden');
+}
+
+// ── Study Guide tab ──
+async function checkStudyGuide() {
+    const resp = await fetch(`/api/study-guide/${FOLDER}`);
+    const data = await resp.json();
+    if (data.status === 'ready') showStudyGuideContent(data.content);
+}
+
+async function generateStudyGuide() {
+    document.getElementById('studyguide-empty').classList.add('hidden');
+    document.getElementById('studyguide-loading').classList.remove('hidden');
+    try {
+        const resp = await fetch(`/api/study-guide/${FOLDER}`, { method: 'POST' });
+        const data = await resp.json();
+        document.getElementById('studyguide-loading').classList.add('hidden');
+        if (data.status === 'ready') {
+            showStudyGuideContent(data.content);
+            showToast('Study guide generated!', 'success');
+        } else {
+            throw new Error('Generation failed');
+        }
+    } catch (err) {
+        document.getElementById('studyguide-loading').classList.add('hidden');
+        document.getElementById('studyguide-empty').classList.remove('hidden');
+        showToast('Study guide generation failed: ' + err.message, 'error');
+    }
+}
+
+function showStudyGuideContent(markdown) {
+    document.getElementById('studyguide-empty').classList.add('hidden');
+    document.getElementById('studyguide-loading').classList.add('hidden');
+    const el = document.getElementById('studyguide-content');
+    el.innerHTML = renderMarkdown(markdown);
+    el.classList.remove('hidden');
+}
+
+// ── Glossary tab ──
+let _glossaryTerms = [];
+let _glossaryLoaded = false;
+
+async function loadGlossary() {
+    if (_glossaryLoaded) return;
+    _glossaryLoaded = true;
+    document.getElementById('glossary-loading').classList.remove('hidden');
+    try {
+        const resp = await fetch(`/api/glossary/${FOLDER}`);
+        const data = await resp.json();
+        document.getElementById('glossary-loading').classList.add('hidden');
+        _glossaryTerms = data.terms || [];
+        if (_glossaryTerms.length === 0) {
+            document.getElementById('glossary-empty').classList.remove('hidden');
+        } else {
+            document.getElementById('glossary-count').textContent = `${_glossaryTerms.length} terms`;
+            renderGlossaryTable(_glossaryTerms);
+            document.getElementById('glossary-content').classList.remove('hidden');
+        }
+    } catch (err) {
+        document.getElementById('glossary-loading').classList.add('hidden');
+        showToast('Failed to load glossary: ' + err.message, 'error');
+    }
+}
+
+function filterGlossary() {
+    const q = document.getElementById('glossary-search').value.toLowerCase();
+    const filtered = q ? _glossaryTerms.filter(t =>
+        t.concept.toLowerCase().includes(q) || t.definition.toLowerCase().includes(q)
+    ) : _glossaryTerms;
+    renderGlossaryTable(filtered);
+    document.getElementById('glossary-count').textContent = `${filtered.length} of ${_glossaryTerms.length} terms`;
+}
+
+function renderGlossaryTable(terms) {
+    const container = document.getElementById('glossary-table');
+    container.innerHTML = '';
+    if (!terms.length) {
+        container.innerHTML = '<p class="text-sm text-gray-400">No matching terms.</p>';
+        return;
+    }
+    terms.forEach(t => {
+        const row = document.createElement('div');
+        row.className = 'py-2.5 border-b border-gray-100 dark:border-gray-700';
+        row.innerHTML = `
+            <div class="flex flex-col sm:flex-row sm:items-baseline gap-1">
+                <span class="font-semibold text-sm text-gray-900 dark:text-white min-w-[160px]">${escapeHtml(t.concept)}</span>
+                <span class="text-sm text-gray-600 dark:text-gray-300">${escapeHtml(t.definition)}</span>
+                <span class="text-xs text-gray-400 sm:ml-auto flex-shrink-0 cursor-pointer hover:text-brand-500" onclick="jumpToParagraph('${escapeHtml(t.paragraph_id)}')">${escapeHtml(t.paragraph_id)}</span>
+            </div>`;
+        container.appendChild(row);
+    });
 }
 
 // ── Audio generation ──
 async function generateAudio() {
     document.getElementById('audio-generate-btn').disabled = true;
     document.getElementById('audio-progress').classList.remove('hidden');
-
-    const ttsProvider = document.getElementById('tts-provider').value;
     const formData = new FormData();
-    formData.append('folder', '{{ folder }}');
-    formData.append('tts_provider', ttsProvider);
-
+    formData.append('folder', FOLDER);
+    formData.append('tts_provider', document.getElementById('tts-provider').value);
     try {
         const resp = await fetch('/api/audio-overview', { method: 'POST', body: formData });
         const data = await resp.json();
         document.getElementById('audio-progress').classList.add('hidden');
-
         if (data.status === 'completed') {
             document.getElementById('audio-player-section').classList.remove('hidden');
             document.getElementById('audio-player').load();
             showToast('Audio overview generated!', 'success');
         } else {
-            showToast('Audio generation failed: ' + (data.detail || 'Unknown error'), 'error');
+            showToast('Audio generation failed: ' + (data.detail || 'Unknown'), 'error');
         }
     } catch (err) {
         document.getElementById('audio-progress').classList.add('hidden');
