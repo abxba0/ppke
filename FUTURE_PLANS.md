@@ -1,7 +1,7 @@
 # PPKE Development Roadmap
 
-> **Last Updated:** 2026-02-27
-> **Current Version:** 2.0.0
+> **Last Updated:** 2026-02-28
+> **Current Version:** 3.0.0
 
 ---
 
@@ -235,33 +235,60 @@ Turn analysis into publishable outputs.
 
 ---
 
-## Phase 7 — Multi-User & Collaboration (NEXT)
+## Phase 7 — Multi-User & Collaboration + Multi-Tenant (DONE)
 
-Transform from single-user to team tool.
+Transform from single-user to team tool with full multi-tenant support.
 
 ### 7.1 Authentication
-- [ ] **JWT-based auth** — Login/register with email + password (bcrypt hashing)
-- [ ] **OAuth** — Google, GitHub sign-in via `authlib`
-- [ ] **Per-user vaults** — Each user gets isolated `~/.ppke/{user_id}/` directory
+- [x] **JWT-based auth** — Login/register with email + password; bcrypt hashing (PBKDF2 fallback); 72h token expiry; cookie + Bearer header support
+- [x] **OAuth** — Google, GitHub sign-in placeholders (requires `GOOGLE_CLIENT_ID`/`GITHUB_CLIENT_SECRET` env vars); OAuth callback scaffold
+- [x] **Per-user vaults** — Each user gets isolated `~/.ppke/vaults/{user_id}/` directory; all book data fully isolated between users
 
 ### 7.2 Collaboration
-- [ ] **Shared notebooks** — Invite via email to view/query a notebook
-- [ ] **Annotations** — Personal notes/highlights on any paragraph
-- [ ] **Activity feed** — Recent ingestions, queries, annotations across team
+- [x] **Shared notebooks** — `POST /api/workspaces/{ws_id}/share` shares a book to a workspace; `GET /api/workspaces/{ws_id}/shared-books` lists shared books; shared books appear on dashboard
+- [x] **Annotations** — `POST/GET/DELETE /api/annotations` for personal notes on any paragraph; annotations loaded per-book in notebook view
+- [x] **Activity feed** — `GET /api/activity` shows recent actions (sign in, uploads, shares, annotations); workspace-scoped and user-scoped views; displayed on workspaces page
 
 ### 7.3 Access Control
-- [ ] **Roles** — Admin, Editor, Viewer per workspace
-- [ ] **API key management** — Per-user LLM API key storage
-- [ ] **Usage quotas** — Track and limit LLM API costs per user
+- [x] **Roles** — Admin, Editor, Viewer per workspace; role-checked invite/share/remove operations; `require_role()` FastAPI dependency factory
+- [x] **API key management** — `POST/GET/DELETE /api/keys` for per-user LLM API key storage (base64 encoded); displayed in settings page
+- [x] **Usage quotas** — `usage_records` table tracks tokens, cost, provider per request; `GET /api/usage` returns 30-day summary; displayed in settings page
 
-### Implementation notes
-- Auth: FastAPI `Depends()` with JWT middleware, store users in SQLite
-- Vaults: `Config.vault_path = base_vault / user_id`
-- Requires database migration from JSON files → SQLite/PostgreSQL
+### 7.4 Multi-Tenant Support
+- [x] **Workspaces** — `POST/GET /api/workspaces` create and list workspaces; each workspace has isolated membership, shared books, activity
+- [x] **Workspace members** — `GET /api/workspaces/{ws_id}/members`, `POST /api/workspaces/{ws_id}/invite`, role management, member removal
+- [x] **Vault isolation** — `_user_vault_path(user)` → `~/.ppke/vaults/{user_id}/`; all 40+ API endpoints updated to use per-user vault; `_book_dirs(user)` accepts optional user
+
+### New Module: `ppke/auth/`
+- `database.py` — SQLite schema (8 tables: users, workspaces, workspace_members, shared_books, annotations, activity_log, api_keys, usage_records); full CRUD operations; auto-migrate on first connection
+- `jwt_auth.py` — JWT token creation/verification via PyJWT (HMAC fallback if not installed); bcrypt password hashing (PBKDF2 fallback); auto-generated persistent secret key
+- `deps.py` — FastAPI dependencies: `get_current_user`, `get_optional_user`, `require_role()`, `get_user_vault_path()`
+
+### New Templates
+- `login.html` — Sign in form with email/password + OAuth buttons (Google, GitHub)
+- `register.html` — Registration form with name/email/password/confirm + OAuth buttons
+- `workspaces.html` — Workspace list with create modal, members modal with invite, activity feed
+
+### New Endpoints (20+)
+`GET/POST /auth/login` · `GET/POST /auth/register` · `GET /auth/logout` · `GET /auth/oauth/{provider}` · `GET /api/auth/me` ·
+`GET/POST /api/workspaces` · `GET /api/workspaces/{ws_id}/members` · `POST /api/workspaces/{ws_id}/invite` ·
+`POST /api/workspaces/{ws_id}/members/{id}/role` · `DELETE /api/workspaces/{ws_id}/members/{id}` ·
+`POST /api/workspaces/{ws_id}/share` · `GET /api/workspaces/{ws_id}/shared-books` ·
+`POST/GET/DELETE /api/annotations` · `GET /api/activity` ·
+`POST/GET/DELETE /api/keys` · `GET /api/usage`
+
+### Updated UI
+- **base.html**: User avatar dropdown in nav (name, email, workspaces, sign out); "Sign In" link for unauthenticated; Workspaces nav link; mobile menu auth section
+- **settings.html**: Per-user API key management section; usage stats dashboard (requests, tokens, est. cost); user info in system info
+- All pages redirect to `/login` when unauthenticated
+
+### New Dependencies (`[auth]`)
+- `PyJWT>=2.8.0` — JWT token handling
+- `bcrypt>=4.0.0` — Password hashing
 
 ---
 
-## Phase 8 — Deployment & Infrastructure
+## Phase 8 — Deployment & Infrastructure (NEXT)
 
 Production-grade deployment and monitoring.
 

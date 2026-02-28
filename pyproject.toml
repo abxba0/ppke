@@ -68,6 +68,11 @@ export = [
     "python-docx>=1.0.0",  # Word document generation
     "python-pptx>=0.6.21", # PowerPoint slide deck generation
 ]
+# Phase 7: authentication & multi-tenant support
+auth = [
+    "PyJWT>=2.8.0",        # JWT token handling
+    "bcrypt>=4.0.0",       # Password hashing
+]
 # All optional extras at once
 all = [
     "chromadb>=0.4.0",
@@ -91,6 +96,8 @@ all = [
     "openpyxl>=3.1.0",
     "weasyprint>=60.0",
     "python-pptx>=0.6.21",
+    "PyJWT>=2.8.0",
+    "bcrypt>=4.0.0",
 ]
 
 [tool.pytest.ini_options]

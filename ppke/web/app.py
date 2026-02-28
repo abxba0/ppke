@@ -7,6 +7,10 @@ protection, mobile responsive.
 Phase 2 complete: URL/YouTube import, .tex/.csv/.xlsx/.zip converters,
 hybrid OCR with confidence scoring, multi-file upload.
 
+Phase 7 complete: JWT auth, OAuth (Google/GitHub), multi-tenant workspaces,
+per-user vault isolation, collaboration (shared notebooks, annotations,
+activity feed), access control (roles, API keys, usage quotas).
+
 Run with:
     ppke serve
     uvicorn ppke.web.app:app --reload
@@ -22,20 +26,23 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile, Depends
 from typing import List as TypingList
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from ppke.config import Config, SUPPORTED_PROVIDERS, PROVIDER_ENV_VARS
+from ppke.auth.deps import get_current_user, get_optional_user, get_user_vault_path, require_role, _get_db
+from ppke.auth.jwt_auth import hash_password, verify_password, create_token, decode_token
+from ppke.auth import database as auth_db
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="PPKE — Personal & Professional Knowledge Engine",
-    version="2.0.0",
+    version="3.0.0",
     description="Web interface for structured knowledge extraction from documents.",
 )
 
@@ -97,11 +104,19 @@ def _get_config() -> Config:
 
 
 def _vault_path() -> Path:
+    """Global vault path (fallback for unauthenticated/legacy mode)."""
     return _get_config().vault_path
 
 
-def _book_dirs() -> list[Path]:
-    vault = _vault_path()
+def _user_vault_path(user: dict | None) -> Path:
+    """Get vault path — per-user if authenticated, else global fallback."""
+    if user:
+        return get_user_vault_path(user)
+    return _vault_path()
+
+
+def _book_dirs(user: dict | None = None) -> list[Path]:
+    vault = _user_vault_path(user)
     if not vault.exists():
         return []
     return sorted(
@@ -109,6 +124,17 @@ def _book_dirs() -> list[Path]:
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
+
+
+# ── Auth-aware helper: get user from request or None ──
+
+
+async def _try_get_user(request: Request) -> dict | None:
+    """Try to get user from request, return None if not authenticated."""
+    try:
+        return await get_optional_user(request)
+    except Exception:
+        return None
 
 
 def _load_book_meta(book_dir: Path) -> dict[str, Any]:
@@ -188,13 +214,139 @@ def _rag_context_block(
         return [], ""
 
 
+# ── Authentication routes ──
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    user = await _try_get_user(request)
+    if user:
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    user = await _try_get_user(request)
+    if user:
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse("register.html", {"request": request, "error": None})
+
+
+@app.post("/auth/login")
+async def auth_login(request: Request, email: str = Form(...), password: str = Form(...)):
+    conn = _get_db()
+    user = auth_db.get_user_by_email(conn, email)
+    if not user or not verify_password(password, user["password_hash"]):
+        return templates.TemplateResponse("login.html", {
+            "request": request, "error": "Invalid email or password"
+        }, status_code=401)
+
+    token = create_token(user["id"], user["email"])
+    auth_db.log_activity(conn, user["id"], "signed in")
+    response = RedirectResponse("/", status_code=303)
+    response.set_cookie(
+        "ppke_token", token, httponly=True, samesite="lax", max_age=72 * 3600
+    )
+    return response
+
+
+@app.post("/auth/register")
+async def auth_register(
+    request: Request,
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+):
+    if len(password) < 8:
+        return templates.TemplateResponse("register.html", {
+            "request": request, "error": "Password must be at least 8 characters"
+        }, status_code=400)
+
+    if password != password_confirm:
+        return templates.TemplateResponse("register.html", {
+            "request": request, "error": "Passwords do not match"
+        }, status_code=400)
+
+    conn = _get_db()
+    existing = auth_db.get_user_by_email(conn, email)
+    if existing:
+        return templates.TemplateResponse("register.html", {
+            "request": request, "error": "An account with this email already exists"
+        }, status_code=400)
+
+    hashed = hash_password(password)
+    user = auth_db.create_user(conn, email, name, hashed)
+    token = create_token(user["id"], email)
+    auth_db.log_activity(conn, user["id"], "created account")
+
+    response = RedirectResponse("/", status_code=303)
+    response.set_cookie(
+        "ppke_token", token, httponly=True, samesite="lax", max_age=72 * 3600
+    )
+    return response
+
+
+@app.get("/auth/logout")
+async def auth_logout(request: Request):
+    user = await _try_get_user(request)
+    if user:
+        conn = _get_db()
+        auth_db.log_activity(conn, user["id"], "signed out")
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie("ppke_token")
+    return response
+
+
+@app.get("/auth/oauth/{provider}")
+async def auth_oauth_start(provider: str):
+    """Placeholder for OAuth flow — requires GOOGLE_CLIENT_ID / GITHUB_CLIENT_ID env vars."""
+    if provider not in ("google", "github"):
+        raise HTTPException(400, "Unsupported OAuth provider")
+    # In production, redirect to OAuth provider's authorization URL
+    # For now, return a message about setup requirements
+    raise HTTPException(
+        501,
+        f"OAuth with {provider} requires configuration. "
+        f"Set {provider.upper()}_CLIENT_ID and {provider.upper()}_CLIENT_SECRET in ~/.ppke/.env"
+    )
+
+
+@app.get("/auth/oauth/{provider}/callback")
+async def auth_oauth_callback(provider: str, code: str = Query(...)):
+    """Handle OAuth callback — exchange code for token and create/login user."""
+    # This is a placeholder for the full OAuth flow
+    raise HTTPException(501, "OAuth callback not yet configured for this deployment")
+
+
+@app.get("/api/auth/me")
+async def api_auth_me(user: dict = Depends(get_current_user)):
+    """Return current authenticated user info."""
+    conn = _get_db()
+    workspaces = auth_db.get_user_workspaces(conn, user["id"])
+    usage = auth_db.get_user_usage(conn, user["id"])
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "name": user["name"],
+        "role": user["role"],
+        "workspaces": [{"id": w["id"], "name": w["name"], "role": w["member_role"]} for w in workspaces],
+        "usage": usage,
+    }
+
+
 # ── HTML pages ──
 
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
+    user = await _try_get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
     books = []
-    for d in _book_dirs():
+    for d in _book_dirs(user):
         meta = _load_book_meta(d)
         books.append({
             "folder": d.name,
@@ -207,21 +359,40 @@ async def dashboard(request: Request):
             "date": meta.get("ingest_date", ""),
         })
 
+    # Include shared books from workspaces
+    conn = _get_db()
+    workspaces = auth_db.get_user_workspaces(conn, user["id"])
+    shared_books = []
+    for ws in workspaces:
+        for sb in auth_db.get_shared_books(conn, ws["id"]):
+            shared_books.append({
+                "folder": sb["book_folder"],
+                "workspace": ws["name"],
+                "shared_by": sb.get("shared_by_name", ""),
+                "permissions": sb["permissions"],
+            })
+
     config = _get_config()
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "books": books,
         "total_books": len(books),
-        "vault_path": str(config.vault_path),
+        "vault_path": str(_user_vault_path(user)),
         "provider": config.llm.provider,
         "model": config.llm.model,
+        "user": user,
+        "shared_books": shared_books,
     })
 
 
 @app.get("/notebook/{folder}", response_class=HTMLResponse)
 async def notebook_view(request: Request, folder: str):
+    user = await _try_get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -244,6 +415,10 @@ async def notebook_view(request: Request, folder: str):
             seen.add(ch_num)
             chapters.append({"number": ch_num, "topic": ext.get("topic_sentence", "")[:80]})
 
+    # Load annotations for this book
+    conn = _get_db()
+    annotations = auth_db.get_annotations(conn, folder, user_id=user["id"])
+
     return templates.TemplateResponse("notebook.html", {
         "request": request,
         "folder": folder,
@@ -252,26 +427,41 @@ async def notebook_view(request: Request, folder: str):
         "chapters": chapters,
         "extractions": extractions[:20],
         "total_extractions": len(extractions),
+        "user": user,
+        "annotations": annotations,
     })
 
 
 @app.get("/upload", response_class=HTMLResponse)
 async def upload_page(request: Request):
+    user = await _try_get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
     from ppke.converter import SUPPORTED_EXTENSIONS
 
     return templates.TemplateResponse("upload.html", {
         "request": request,
         "supported_formats": sorted(SUPPORTED_EXTENSIONS),
+        "user": user,
     })
 
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
+    user = await _try_get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
     config = _get_config()
+
+    # Load user's API keys
+    conn = _get_db()
+    user_api_keys = auth_db.get_user_api_keys(conn, user["id"])
+    usage = auth_db.get_user_usage(conn, user["id"])
+
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "config": {
-            "vault_path": str(config.vault_path),
+            "vault_path": str(_user_vault_path(user)),
             "provider": config.llm.provider,
             "model": config.llm.model,
             "default_domain": config.default_domain or "philosophy",
@@ -280,25 +470,48 @@ async def settings_page(request: Request):
             "knowledge_graph": config.enable_knowledge_graph,
         },
         "providers": SUPPORTED_PROVIDERS,
+        "user": user,
+        "user_api_keys": user_api_keys,
+        "usage": usage,
     })
 
 
 @app.get("/graph", response_class=HTMLResponse)
 async def graph_page(request: Request):
+    user = await _try_get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
     books = []
-    for d in _book_dirs():
+    for d in _book_dirs(user):
         meta = _load_book_meta(d)
         books.append({"folder": d.name, "title": meta.get("title", d.name)})
-    return templates.TemplateResponse("graph.html", {"request": request, "books": books})
+    return templates.TemplateResponse("graph.html", {"request": request, "books": books, "user": user})
+
+
+@app.get("/workspaces", response_class=HTMLResponse)
+async def workspaces_page(request: Request):
+    user = await _try_get_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    conn = _get_db()
+    workspaces = auth_db.get_user_workspaces(conn, user["id"])
+    activity = auth_db.get_activity_feed(conn, user_id=user["id"], limit=20)
+    return templates.TemplateResponse("workspaces.html", {
+        "request": request,
+        "user": user,
+        "workspaces": workspaces,
+        "activity": activity,
+    })
 
 
 # ── REST API endpoints ──
 
 
 @app.get("/api/books")
-async def api_list_books():
+async def api_list_books(request: Request):
+    user = await _try_get_user(request)
     books = []
-    for d in _book_dirs():
+    for d in _book_dirs(user):
         meta = _load_book_meta(d)
         books.append({
             "folder": d.name,
@@ -314,9 +527,10 @@ async def api_list_books():
 
 
 @app.get("/api/books/{folder}")
-async def api_get_book(folder: str):
+async def api_get_book(request: Request, folder: str):
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -333,12 +547,14 @@ async def api_get_book(folder: str):
 
 @app.get("/api/books/{folder}/extractions")
 async def api_get_extractions(
+    request: Request,
     folder: str,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ):
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -353,16 +569,18 @@ async def api_get_extractions(
 
 @app.post("/api/query")
 async def api_query(
+    request: Request,
     book: str = Form(...),
     question: str = Form(...),
 ):
     """Query a single book with conversation history and RAG context."""
+    user = await _try_get_user(request)
     book = _safe_folder(book)
     from ppke.llm.client import LLMClient
     from ppke.llm.prompts import SINGLE_BOOK_QUERY_SYSTEM, SINGLE_BOOK_QUERY_USER
 
     config = _get_config()
-    book_dir = _vault_path() / book
+    book_dir = _user_vault_path(user) / book
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {book}")
 
@@ -410,6 +628,7 @@ async def api_query(
 
 @app.get("/api/query/stream")
 async def api_query_stream(
+    request: Request,
     book: str = Query(...),
     question: str = Query(...),
 ):
@@ -423,12 +642,13 @@ async def api_query_stream(
       - ``sources``     — number of RAG paragraph hits used
       - ``[DONE]``      — stream terminator
     """
+    user = await _try_get_user(request)
     book = _safe_folder(book)
     from ppke.llm.client import LLMClient
     from ppke.llm.prompts import SINGLE_BOOK_QUERY_SYSTEM, SINGLE_BOOK_QUERY_USER
 
     config = _get_config()
-    book_dir = _vault_path() / book
+    book_dir = _user_vault_path(user) / book
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {book}")
 
@@ -522,22 +742,24 @@ async def api_query_stream(
 
 
 @app.post("/api/cross-query")
-async def api_cross_query(question: str = Form(...)):
+async def api_cross_query(request: Request, question: str = Form(...)):
+    user = await _try_get_user(request)
     from ppke.llm.client import LLMClient
     from ppke.pipeline.synthesizer import cross_book_synthesis
 
     config = _get_config()
     client = LLMClient(config.llm)
-    result = cross_book_synthesis(client, config.vault_path, question)
+    result = cross_book_synthesis(client, _user_vault_path(user), question)
     return result
 
 
 @app.get("/api/search")
-async def api_search(q: str = Query(..., min_length=1), book: str | None = None):
+async def api_search(request: Request, q: str = Query(..., min_length=1), book: str | None = None):
+    user = await _try_get_user(request)
     results = []
     query_lower = q.lower()
 
-    for d in _book_dirs():
+    for d in _book_dirs(user):
         if book and d.name != book:
             continue
 
@@ -574,6 +796,7 @@ async def api_search(q: str = Query(..., min_length=1), book: str | None = None)
 
 @app.post("/api/upload")
 async def api_upload(
+    request: Request,
     files: TypingList[UploadFile] = File(...),
     title: str = Form(...),
     author: str = Form(...),
@@ -585,10 +808,12 @@ async def api_upload(
     Accepts a list of files.  Each file gets its own background ingestion job.
     Returns ``{"jobs": [...]}`` so the UI can poll each independently.
     """
+    user = await _try_get_user(request)
     from ppke.converter import convert_to_markdown
 
     config = _get_config()
-    upload_dir = config.vault_path / ".uploads"
+    vault = _user_vault_path(user)
+    upload_dir = vault / ".uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     job_ids: list[str] = []
@@ -645,8 +870,11 @@ async def api_upload(
                 _jobs[jid]["progress"] = 10
 
                 tracker = ProgressTracker()
-                vector_store = VectorStore(config.vault_path) if config.enable_vector_search else None
-                knowledge_graph = KnowledgeGraph(config.vault_path) if config.enable_knowledge_graph else None
+                vector_store = VectorStore(vault) if config.enable_vector_search else None
+                knowledge_graph = KnowledgeGraph(vault) if config.enable_knowledge_graph else None
+
+                # Override config vault_path for per-user isolation
+                config.vault_path = vault
 
                 def progress_cb(stage: str, detail: str):
                     _jobs[jid]["stage"] = f"[{stage}] {detail}"
@@ -685,6 +913,7 @@ async def api_upload(
 
 @app.post("/api/import-url")
 async def api_import_url(
+    request: Request,
     url: str = Form(...),
     title: str = Form(""),
     author: str = Form(""),
@@ -698,6 +927,7 @@ async def api_import_url(
 
     Returns ``{"job_id": ..., "status": "running"}``.
     """
+    user = await _try_get_user(request)
     # Basic URL validation
     url = url.strip()
     if not url.startswith(("http://", "https://", "www.")):
@@ -711,7 +941,8 @@ async def api_import_url(
     is_yt = is_youtube_url(url)
 
     config = _get_config()
-    upload_dir = config.vault_path / ".uploads"
+    vault = _user_vault_path(user)
+    upload_dir = vault / ".uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     job_id = str(uuid.uuid4())[:8]
@@ -773,8 +1004,11 @@ async def api_import_url(
             _jobs[job_id]["progress"] = 30
 
             tracker = ProgressTracker()
-            vector_store = VectorStore(config.vault_path) if config.enable_vector_search else None
-            knowledge_graph = KnowledgeGraph(config.vault_path) if config.enable_knowledge_graph else None
+            vector_store = VectorStore(vault) if config.enable_vector_search else None
+            knowledge_graph = KnowledgeGraph(vault) if config.enable_knowledge_graph else None
+
+            # Override config vault_path for per-user isolation
+            config.vault_path = vault
 
             def progress_cb(stage: str, detail: str):
                 _jobs[job_id]["stage"] = f"[{stage}] {detail}"
@@ -816,8 +1050,9 @@ async def api_job_status(job_id: str):
 
 
 @app.get("/api/stats")
-async def api_stats():
-    books = _book_dirs()
+async def api_stats(request: Request):
+    user = await _try_get_user(request)
+    books = _book_dirs(user)
     total_chapters = 0
     total_paragraphs = 0
     total_concepts = 0
@@ -835,13 +1070,14 @@ async def api_stats():
         "total_chapters": total_chapters,
         "total_paragraphs": total_paragraphs,
         "total_concepts": total_concepts,
-        "vault_path": str(_vault_path()),
+        "vault_path": str(_user_vault_path(user)),
     }
 
 
 @app.get("/api/graph")
-async def api_graph_data(book: str | None = None):
-    vault = _vault_path()
+async def api_graph_data(request: Request, book: str | None = None):
+    user = await _try_get_user(request)
+    vault = _user_vault_path(user)
     graph_path = vault / "knowledge_graph.json"
 
     if graph_path.exists():
@@ -915,6 +1151,7 @@ async def api_graph_data(book: str | None = None):
 
 @app.post("/api/audio-overview")
 async def api_generate_audio_overview(
+    request: Request,
     folder: str = Form(...),
     tts_provider: str = Form("edge"),
     voice_preset: str = Form("natural"),
@@ -922,6 +1159,7 @@ async def api_generate_audio_overview(
     topic: str = Form(""),
 ):
     """Generate a podcast-style audio overview with voice/length/topic options."""
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
     from ppke.audio.overview import (
         VOICE_PRESETS,
@@ -932,7 +1170,7 @@ async def api_generate_audio_overview(
     from ppke.llm.client import LLMClient
 
     config = _get_config()
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -969,12 +1207,14 @@ async def api_generate_audio_overview(
 
 @app.post("/api/audio-overview/cross-book")
 async def api_generate_cross_book_audio(
+    request: Request,
     folder_a: str = Form(...),
     folder_b: str = Form(...),
     voice_preset: str = Form("natural"),
     length: str = Form("medium"),
 ):
     """Generate a comparative podcast episode for two books."""
+    user = await _try_get_user(request)
     folder_a = _safe_folder(folder_a)
     folder_b = _safe_folder(folder_b)
     from ppke.audio.overview import (
@@ -985,7 +1225,7 @@ async def api_generate_cross_book_audio(
     from ppke.llm.client import LLMClient
 
     config = _get_config()
-    vault = _vault_path()
+    vault = _user_vault_path(user)
     book_dir_a = vault / folder_a
     book_dir_b = vault / folder_b
     if not book_dir_a.exists():
@@ -1020,10 +1260,11 @@ async def api_generate_cross_book_audio(
 
 
 @app.get("/api/audio/{folder}/transcript")
-async def api_audio_transcript(folder: str):
+async def api_audio_transcript(request: Request, folder: str):
     """Return the audio script as a readable Markdown transcript."""
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     script_path = book_dir / "audio_script.json"
     if not script_path.exists():
         raise HTTPException(404, "No audio script found — generate an audio overview first")
@@ -1223,9 +1464,10 @@ async def api_upload_recording(
 
 
 @app.get("/api/audio/{folder}")
-async def api_serve_audio(folder: str):
+async def api_serve_audio(request: Request, folder: str):
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    audio_path = _vault_path() / folder / "audio_overview.mp3"
+    audio_path = _user_vault_path(user) / folder / "audio_overview.mp3"
     if not audio_path.exists():
         raise HTTPException(404, "Audio overview not generated yet")
 
@@ -1237,10 +1479,11 @@ async def api_serve_audio(folder: str):
 
 
 @app.get("/api/config")
-async def api_config():
+async def api_config(request: Request):
+    user = await _try_get_user(request)
     config = _get_config()
     return {
-        "vault_path": str(config.vault_path),
+        "vault_path": str(_user_vault_path(user)),
         "provider": config.llm.provider,
         "model": config.llm.model,
         "small_model": config.llm.effective_small_model,
@@ -1283,20 +1526,22 @@ async def api_update_settings(
 
 
 @app.get("/api/history/{folder}")
-async def api_get_history(folder: str):
+async def api_get_history(request: Request, folder: str):
     """Return the full chat history for a book as a list of messages."""
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
     return {"folder": folder, "messages": _load_history(book_dir)}
 
 
 @app.delete("/api/history/{folder}")
-async def api_clear_history(folder: str):
+async def api_clear_history(request: Request, folder: str):
     """Delete the chat history for a book."""
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     path = book_dir / "chat_history.json"
     if path.exists():
         path.unlink()
@@ -1307,10 +1552,11 @@ async def api_clear_history(folder: str):
 
 
 @app.get("/api/summary/{folder}")
-async def api_get_summary(folder: str):
+async def api_get_summary(request: Request, folder: str):
     """Return cached executive summary, or ``{status: not_generated}``."""
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     path = book_dir / "summary.md"
     if not path.exists():
         return {"status": "not_generated", "content": None}
@@ -1318,10 +1564,11 @@ async def api_get_summary(folder: str):
 
 
 @app.post("/api/summary/{folder}")
-async def api_generate_summary(folder: str):
+async def api_generate_summary(request: Request, folder: str):
     """Generate and cache a one-page executive summary for a book."""
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -1379,10 +1626,11 @@ Concept index (first 2000 chars):
 
 
 @app.post("/api/study-guide/{folder}")
-async def api_generate_study_guide(folder: str):
+async def api_generate_study_guide(request: Request, folder: str):
     """Generate and cache a chapter-by-chapter study guide."""
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -1441,10 +1689,11 @@ End with a ## Review section with 5 essay questions spanning the whole work."""
 
 
 @app.get("/api/study-guide/{folder}")
-async def api_get_study_guide(folder: str):
+async def api_get_study_guide(request: Request, folder: str):
     """Return cached study guide, or ``{status: not_generated}``."""
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     path = book_dir / "study_guide.md"
     if not path.exists():
         return {"status": "not_generated", "content": None}
@@ -1452,14 +1701,15 @@ async def api_get_study_guide(folder: str):
 
 
 @app.get("/api/glossary/{folder}")
-async def api_get_glossary(folder: str):
+async def api_get_glossary(request: Request, folder: str):
     """Return an auto-generated glossary from concept extraction data.
 
     No LLM call required — builds from ``extractions.json`` directly.
     Returns ``{"terms": [{"concept": str, "definition": str, "paragraph_id": str}]}``.
     """
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -1490,14 +1740,15 @@ async def api_get_glossary(folder: str):
 
 
 @app.get("/api/flashcards/{folder}")
-async def api_get_flashcards(folder: str):
+async def api_get_flashcards(request: Request, folder: str):
     """Return Anki-importable flashcards as a TSV download.
 
     Each card is:  Front (concept) → Back (definition + paragraph ID).
     The ``Content-Disposition`` header triggers browser download.
     """
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -1544,57 +1795,64 @@ async def api_get_flashcards(folder: str):
 
 
 @app.get("/api/graph/search")
-async def api_graph_search(q: str = Query(..., min_length=1)):
+async def api_graph_search(request: Request, q: str = Query(..., min_length=1)):
     """Fuzzy-search nodes by label. Returns top 15 matches."""
+    user = await _try_get_user(request)
     from ppke.graph.analytics import search_nodes
 
-    return {"results": search_nodes(_vault_path(), q)}
+    return {"results": search_nodes(_user_vault_path(user), q)}
 
 
 @app.get("/api/graph/clusters")
-async def api_graph_clusters():
+async def api_graph_clusters(request: Request):
     """Run Louvain community detection.  Returns ``{node_id: cluster_id}``."""
+    user = await _try_get_user(request)
     from ppke.graph.analytics import compute_clusters
 
-    return compute_clusters(_vault_path())
+    return compute_clusters(_user_vault_path(user))
 
 
 @app.get("/api/graph/analytics")
-async def api_graph_analytics():
+async def api_graph_analytics(request: Request):
     """PageRank + betweenness centrality for top concepts."""
+    user = await _try_get_user(request)
     from ppke.graph.analytics import compute_centrality
 
-    return compute_centrality(_vault_path())
+    return compute_centrality(_user_vault_path(user))
 
 
 @app.get("/api/graph/path")
-async def api_graph_path(source: str = Query(...), target: str = Query(...)):
+async def api_graph_path(request: Request, source: str = Query(...), target: str = Query(...)):
     """Shortest undirected path between two node IDs."""
+    user = await _try_get_user(request)
     from ppke.graph.analytics import find_shortest_path
 
-    return find_shortest_path(_vault_path(), source, target)
+    return find_shortest_path(_user_vault_path(user), source, target)
 
 
 @app.get("/api/graph/gaps")
-async def api_graph_gaps():
+async def api_graph_gaps(request: Request):
     """Concepts in 2+ books but with no concept-to-concept edges."""
+    user = await _try_get_user(request)
     from ppke.graph.analytics import detect_gaps
 
-    return detect_gaps(_vault_path())
+    return detect_gaps(_user_vault_path(user))
 
 
 @app.get("/api/graph/contradictions")
-async def api_graph_contradictions():
+async def api_graph_contradictions(request: Request):
     """All 'contradicts' edges in the graph."""
+    user = await _try_get_user(request)
     from ppke.graph.analytics import detect_contradictions
 
-    return detect_contradictions(_vault_path())
+    return detect_contradictions(_user_vault_path(user))
 
 
 @app.get("/api/graph/export")
-async def api_graph_export():
+async def api_graph_export(request: Request):
     """Download the knowledge graph as JSON."""
-    vault = _vault_path()
+    user = await _try_get_user(request)
+    vault = _user_vault_path(user)
     graph_path = vault / "knowledge_graph.json"
     if not graph_path.exists():
         raise HTTPException(404, "No knowledge graph found")
@@ -1608,12 +1866,13 @@ async def api_graph_export():
 
 
 @app.get("/api/graph/obsidian-export")
-async def api_graph_obsidian_export():
+async def api_graph_obsidian_export(request: Request):
     """Download an Obsidian vault ZIP with ``[[wikilinks]]`` per concept."""
+    user = await _try_get_user(request)
     from ppke.graph.analytics import obsidian_vault_zip
     from fastapi.responses import Response
 
-    data = obsidian_vault_zip(_vault_path())
+    data = obsidian_vault_zip(_user_vault_path(user))
     if not data:
         raise HTTPException(404, "No knowledge graph found or no concepts to export")
 
@@ -1625,12 +1884,13 @@ async def api_graph_obsidian_export():
 
 
 @app.get("/api/graph/markdown-export")
-async def api_graph_markdown_export():
+async def api_graph_markdown_export(request: Request):
     """Download interlinked Markdown concept files as ZIP."""
+    user = await _try_get_user(request)
     from ppke.graph.analytics import markdown_export_zip
     from fastapi.responses import Response
 
-    data = markdown_export_zip(_vault_path())
+    data = markdown_export_zip(_user_vault_path(user))
     if not data:
         raise HTTPException(404, "No knowledge graph found")
 
@@ -1645,10 +1905,11 @@ async def api_graph_markdown_export():
 
 
 @app.get("/api/export/{folder}/pdf")
-async def api_export_pdf(folder: str):
+async def api_export_pdf(request: Request, folder: str):
     """Export a book's analysis as a typeset PDF report."""
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -1678,10 +1939,11 @@ async def api_export_pdf(folder: str):
 
 
 @app.get("/api/export/{folder}/docx")
-async def api_export_docx(folder: str):
+async def api_export_docx(request: Request, folder: str):
     """Export a book's analysis as a Word document."""
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -1707,10 +1969,11 @@ async def api_export_docx(folder: str):
 
 
 @app.get("/api/export/{folder}/pptx")
-async def api_export_pptx(folder: str):
+async def api_export_pptx(request: Request, folder: str):
     """Export a book's key concepts as a PowerPoint slide deck."""
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -1736,10 +1999,11 @@ async def api_export_pptx(folder: str):
 
 
 @app.get("/api/export/{folder}/zip")
-async def api_export_zip(folder: str):
+async def api_export_zip(request: Request, folder: str):
     """Download the entire notebook as a ZIP archive."""
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -1764,6 +2028,7 @@ async def api_export_zip(folder: str):
 
 @app.get("/api/bibliography")
 async def api_bibliography(
+    request: Request,
     style: str = Query("apa"),
     books: str = Query(""),
 ):
@@ -1773,18 +2038,20 @@ async def api_bibliography(
     - style: ``apa``, ``mla``, or ``chicago``
     - books: comma-separated book folder names (empty = all books)
     """
+    user = await _try_get_user(request)
     from ppke.export.academic import generate_bibliography
 
-    vault = _vault_path()
+    vault = _user_vault_path(user)
     book_folders = [b.strip() for b in books.split(",") if b.strip()] or None
     content = generate_bibliography(vault, style=style, book_folders=book_folders)
     return {"style": style, "content": content}
 
 
 @app.get("/api/literature-review")
-async def api_get_literature_review():
+async def api_get_literature_review(request: Request):
     """Return cached literature review if available."""
-    vault = _vault_path()
+    user = await _try_get_user(request)
+    vault = _user_vault_path(user)
     path = vault / "literature_review.md"
     if not path.exists():
         return {"status": "not_generated", "content": None}
@@ -1793,6 +2060,7 @@ async def api_get_literature_review():
 
 @app.post("/api/literature-review")
 async def api_generate_literature_review(
+    request: Request,
     books: str = Form(""),
 ):
     """Generate a cross-book literature review via LLM.
@@ -1800,11 +2068,12 @@ async def api_generate_literature_review(
     Parameters:
     - books: comma-separated book folder names (empty = all books)
     """
+    user = await _try_get_user(request)
     from ppke.export.academic import generate_literature_review
     from ppke.llm.client import LLMClient
 
     config = _get_config()
-    vault = _vault_path()
+    vault = _user_vault_path(user)
     client = LLMClient(config.llm)
     book_folders = [b.strip() for b in books.split(",") if b.strip()] or None
 
@@ -1821,14 +2090,15 @@ async def api_generate_literature_review(
 
 
 @app.get("/api/argument-map/{folder}")
-async def api_argument_map(folder: str):
+async def api_argument_map(request: Request, folder: str):
     """Generate an argument map from a book's extraction data.
 
     Returns structured nodes + edges for interactive diagram rendering,
     plus a Markdown summary.
     """
+    user = await _try_get_user(request)
     folder = _safe_folder(folder)
-    book_dir = _vault_path() / folder
+    book_dir = _user_vault_path(user) / folder
     if not book_dir.exists():
         raise HTTPException(404, f"Book not found: {folder}")
 
@@ -1849,4 +2119,241 @@ async def api_argument_map(folder: str):
 @app.get("/api/health")
 async def api_health():
     """Health check endpoint."""
-    return {"status": "ok", "version": "2.0.0"}
+    return {"status": "ok", "version": "3.0.0"}
+
+
+# ── Workspace & Collaboration endpoints (Phase 7) ──
+
+
+@app.get("/api/workspaces")
+async def api_list_workspaces(user: dict = Depends(get_current_user)):
+    """List all workspaces the current user belongs to."""
+    conn = _get_db()
+    workspaces = auth_db.get_user_workspaces(conn, user["id"])
+    return workspaces
+
+
+@app.post("/api/workspaces")
+async def api_create_workspace(request: Request, user: dict = Depends(get_current_user)):
+    """Create a new workspace."""
+    body = await request.json()
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "Workspace name is required")
+
+    import re as _re
+    slug = _re.sub(r"[^a-z0-9\-]", "-", name.lower())[:40]
+
+    conn = _get_db()
+    ws = auth_db.create_workspace(conn, name, f"{slug}-{str(uuid.uuid4())[:6]}", user["id"])
+    auth_db.log_activity(conn, user["id"], "created workspace", "workspace", ws["id"])
+    return ws
+
+
+@app.get("/api/workspaces/{ws_id}/members")
+async def api_workspace_members(ws_id: str, user: dict = Depends(get_current_user)):
+    """List members of a workspace."""
+    conn = _get_db()
+    role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
+    if not role:
+        raise HTTPException(403, "Not a member of this workspace")
+    return auth_db.get_workspace_members(conn, ws_id)
+
+
+@app.post("/api/workspaces/{ws_id}/invite")
+async def api_invite_member(request: Request, ws_id: str, user: dict = Depends(get_current_user)):
+    """Invite a user to a workspace by email."""
+    conn = _get_db()
+    role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
+    if role not in ("admin", "editor"):
+        raise HTTPException(403, "Only admins and editors can invite members")
+
+    body = await request.json()
+    email = body.get("email", "").strip().lower()
+    invite_role = body.get("role", "viewer")
+    if invite_role not in ("viewer", "editor", "admin"):
+        raise HTTPException(400, "Invalid role")
+
+    target_user = auth_db.get_user_by_email(conn, email)
+    if not target_user:
+        raise HTTPException(404, "User not found — they must register first")
+
+    auth_db.add_workspace_member(conn, ws_id, target_user["id"], invite_role, invited_by=user["id"])
+    auth_db.log_activity(conn, user["id"], f"invited {email} as {invite_role}", "workspace", ws_id)
+    return {"status": "ok", "message": f"Invited {email} as {invite_role}"}
+
+
+@app.post("/api/workspaces/{ws_id}/members/{member_id}/role")
+async def api_update_member_role(
+    request: Request, ws_id: str, member_id: str, user: dict = Depends(get_current_user)
+):
+    """Update a member's role in a workspace (admin only)."""
+    conn = _get_db()
+    role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
+    if role != "admin":
+        raise HTTPException(403, "Only admins can change roles")
+
+    body = await request.json()
+    new_role = body.get("role", "viewer")
+    auth_db.update_member_role(conn, ws_id, member_id, new_role)
+    return {"status": "ok"}
+
+
+@app.delete("/api/workspaces/{ws_id}/members/{member_id}")
+async def api_remove_member(ws_id: str, member_id: str, user: dict = Depends(get_current_user)):
+    """Remove a member from a workspace (admin only)."""
+    conn = _get_db()
+    role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
+    if role != "admin":
+        raise HTTPException(403, "Only admins can remove members")
+    if member_id == user["id"]:
+        raise HTTPException(400, "Cannot remove yourself — transfer ownership first")
+    auth_db.remove_workspace_member(conn, ws_id, member_id)
+    return {"status": "ok"}
+
+
+# ── Shared Books ──
+
+
+@app.post("/api/workspaces/{ws_id}/share")
+async def api_share_book(request: Request, ws_id: str, user: dict = Depends(get_current_user)):
+    """Share a book with a workspace."""
+    conn = _get_db()
+    role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
+    if not role or role == "viewer":
+        raise HTTPException(403, "Viewers cannot share books")
+
+    body = await request.json()
+    book_folder = body.get("book_folder", "").strip()
+    permissions = body.get("permissions", "view")
+
+    if not book_folder:
+        raise HTTPException(400, "book_folder is required")
+
+    share = auth_db.share_book(conn, ws_id, book_folder, user["id"], permissions)
+    auth_db.log_activity(conn, user["id"], f"shared book {book_folder}", "book", book_folder, workspace_id=ws_id)
+    return share
+
+
+@app.get("/api/workspaces/{ws_id}/shared-books")
+async def api_shared_books(ws_id: str, user: dict = Depends(get_current_user)):
+    """List books shared in a workspace."""
+    conn = _get_db()
+    role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
+    if not role:
+        raise HTTPException(403, "Not a member of this workspace")
+    return auth_db.get_shared_books(conn, ws_id)
+
+
+# ── Annotations ──
+
+
+@app.post("/api/annotations")
+async def api_create_annotation(request: Request, user: dict = Depends(get_current_user)):
+    """Create a personal annotation on a paragraph."""
+    body = await request.json()
+    book_folder = body.get("book_folder", "").strip()
+    paragraph_id = body.get("paragraph_id", "").strip()
+    content = body.get("content", "").strip()
+    annotation_type = body.get("type", "note")
+
+    if not book_folder or not content:
+        raise HTTPException(400, "book_folder and content are required")
+
+    conn = _get_db()
+    ann = auth_db.create_annotation(
+        conn, user["id"], book_folder, paragraph_id, content, annotation_type
+    )
+    auth_db.log_activity(conn, user["id"], "added annotation", "book", book_folder)
+    return ann
+
+
+@app.get("/api/annotations/{folder}")
+async def api_get_annotations(folder: str, user: dict = Depends(get_current_user)):
+    """Get all annotations for a book (user's own)."""
+    folder = _safe_folder(folder)
+    conn = _get_db()
+    return auth_db.get_annotations(conn, folder, user_id=user["id"])
+
+
+@app.delete("/api/annotations/{ann_id}")
+async def api_delete_annotation(ann_id: str, user: dict = Depends(get_current_user)):
+    """Delete one of the user's annotations."""
+    conn = _get_db()
+    deleted = auth_db.delete_annotation(conn, ann_id, user["id"])
+    if not deleted:
+        raise HTTPException(404, "Annotation not found or not yours")
+    return {"status": "deleted"}
+
+
+# ── Activity Feed ──
+
+
+@app.get("/api/activity")
+async def api_activity_feed(
+    workspace_id: str = Query(""),
+    user: dict = Depends(get_current_user),
+):
+    """Recent activity across user's scope."""
+    conn = _get_db()
+    if workspace_id:
+        role = auth_db.get_user_role_in_workspace(conn, workspace_id, user["id"])
+        if not role:
+            raise HTTPException(403, "Not a member of this workspace")
+        return auth_db.get_activity_feed(conn, workspace_id=workspace_id, limit=50)
+    return auth_db.get_activity_feed(conn, user_id=user["id"], limit=50)
+
+
+# ── API Key Management ──
+
+
+@app.post("/api/keys")
+async def api_store_key(request: Request, user: dict = Depends(get_current_user)):
+    """Store a per-user LLM API key."""
+    body = await request.json()
+    provider = body.get("provider", "").strip()
+    api_key = body.get("api_key", "").strip()
+    label = body.get("label", "")
+
+    if not provider or not api_key:
+        raise HTTPException(400, "provider and api_key are required")
+    if provider not in SUPPORTED_PROVIDERS:
+        raise HTTPException(400, f"Unsupported provider: {provider}")
+
+    conn = _get_db()
+    # Simple obfuscation — in production use encryption (Fernet, etc.)
+    import base64
+    encoded = base64.b64encode(api_key.encode()).decode()
+    result = auth_db.store_api_key(conn, user["id"], provider, encoded, label)
+    auth_db.log_activity(conn, user["id"], f"added API key for {provider}", "api_key", result["id"])
+    return result
+
+
+@app.get("/api/keys")
+async def api_list_keys(user: dict = Depends(get_current_user)):
+    """List user's API keys (without the key values)."""
+    conn = _get_db()
+    return auth_db.get_user_api_keys(conn, user["id"])
+
+
+@app.delete("/api/keys/{key_id}")
+async def api_delete_key(key_id: str, user: dict = Depends(get_current_user)):
+    """Delete a stored API key."""
+    conn = _get_db()
+    deleted = auth_db.delete_api_key(conn, key_id, user["id"])
+    if not deleted:
+        raise HTTPException(404, "API key not found")
+    return {"status": "deleted"}
+
+
+# ── Usage Tracking ──
+
+
+@app.get("/api/usage")
+async def api_get_usage(
+    days: int = Query(30, ge=1, le=365),
+    user: dict = Depends(get_current_user),
+):
+    """Get the current user's LLM usage summary."""
+    conn = _get_db()
+    return auth_db.get_user_usage(conn, user["id"], days=days)

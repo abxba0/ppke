@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Workspaces{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Workspaces</h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage your workspaces and team members</p>
+        </div>
+        <button onclick="document.getElementById('create-ws-modal').classList.remove('hidden')"
+                class="px-4 py-2.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm">
+            New Workspace
+        </button>
+    </div>
+
+    <!-- Workspace list -->
+    <div class="space-y-4" id="workspace-list">
+        {% for ws in workspaces %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-in transition-colors">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ ws.name }}</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Your role: <span class="font-medium text-brand-600 dark:text-brand-400">{{ ws.member_role }}</span>
+                        {% if ws.owner_id == user.id %} · Owner{% endif %}
+                    </p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    {% if ws.member_role == 'admin' %}
+                    <button onclick="openMembersModal('{{ ws.id }}', '{{ ws.name }}')"
+                            class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">
+                        Members
+                    </button>
+                    {% endif %}
+                    <a href="/?workspace_id={{ ws.id }}"
+                       class="px-3 py-1.5 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors">
+                        Open
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not workspaces %}
+        <div class="text-center py-12">
+            <p class="text-gray-500 dark:text-gray-400">No workspaces yet. Create one to get started.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Activity Feed -->
+    {% if activity %}
+    <div class="mt-8">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Activity</h2>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
+            {% for act in activity %}
+            <div class="px-6 py-3 flex items-center space-x-3">
+                <div class="w-8 h-8 rounded-full bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center text-brand-600 dark:text-brand-400 text-xs font-bold flex-shrink-0">
+                    {{ act.user_name[:2]|upper }}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm text-gray-900 dark:text-gray-200">
+                        <span class="font-medium">{{ act.user_name }}</span> {{ act.action }}
+                        {% if act.target_id %}<span class="text-gray-500 dark:text-gray-400">{{ act.target_id }}</span>{% endif %}
+                    </p>
+                </div>
+                <span class="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">{{ act.created_at[:16] }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Create Workspace Modal -->
+<div id="create-ws-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
+        <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4">Create Workspace</h3>
+        <form id="create-ws-form" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Workspace Name</label>
+                <input type="text" name="name" required
+                       class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500"
+                       placeholder="My Research Team">
+            </div>
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="document.getElementById('create-ws-modal').classList.add('hidden')"
+                        class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Members Modal -->
+<div id="members-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100" id="members-modal-title">Members</h3>
+            <button onclick="document.getElementById('members-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <!-- Invite form -->
+        <form id="invite-form" class="flex space-x-2 mb-4">
+            <input type="hidden" name="workspace_id" id="invite-ws-id">
+            <input type="email" name="email" placeholder="Invite by email" required
+                   class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+            <select name="role" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                <option value="viewer">Viewer</option>
+                <option value="editor">Editor</option>
+                <option value="admin">Admin</option>
+            </select>
+            <button type="submit" class="px-3 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700">Invite</button>
+        </form>
+        <div id="members-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
+    </div>
+</div>
+
+<script>
+document.getElementById('create-ws-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const name = this.elements.name.value.trim();
+    if (!name) return;
+    try {
+        const resp = await fetch('/api/workspaces', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: name})
+        });
+        if (resp.ok) {
+            showToast('Workspace created!', 'success');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            const data = await resp.json();
+            showToast(data.detail || 'Failed', 'error');
+        }
+    } catch(err) { showToast(err.message, 'error'); }
+});
+
+async function openMembersModal(wsId, wsName) {
+    document.getElementById('members-modal-title').textContent = wsName + ' — Members';
+    document.getElementById('invite-ws-id').value = wsId;
+    document.getElementById('members-modal').classList.remove('hidden');
+    // Load members
+    try {
+        const resp = await fetch('/api/workspaces/' + wsId + '/members');
+        const data = await resp.json();
+        const list = document.getElementById('members-list');
+        list.innerHTML = '';
+        data.forEach(m => {
+            list.innerHTML += `<div class="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                <div><span class="text-sm font-medium text-gray-900 dark:text-gray-200">${m.name}</span>
+                <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">${m.email}</span></div>
+                <span class="text-xs font-medium px-2 py-0.5 rounded-full ${m.role === 'admin' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' : m.role === 'editor' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'}">${m.role}</span>
+            </div>`;
+        });
+    } catch(err) { showToast('Failed to load members', 'error'); }
+}
+
+document.getElementById('invite-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const wsId = this.elements.workspace_id.value;
+    const email = this.elements.email.value.trim();
+    const role = this.elements.role.value;
+    try {
+        const resp = await fetch('/api/workspaces/' + wsId + '/invite', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({email, role})
+        });
+        if (resp.ok) {
+            showToast('Invitation sent!', 'success');
+            openMembersModal(wsId, document.getElementById('members-modal-title').textContent.replace(' — Members', ''));
+            this.elements.email.value = '';
+        } else {
+            const data = await resp.json();
+            showToast(data.detail || 'Failed', 'error');
+        }
+    } catch(err) { showToast(err.message, 'error'); }
+});
+</script>
+{% endblock %}

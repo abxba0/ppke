@@ -91,13 +91,66 @@
         </form>
     </div>
 
+    <!-- Per-User API Keys -->
+    {% if user %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6 fade-in transition-colors">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Your API Keys</h2>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Store personal LLM API keys (separate from system-wide keys).</p>
+        <div id="user-keys-list" class="space-y-2 mb-4">
+            {% for key in user_api_keys %}
+            <div class="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                <div>
+                    <span class="text-sm font-medium text-gray-900 dark:text-gray-200">{{ key.provider }}</span>
+                    <span class="text-xs text-gray-400 ml-2">{{ key.label or 'No label' }}</span>
+                </div>
+                <button onclick="deleteApiKey('{{ key.id }}')" class="text-xs text-red-500 hover:text-red-700">Remove</button>
+            </div>
+            {% endfor %}
+            {% if not user_api_keys %}
+            <p class="text-sm text-gray-400 dark:text-gray-500">No personal API keys stored.</p>
+            {% endif %}
+        </div>
+        <form id="add-key-form" class="flex space-x-2">
+            <select name="provider" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                {% for p in providers %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+            </select>
+            <input type="password" name="api_key" placeholder="API key" required
+                   class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+            <button type="submit" class="px-3 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700">Add</button>
+        </form>
+    </div>
+
+    <!-- Usage Stats -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6 fade-in transition-colors">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Usage (Last 30 Days)</h2>
+        <div class="grid grid-cols-3 gap-4">
+            <div class="text-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div class="text-2xl font-bold text-brand-600">{{ usage.total_requests }}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Requests</div>
+            </div>
+            <div class="text-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div class="text-2xl font-bold text-brand-600">{{ "{:,}".format(usage.total_tokens) }}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Tokens</div>
+            </div>
+            <div class="text-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div class="text-2xl font-bold text-brand-600">${{ "%.2f"|format(usage.total_cost) }}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Est. Cost</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- System Info -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-in transition-colors">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">System Info</h2>
         <div class="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-            <div class="flex justify-between"><span>PPKE Version</span><span class="font-mono">2.0.0</span></div>
+            <div class="flex justify-between"><span>PPKE Version</span><span class="font-mono">3.0.0</span></div>
             <div class="flex justify-between"><span>Config File</span><span class="font-mono">~/.ppke/config.json</span></div>
             <div class="flex justify-between"><span>Secrets File</span><span class="font-mono">~/.ppke/.env</span></div>
+            {% if user %}
+            <div class="flex justify-between"><span>User</span><span class="font-mono">{{ user.email }}</span></div>
+            <div class="flex justify-between"><span>User Vault</span><span class="font-mono">{{ config.vault_path }}</span></div>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -119,5 +172,42 @@ document.getElementById('settings-form').addEventListener('submit', async functi
         showToast('Failed to save: ' + err.message, 'error');
     }
 });
+
+// API Key management
+const addKeyForm = document.getElementById('add-key-form');
+if (addKeyForm) {
+    addKeyForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const provider = this.elements.provider.value;
+        const api_key = this.elements.api_key.value.trim();
+        if (!api_key) return;
+        try {
+            const resp = await fetch('/api/keys', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({provider, api_key, label: ''})
+            });
+            if (resp.ok) {
+                showToast('API key stored!', 'success');
+                setTimeout(() => location.reload(), 500);
+            } else {
+                const data = await resp.json();
+                showToast(data.detail || 'Failed', 'error');
+            }
+        } catch(err) { showToast(err.message, 'error'); }
+    });
+}
+
+async function deleteApiKey(keyId) {
+    try {
+        const resp = await fetch('/api/keys/' + keyId, {method: 'DELETE'});
+        if (resp.ok) {
+            showToast('Key removed', 'success');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            showToast('Failed to remove key', 'error');
+        }
+    } catch(err) { showToast(err.message, 'error'); }
+}
 </script>
 {% endblock %}

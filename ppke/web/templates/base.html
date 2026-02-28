@@ -99,6 +99,7 @@
                     <a href="/" class="text-gray-600 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Library</a>
                     <a href="/upload" class="text-gray-600 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Upload</a>
                     <a href="/graph" class="text-gray-600 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Graph</a>
+                    <a href="/workspaces" class="text-gray-600 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Workspaces</a>
                     <a href="/settings" class="text-gray-600 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Settings</a>
                 </div>
             </div>
@@ -121,6 +122,31 @@
                     <svg id="moon-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
                 </button>
 
+                <!-- User menu -->
+                {% if user %}
+                <div class="relative" id="user-menu-wrapper">
+                    <button onclick="document.getElementById('user-dropdown').classList.toggle('hidden')"
+                            class="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <div class="w-7 h-7 rounded-full bg-brand-600 flex items-center justify-center text-white text-xs font-bold">
+                            {{ user.name[:2]|upper }}
+                        </div>
+                        <span class="hidden lg:block text-sm font-medium text-gray-700 dark:text-gray-300 max-w-[100px] truncate">{{ user.name }}</span>
+                    </button>
+                    <div id="user-dropdown" class="hidden absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-50">
+                        <div class="px-4 py-2 border-b border-gray-100 dark:border-gray-700">
+                            <p class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ user.name }}</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ user.email }}</p>
+                        </div>
+                        <a href="/workspaces" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Workspaces</a>
+                        <a href="/settings" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Settings</a>
+                        <div class="border-t border-gray-100 dark:border-gray-700"></div>
+                        <a href="/auth/logout" class="block px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700">Sign Out</a>
+                    </div>
+                </div>
+                {% else %}
+                <a href="/login" class="px-3 py-1.5 text-sm font-medium text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors">Sign In</a>
+                {% endif %}
+
                 <!-- Mobile hamburger -->
                 <button id="mobile-menu-btn" onclick="toggleMobileMenu()" class="md:hidden p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
@@ -135,7 +161,16 @@
             <a href="/" class="block px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Library</a>
             <a href="/upload" class="block px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Upload</a>
             <a href="/graph" class="block px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Graph</a>
+            <a href="/workspaces" class="block px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Workspaces</a>
             <a href="/settings" class="block px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Settings</a>
+            {% if user %}
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-2 mt-2">
+                <div class="px-3 py-1 text-sm text-gray-500 dark:text-gray-400">{{ user.name }} ({{ user.email }})</div>
+                <a href="/auth/logout" class="block px-3 py-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Sign Out</a>
+            </div>
+            {% else %}
+            <a href="/login" class="block px-3 py-2 rounded-lg text-brand-600 dark:text-brand-400 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Sign In</a>
+            {% endif %}
             <!-- Mobile search -->
             <div class="relative sm:hidden pt-2">
                 <input type="search" placeholder="Search..."
@@ -157,7 +192,7 @@
 <!-- Footer -->
 <footer class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 mt-12 transition-colors">
     <div class="max-w-7xl mx-auto px-4 py-6 flex flex-col sm:flex-row justify-between items-center text-sm text-gray-500 dark:text-gray-400">
-        <span>PPKE v2.0 — Personal &amp; Professional Knowledge Engine</span>
+        <span>PPKE v3.0 — Personal &amp; Professional Knowledge Engine</span>
         <span class="mt-2 sm:mt-0">Press <kbd>?</kbd> for keyboard shortcuts</span>
     </div>
 </footer>
@@ -304,6 +339,12 @@ document.addEventListener('click', function(e) {
     const si = document.getElementById('global-search');
     if (sr && !sr.contains(e.target) && e.target !== si) {
         sr.classList.add('hidden');
+    }
+    // Close user dropdown on click outside
+    const ud = document.getElementById('user-dropdown');
+    const uw = document.getElementById('user-menu-wrapper');
+    if (ud && uw && !uw.contains(e.target)) {
+        ud.classList.add('hidden');
     }
 });
 
