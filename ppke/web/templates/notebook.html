@@ -32,15 +32,41 @@
                 </svg>
                 Audio Overview
             </button>
+            <!-- Export dropdown -->
+            <div class="relative" id="export-dropdown-wrapper">
+                <button onclick="toggleExportDropdown()"
+                        class="inline-flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium shadow-sm">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    Export
+                    <svg class="w-3 h-3 ml-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </button>
+                <div id="export-dropdown" class="hidden absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 py-1">
+                    <a href="/api/export/{{ folder }}/pdf" class="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <svg class="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                        PDF Report
+                    </a>
+                    <a href="/api/export/{{ folder }}/docx" class="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <svg class="w-4 h-4 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        Word Document
+                    </a>
+                    <a href="/api/export/{{ folder }}/pptx" class="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <svg class="w-4 h-4 mr-2 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 13v-1m4 1v-3m4 3V8M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
+                        Slide Deck
+                    </a>
+                    <a href="/api/export/{{ folder }}/zip" class="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
+                        Markdown ZIP
+                    </a>
+                    <div class="border-t border-gray-100 dark:border-gray-700 my-1"></div>
+                    <a href="/api/flashcards/{{ folder }}" download class="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <svg class="w-4 h-4 mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        Flashcards (TSV)
+                    </a>
+                </div>
+            </div>
             <a href="/graph?book={{ folder }}" class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-medium">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
                 View Graph
-            </a>
-            <!-- Download flashcards -->
-            <a href="/api/flashcards/{{ folder }}" download
-               class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-medium">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                Flashcards
             </a>
         </div>
     </div>
@@ -51,7 +77,7 @@
     <!-- Tab nav -->
     <div class="border-b border-gray-200 dark:border-gray-700">
         <nav class="flex -mb-px overflow-x-auto" id="tab-nav">
-            {% set tabs = [('chat','Chat'),('structure','Structure'),('concepts','Concepts'),('logic','Logical Map'),('patterns','Patterns'),('summary','Summary'),('glossary','Glossary'),('studyguide','Study Guide')] %}
+            {% set tabs = [('chat','Chat'),('structure','Structure'),('concepts','Concepts'),('logic','Logical Map'),('patterns','Patterns'),('summary','Summary'),('glossary','Glossary'),('studyguide','Study Guide'),('argmap','Argument Map'),('bibliography','Bibliography'),('litreview','Lit Review')] %}
             {% for tid, tlabel in tabs %}
             <button onclick="switchTab('{{ tid }}')" data-tab="{{ tid }}"
                     class="tab-btn px-5 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors
@@ -222,6 +248,98 @@
             </div>
         </div>
     </div>
+
+    <!-- ─── Tab: Argument Map ─── -->
+    <div id="tab-argmap" class="tab-panel hidden">
+        <div class="p-6 max-h-[640px] overflow-y-auto">
+            <div id="argmap-loading" class="hidden text-center py-10">
+                <div class="spinner mb-3 mx-auto"></div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Building argument map…</p>
+            </div>
+            <div id="argmap-content" class="hidden">
+                <!-- Stats bar -->
+                <div class="flex items-center justify-between mb-4">
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300" id="argmap-stats"></p>
+                    <div class="flex gap-2">
+                        <span class="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">Claims</span>
+                        <span class="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300">Assumptions</span>
+                        <span class="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300">Concepts</span>
+                    </div>
+                </div>
+                <!-- Visual diagram -->
+                <div id="argmap-diagram" class="bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 mb-4" style="height:360px"></div>
+                <!-- Markdown fallback -->
+                <details class="mt-2">
+                    <summary class="text-sm text-brand-600 dark:text-brand-400 cursor-pointer hover:underline font-medium">Show text view</summary>
+                    <div id="argmap-markdown" class="mt-3 prose dark:prose-invert max-w-none text-sm leading-relaxed"></div>
+                </details>
+            </div>
+            <div id="argmap-empty" class="text-center py-10">
+                <svg class="mx-auto w-12 h-12 text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
+                </svg>
+                <p class="text-gray-500 dark:text-gray-400 mb-4">Visualize the argument structure of this book.</p>
+                <button onclick="loadArgumentMap()"
+                        class="px-6 py-2.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 text-sm font-medium shadow-sm">
+                    Build Argument Map
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Tab: Bibliography ─── -->
+    <div id="tab-bibliography" class="tab-panel hidden">
+        <div class="p-6 max-h-[640px] overflow-y-auto">
+            <div id="bib-content" class="hidden">
+                <div class="flex items-center justify-between mb-4">
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Formatted Citations</p>
+                    <select id="bib-style" onchange="loadBibliography()"
+                            class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-200">
+                        <option value="apa" selected>APA (7th ed.)</option>
+                        <option value="mla">MLA (9th ed.)</option>
+                        <option value="chicago">Chicago (17th ed.)</option>
+                    </select>
+                </div>
+                <div id="bib-output" class="prose dark:prose-invert max-w-none text-sm leading-relaxed"></div>
+            </div>
+            <div id="bib-loading" class="hidden text-center py-10">
+                <div class="spinner mb-3 mx-auto"></div>
+            </div>
+            <div id="bib-empty" class="text-center py-10">
+                <svg class="mx-auto w-12 h-12 text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                </svg>
+                <p class="text-gray-500 dark:text-gray-400 mb-2">Generate formatted citations for all books in your library.</p>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mb-4">Supports APA, MLA, and Chicago styles.</p>
+                <button onclick="loadBibliography()"
+                        class="px-6 py-2.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 text-sm font-medium shadow-sm">
+                    Generate Bibliography
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Tab: Lit Review ─── -->
+    <div id="tab-litreview" class="tab-panel hidden">
+        <div class="p-6 max-h-[640px] overflow-y-auto">
+            <div id="litreview-loading" class="hidden text-center py-10">
+                <div class="spinner mb-3 mx-auto"></div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Generating literature review… this may take a moment.</p>
+            </div>
+            <div id="litreview-content" class="hidden prose dark:prose-invert max-w-none text-sm leading-relaxed"></div>
+            <div id="litreview-empty" class="text-center py-10">
+                <svg class="mx-auto w-12 h-12 text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                </svg>
+                <p class="text-gray-500 dark:text-gray-400 mb-2">Generate a cross-book literature review.</p>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mb-4">Synthesizes themes, debates, and gaps across all books in your library using AI.</p>
+                <button onclick="generateLitReview()"
+                        class="px-6 py-2.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 text-sm font-medium shadow-sm">
+                    Generate Literature Review
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Audio Overview Modal -->
@@ -333,6 +451,8 @@ function switchTab(tab) {
     if (tab === 'glossary') loadGlossary();
     if (tab === 'summary') checkSummary();
     if (tab === 'studyguide') checkStudyGuide();
+    if (tab === 'bibliography') loadBibliography();
+    if (tab === 'litreview') checkLitReview();
 }
 
 // ── Query templates ──
@@ -682,6 +802,249 @@ async function toggleTranscript() {
     } else {
         el.classList.remove('hidden');
     }
+}
+
+// ── Export dropdown ──
+function toggleExportDropdown() {
+    const dd = document.getElementById('export-dropdown');
+    dd.classList.toggle('hidden');
+}
+// Close dropdown on outside click
+document.addEventListener('click', function(e) {
+    const wrapper = document.getElementById('export-dropdown-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        document.getElementById('export-dropdown').classList.add('hidden');
+    }
+});
+
+// ── Argument Map tab ──
+let _argmapLoaded = false;
+
+async function loadArgumentMap() {
+    if (_argmapLoaded) return;
+    document.getElementById('argmap-empty').classList.add('hidden');
+    document.getElementById('argmap-loading').classList.remove('hidden');
+
+    try {
+        const resp = await fetch(`/api/argument-map/${FOLDER}`);
+        const data = await resp.json();
+        document.getElementById('argmap-loading').classList.add('hidden');
+
+        if (!data.nodes || data.nodes.length === 0) {
+            document.getElementById('argmap-empty').classList.remove('hidden');
+            showToast('No argument data found — the book may need re-analysis.', 'info');
+            return;
+        }
+
+        _argmapLoaded = true;
+        const stats = data.stats || {};
+        const tc = stats.type_counts || {};
+        document.getElementById('argmap-stats').textContent =
+            `${stats.total_nodes || 0} nodes · ${stats.total_edges || 0} relationships` +
+            (tc.claim ? ` · ${tc.claim} claims` : '') +
+            (tc.assumption ? ` · ${tc.assumption} assumptions` : '');
+
+        document.getElementById('argmap-content').classList.remove('hidden');
+
+        // Render markdown view
+        document.getElementById('argmap-markdown').innerHTML = renderMarkdown(data.markdown || '');
+
+        // Render D3 force-directed argument diagram
+        renderArgMapDiagram(data.nodes, data.edges);
+    } catch (err) {
+        document.getElementById('argmap-loading').classList.add('hidden');
+        document.getElementById('argmap-empty').classList.remove('hidden');
+        showToast('Failed to build argument map: ' + err.message, 'error');
+    }
+}
+
+function renderArgMapDiagram(nodes, edges) {
+    const container = document.getElementById('argmap-diagram');
+    const width = container.clientWidth;
+    const height = 360;
+
+    // Color mapping for node types
+    const typeColors = {
+        claim: '#3b82f6',       // blue
+        assumption: '#f59e0b',  // amber
+        conclusion: '#10b981',  // emerald
+        concept: '#10b981',     // emerald
+    };
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', width);
+    svg.setAttribute('height', height);
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    container.innerHTML = '';
+    container.appendChild(svg);
+
+    // Simple force-directed layout using iterative positioning
+    // Assign initial positions
+    nodes.forEach((n, i) => {
+        n.x = width / 2 + (Math.random() - 0.5) * width * 0.6;
+        n.y = height / 2 + (Math.random() - 0.5) * height * 0.6;
+    });
+
+    // Build node lookup
+    const nodeMap = {};
+    nodes.forEach(n => nodeMap[n.id] = n);
+
+    // Simple force iterations
+    for (let iter = 0; iter < 80; iter++) {
+        // Repulsion between all nodes
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+                const dx = nodes[j].x - nodes[i].x;
+                const dy = nodes[j].y - nodes[i].y;
+                const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+                const force = 800 / (dist * dist);
+                const fx = (dx / dist) * force;
+                const fy = (dy / dist) * force;
+                nodes[i].x -= fx;
+                nodes[i].y -= fy;
+                nodes[j].x += fx;
+                nodes[j].y += fy;
+            }
+        }
+        // Attraction along edges
+        edges.forEach(e => {
+            const src = nodeMap[e.source];
+            const tgt = nodeMap[e.target];
+            if (!src || !tgt) return;
+            const dx = tgt.x - src.x;
+            const dy = tgt.y - src.y;
+            const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+            const force = (dist - 60) * 0.03;
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+            src.x += fx;
+            src.y += fy;
+            tgt.x -= fx;
+            tgt.y -= fy;
+        });
+        // Center gravity
+        nodes.forEach(n => {
+            n.x += (width / 2 - n.x) * 0.01;
+            n.y += (height / 2 - n.y) * 0.01;
+            // Bounds
+            n.x = Math.max(30, Math.min(width - 30, n.x));
+            n.y = Math.max(20, Math.min(height - 20, n.y));
+        });
+    }
+
+    // Draw edges
+    const relColors = { supports: '#86efac', leads_to: '#93c5fd', grounds: '#a5b4fc', challenges: '#fca5a5' };
+    edges.forEach(e => {
+        const src = nodeMap[e.source];
+        const tgt = nodeMap[e.target];
+        if (!src || !tgt) return;
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', src.x);
+        line.setAttribute('y1', src.y);
+        line.setAttribute('x2', tgt.x);
+        line.setAttribute('y2', tgt.y);
+        line.setAttribute('stroke', relColors[e.relation] || '#d1d5db');
+        line.setAttribute('stroke-width', '1');
+        line.setAttribute('opacity', '0.5');
+        svg.appendChild(line);
+    });
+
+    // Draw nodes
+    const isDark = document.documentElement.classList.contains('dark');
+    nodes.forEach(n => {
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', n.x);
+        circle.setAttribute('cy', n.y);
+        circle.setAttribute('r', n.type === 'claim' ? 5 : 4);
+        circle.setAttribute('fill', typeColors[n.type] || '#9ca3af');
+        circle.setAttribute('opacity', '0.85');
+        g.appendChild(circle);
+
+        // Label for first 40 nodes only
+        if (nodes.indexOf(n) < 40) {
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', n.x + 7);
+            text.setAttribute('y', n.y + 3);
+            text.setAttribute('font-size', '8');
+            text.setAttribute('fill', isDark ? '#d1d5db' : '#4b5563');
+            text.textContent = n.label.length > 30 ? n.label.slice(0, 28) + '…' : n.label;
+            g.appendChild(text);
+        }
+
+        // Tooltip on hover
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = `[${n.type}] ${n.label}${n.paragraph_id ? ' (' + n.paragraph_id + ')' : ''}`;
+        g.appendChild(title);
+
+        svg.appendChild(g);
+    });
+}
+
+// ── Bibliography tab ──
+let _bibLoaded = false;
+
+async function loadBibliography() {
+    const style = document.getElementById('bib-style')?.value || 'apa';
+    document.getElementById('bib-empty').classList.add('hidden');
+    document.getElementById('bib-loading').classList.remove('hidden');
+
+    try {
+        const resp = await fetch(`/api/bibliography?style=${style}`);
+        const data = await resp.json();
+        document.getElementById('bib-loading').classList.add('hidden');
+
+        if (!data.content) {
+            document.getElementById('bib-empty').classList.remove('hidden');
+            return;
+        }
+
+        document.getElementById('bib-output').innerHTML = renderMarkdown(data.content);
+        document.getElementById('bib-content').classList.remove('hidden');
+        _bibLoaded = true;
+    } catch (err) {
+        document.getElementById('bib-loading').classList.add('hidden');
+        document.getElementById('bib-empty').classList.remove('hidden');
+        showToast('Failed to generate bibliography: ' + err.message, 'error');
+    }
+}
+
+// ── Literature Review tab ──
+async function checkLitReview() {
+    try {
+        const resp = await fetch('/api/literature-review');
+        const data = await resp.json();
+        if (data.status === 'ready') showLitReviewContent(data.content);
+    } catch (_) {}
+}
+
+async function generateLitReview() {
+    document.getElementById('litreview-empty').classList.add('hidden');
+    document.getElementById('litreview-loading').classList.remove('hidden');
+
+    try {
+        const resp = await fetch('/api/literature-review', { method: 'POST', body: new URLSearchParams({}) });
+        const data = await resp.json();
+        document.getElementById('litreview-loading').classList.add('hidden');
+        if (data.status === 'ready') {
+            showLitReviewContent(data.content);
+            showToast('Literature review generated!', 'success');
+        } else {
+            throw new Error('Generation failed');
+        }
+    } catch (err) {
+        document.getElementById('litreview-loading').classList.add('hidden');
+        document.getElementById('litreview-empty').classList.remove('hidden');
+        showToast('Literature review generation failed: ' + err.message, 'error');
+    }
+}
+
+function showLitReviewContent(markdown) {
+    document.getElementById('litreview-empty').classList.add('hidden');
+    document.getElementById('litreview-loading').classList.add('hidden');
+    const el = document.getElementById('litreview-content');
+    el.innerHTML = renderMarkdown(markdown);
+    el.classList.remove('hidden');
 }
 </script>
 {% endblock %}

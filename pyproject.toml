@@ -62,6 +62,12 @@ ingest = [
     "yt-dlp>=2024.1.0",     # YouTube audio download
     "openpyxl>=3.1.0",      # Excel .xlsx support
 ]
+# Phase 6: document export — PDF, DOCX, PPTX generation
+export = [
+    "weasyprint>=60.0",    # PDF generation from HTML/CSS
+    "python-docx>=1.0.0",  # Word document generation
+    "python-pptx>=0.6.21", # PowerPoint slide deck generation
+]
 # All optional extras at once
 all = [
     "chromadb>=0.4.0",
@@ -83,6 +89,8 @@ all = [
     "requests>=2.31.0",
     "yt-dlp>=2024.1.0",
     "openpyxl>=3.1.0",
+    "weasyprint>=60.0",
+    "python-pptx>=0.6.21",
 ]
 
 [tool.pytest.ini_options]

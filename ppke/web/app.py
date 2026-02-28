@@ -1641,6 +1641,211 @@ async def api_graph_markdown_export():
     )
 
 
+# ── Export endpoints (Phase 6) ──
+
+
+@app.get("/api/export/{folder}/pdf")
+async def api_export_pdf(folder: str):
+    """Export a book's analysis as a typeset PDF report."""
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+
+    from ppke.export.exporters import export_pdf
+
+    try:
+        pdf_bytes = export_pdf(book_dir)
+    except ImportError as e:
+        raise HTTPException(500, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"PDF export failed: {e}")
+
+    meta = _load_book_meta(book_dir)
+    safe_title = re.sub(r"[^\w\-]", "_", meta.get("title", folder))
+    # Detect if weasyprint was available (real PDF) or fallback (HTML)
+    is_pdf = pdf_bytes[:5] == b"%PDF-"
+    media_type = "application/pdf" if is_pdf else "text/html"
+    ext = ".pdf" if is_pdf else ".html"
+
+    from fastapi.responses import Response
+
+    return Response(
+        content=pdf_bytes,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}_report{ext}"'},
+    )
+
+
+@app.get("/api/export/{folder}/docx")
+async def api_export_docx(folder: str):
+    """Export a book's analysis as a Word document."""
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+
+    from ppke.export.exporters import export_docx
+
+    try:
+        docx_bytes = export_docx(book_dir)
+    except ImportError as e:
+        raise HTTPException(500, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"DOCX export failed: {e}")
+
+    meta = _load_book_meta(book_dir)
+    safe_title = re.sub(r"[^\w\-]", "_", meta.get("title", folder))
+
+    from fastapi.responses import Response
+
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}_report.docx"'},
+    )
+
+
+@app.get("/api/export/{folder}/pptx")
+async def api_export_pptx(folder: str):
+    """Export a book's key concepts as a PowerPoint slide deck."""
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+
+    from ppke.export.exporters import export_pptx
+
+    try:
+        pptx_bytes = export_pptx(book_dir)
+    except ImportError as e:
+        raise HTTPException(500, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"PPTX export failed: {e}")
+
+    meta = _load_book_meta(book_dir)
+    safe_title = re.sub(r"[^\w\-]", "_", meta.get("title", folder))
+
+    from fastapi.responses import Response
+
+    return Response(
+        content=pptx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}_slides.pptx"'},
+    )
+
+
+@app.get("/api/export/{folder}/zip")
+async def api_export_zip(folder: str):
+    """Download the entire notebook as a ZIP archive."""
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+
+    from ppke.export.exporters import export_markdown_zip
+
+    zip_bytes = export_markdown_zip(book_dir)
+
+    meta = _load_book_meta(book_dir)
+    safe_title = re.sub(r"[^\w\-]", "_", meta.get("title", folder))
+
+    from fastapi.responses import Response
+
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}_notebook.zip"'},
+    )
+
+
+# ── Academic tools endpoints (Phase 6) ──
+
+
+@app.get("/api/bibliography")
+async def api_bibliography(
+    style: str = Query("apa"),
+    books: str = Query(""),
+):
+    """Generate a formatted bibliography from all or selected books.
+
+    Parameters:
+    - style: ``apa``, ``mla``, or ``chicago``
+    - books: comma-separated book folder names (empty = all books)
+    """
+    from ppke.export.academic import generate_bibliography
+
+    vault = _vault_path()
+    book_folders = [b.strip() for b in books.split(",") if b.strip()] or None
+    content = generate_bibliography(vault, style=style, book_folders=book_folders)
+    return {"style": style, "content": content}
+
+
+@app.get("/api/literature-review")
+async def api_get_literature_review():
+    """Return cached literature review if available."""
+    vault = _vault_path()
+    path = vault / "literature_review.md"
+    if not path.exists():
+        return {"status": "not_generated", "content": None}
+    return {"status": "ready", "content": path.read_text()}
+
+
+@app.post("/api/literature-review")
+async def api_generate_literature_review(
+    books: str = Form(""),
+):
+    """Generate a cross-book literature review via LLM.
+
+    Parameters:
+    - books: comma-separated book folder names (empty = all books)
+    """
+    from ppke.export.academic import generate_literature_review
+    from ppke.llm.client import LLMClient
+
+    config = _get_config()
+    vault = _vault_path()
+    client = LLMClient(config.llm)
+    book_folders = [b.strip() for b in books.split(",") if b.strip()] or None
+
+    try:
+        content = generate_literature_review(vault, client, book_folders=book_folders)
+    except Exception as e:
+        raise HTTPException(500, f"Literature review generation failed: {e}")
+
+    # Cache the result
+    review_path = vault / "literature_review.md"
+    review_path.write_text(content)
+
+    return {"status": "ready", "content": content}
+
+
+@app.get("/api/argument-map/{folder}")
+async def api_argument_map(folder: str):
+    """Generate an argument map from a book's extraction data.
+
+    Returns structured nodes + edges for interactive diagram rendering,
+    plus a Markdown summary.
+    """
+    folder = _safe_folder(folder)
+    book_dir = _vault_path() / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+
+    from ppke.export.academic import generate_argument_map, argument_map_to_markdown
+
+    arg_map = generate_argument_map(book_dir)
+    markdown = argument_map_to_markdown(arg_map)
+
+    return {
+        "folder": folder,
+        "nodes": arg_map["nodes"],
+        "edges": arg_map["edges"],
+        "stats": arg_map["stats"],
+        "markdown": markdown,
+    }
+
+
 @app.get("/api/health")
 async def api_health():
     """Health check endpoint."""

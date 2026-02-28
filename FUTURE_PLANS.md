@@ -193,28 +193,49 @@ Reach full NotebookLM feature parity and beyond.
 
 ---
 
-## Phase 6 — Export & Content Generation (NEXT)
+## Phase 6 — Export & Content Generation (DONE)
 
 Turn analysis into publishable outputs.
 
 ### 6.1 Document Export
-- [ ] **PDF export** — Generate typeset reports with `weasyprint` or `reportlab`
-- [ ] **DOCX export** — Word format via `python-docx`
-- [ ] **Slide deck** — Auto-generate PowerPoint from key concepts via `python-pptx`
-- [ ] **Markdown ZIP** — Download entire notebook as ZIP archive
+- [x] **PDF export** — `GET /api/export/{folder}/pdf` generates typeset HTML/CSS report, rendered with `weasyprint` (graceful fallback to HTML if not installed); cover page, section dividers, page numbers, proper typography
+- [x] **DOCX export** — `GET /api/export/{folder}/docx` generates Word document via `python-docx` with title page, styled headings, bullet lists, inline bold/italic formatting, all analysis sections + summary + study guide
+- [x] **Slide deck** — `GET /api/export/{folder}/pptx` auto-generates PowerPoint via `python-pptx` with: title slide, executive summary bullets, top concepts (frequency-ranked), logical structure, key claims, patterns, closing stats slide; 16:9 widescreen format
+- [x] **Markdown ZIP** — `GET /api/export/{folder}/zip` downloads all Markdown files, meta.yml, extractions.json, audio scripts as a ZIP archive
 
 ### 6.2 Academic Tools
-- [ ] **Literature review** — Cross-book synthesis formatted as academic lit review section
-- [ ] **Bibliography** — Formatted citation lists (APA, MLA, Chicago) from `meta.yml`
-- [ ] **Argument maps** — Visual argument diagrams from logical map data
+- [x] **Literature review** — `POST /api/literature-review` cross-book LLM synthesis with thematic analysis, key debates, gaps; cached as `literature_review.md`; Lit Review tab in notebook UI
+- [x] **Bibliography** — `GET /api/bibliography?style=apa|mla|chicago` generates formatted citation lists from all books' `meta.yml`; Bibliography tab with style switcher dropdown
+- [x] **Argument maps** — `GET /api/argument-map/{folder}` builds node/edge graph from `extractions.json` (claims, assumptions, concepts, support/leads_to/grounds relationships); SVG force-directed diagram in Argument Map tab + Markdown text view
 
-### Implementation notes
-- PDF: Render Markdown templates with Jinja2 → convert with weasyprint
-- ZIP: Stream a ZIP file from all files in the book directory
+### New Module: `ppke/export/exporters.py`
+- `export_pdf()` — HTML/CSS typeset report → weasyprint PDF (with fallback)
+- `export_docx()` — python-docx Word document with title page + all sections
+- `export_pptx()` — python-pptx slide deck from key concepts + claims
+- `export_markdown_zip()` — ZIP archive of all book files
+
+### New Module: `ppke/export/academic.py`
+- `generate_bibliography()` — APA/MLA/Chicago formatted citations from meta.yml
+- `generate_literature_review()` — LLM-powered cross-book synthesis
+- `generate_argument_map()` — structured claim/assumption/concept graph from extractions
+- `argument_map_to_markdown()` — readable text rendering of argument map
+
+### New Endpoints (8)
+`GET /api/export/{folder}/pdf` · `GET /api/export/{folder}/docx` · `GET /api/export/{folder}/pptx` · `GET /api/export/{folder}/zip` · `GET /api/bibliography` · `GET/POST /api/literature-review` · `GET /api/argument-map/{folder}`
+
+### New UI (notebook.html)
+- **Export dropdown** — emerald button in book header with PDF, Word, Slides, ZIP, Flashcards options
+- **3 new tabs**: Argument Map (SVG diagram + text view), Bibliography (APA/MLA/Chicago switcher), Lit Review (LLM-generated cross-book synthesis)
+- 11 total tabs: Chat, Structure, Concepts, Logical Map, Patterns, Summary, Glossary, Study Guide, Argument Map, Bibliography, Lit Review
+
+### New Dependencies (`[export]`)
+- `weasyprint>=60.0` — PDF generation from HTML/CSS
+- `python-docx>=1.0.0` — Word document generation (shared with `[ocr]`)
+- `python-pptx>=0.6.21` — PowerPoint slide deck generation
 
 ---
 
-## Phase 7 — Multi-User & Collaboration
+## Phase 7 — Multi-User & Collaboration (NEXT)
 
 Transform from single-user to team tool.
 
@@ -336,7 +357,7 @@ SaaS model for hosted deployment.
 | 3 | Multi-turn chat, RAG, Flashcards | High | Medium | DONE |
 | 4 | Graph analytics, Path finder | Medium | Medium | DONE |
 | 5 | Full NotebookLM audio parity | Medium | Large | DONE |
-| 6 | PDF/DOCX/Slides export | Medium | Medium | Next |
-| 7 | Multi-user auth & collab | High | Large | Planned |
+| 6 | PDF/DOCX/Slides export | Medium | Medium | DONE |
+| 7 | Multi-user auth & collab | High | Large | Next |
 | 8 | Docker, Celery, Monitoring | High | Large | Planned |
 | 9 | SaaS monetization | Variable | Large | Optional |
