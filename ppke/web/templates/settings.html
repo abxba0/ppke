@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Settings</h1>
+
+    <!-- Current Configuration -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6 fade-in transition-colors">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Current Configuration</h2>
+        <div class="space-y-3">
+            <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Vault Path</span>
+                <span class="text-sm font-medium text-gray-900 dark:text-gray-200">{{ config.vault_path }}</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span class="text-sm text-gray-600 dark:text-gray-400">LLM Provider</span>
+                <span class="text-sm font-medium text-gray-900 dark:text-gray-200">{{ config.provider }}</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Model</span>
+                <span class="text-sm font-medium text-gray-900 dark:text-gray-200">{{ config.model }}</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Default Domain</span>
+                <span class="text-sm font-medium text-gray-900 dark:text-gray-200">{{ config.default_domain }}</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span class="text-sm text-gray-600 dark:text-gray-400">API Key</span>
+                <span class="text-sm font-medium {% if config.has_api_key %}text-green-600 dark:text-green-400{% else %}text-red-600 dark:text-red-400{% endif %}">
+                    {% if config.has_api_key %}Configured{% else %}Not set{% endif %}
+                </span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Vector Search</span>
+                <span class="text-sm font-medium text-gray-900 dark:text-gray-200">{{ 'Enabled' if config.vector_search else 'Disabled' }}</span>
+            </div>
+            <div class="flex justify-between items-center py-2">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Knowledge Graph</span>
+                <span class="text-sm font-medium text-gray-900 dark:text-gray-200">{{ 'Enabled' if config.knowledge_graph else 'Disabled' }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update Settings Form -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6 fade-in transition-colors">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Update Settings</h2>
+        <form id="settings-form" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">LLM Provider</label>
+                <select name="provider" class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                    {% for p in providers %}
+                    <option value="{{ p }}" {% if p == config.provider %}selected{% endif %}>{{ p }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Model</label>
+                <input type="text" name="model" value="{{ config.model }}"
+                       class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">API Key</label>
+                <input type="password" name="api_key" placeholder="Enter new API key (leave blank to keep current)"
+                       class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500">
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Stored securely in ~/.ppke/.env (chmod 600)</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Default Domain</label>
+                <select name="default_domain" class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                    <option value="philosophy" {% if config.default_domain == 'philosophy' %}selected{% endif %}>Philosophy</option>
+                    <option value="science" {% if config.default_domain == 'science' %}selected{% endif %}>Science</option>
+                    <option value="legal" {% if config.default_domain == 'legal' %}selected{% endif %}>Legal</option>
+                </select>
+            </div>
+            <div class="flex items-center space-x-6">
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" name="vector_search" {% if config.vector_search %}checked{% endif %}
+                           class="w-4 h-4 text-brand-600 rounded border-gray-300 dark:border-gray-600 focus:ring-brand-500">
+                    <span class="text-sm text-gray-700 dark:text-gray-300">Vector Search</span>
+                </label>
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" name="knowledge_graph" {% if config.knowledge_graph %}checked{% endif %}
+                           class="w-4 h-4 text-brand-600 rounded border-gray-300 dark:border-gray-600 focus:ring-brand-500">
+                    <span class="text-sm text-gray-700 dark:text-gray-300">Knowledge Graph</span>
+                </label>
+            </div>
+            <button type="submit" class="w-full px-6 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm">
+                Save Settings
+            </button>
+        </form>
+    </div>
+
+    <!-- System Info -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-in transition-colors">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">System Info</h2>
+        <div class="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+            <div class="flex justify-between"><span>PPKE Version</span><span class="font-mono">2.0.0</span></div>
+            <div class="flex justify-between"><span>Config File</span><span class="font-mono">~/.ppke/config.json</span></div>
+            <div class="flex justify-between"><span>Secrets File</span><span class="font-mono">~/.ppke/.env</span></div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('settings-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    try {
+        const resp = await fetch('/api/settings', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (resp.ok) {
+            showToast('Settings saved!', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast('Failed: ' + (data.detail || 'Unknown error'), 'error');
+        }
+    } catch (err) {
+        showToast('Failed to save: ' + err.message, 'error');
+    }
+});
+</script>
+{% endblock %}

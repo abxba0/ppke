@@ -3,28 +3,28 @@
 
 {% block content %}
 <div class="mb-6">
-    <a href="/" class="text-sm text-brand-600 hover:text-brand-700 font-medium">&larr; Back to Library</a>
+    <a href="/" class="text-sm text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium">&larr; Back to Library</a>
 </div>
 
 <!-- Book header -->
-<div class="bg-white rounded-xl border border-gray-200 p-6 mb-6 fade-in">
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6 fade-in transition-colors">
     <div class="flex flex-col md:flex-row justify-between items-start gap-4">
         <div>
-            <h1 class="text-2xl font-bold text-gray-900">{{ meta.title or folder }}</h1>
-            <p class="text-gray-600 mt-1">{{ meta.author or 'Unknown' }}{% if meta.year %} ({{ meta.year }}){% endif %}</p>
-            <div class="flex items-center space-x-4 mt-3 text-sm text-gray-500">
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ meta.title or folder }}</h1>
+            <p class="text-gray-600 dark:text-gray-400 mt-1">{{ meta.author or 'Unknown' }}{% if meta.year %} ({{ meta.year }}){% endif %}</p>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-sm text-gray-500 dark:text-gray-400">
                 <span>{{ meta.total_chapters or '?' }} chapters</span>
-                <span>&middot;</span>
+                <span class="hidden sm:inline">&middot;</span>
                 <span>{{ meta.total_paragraphs or '?' }} paragraphs</span>
-                <span>&middot;</span>
+                <span class="hidden sm:inline">&middot;</span>
                 <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
-                    {% if meta.verification_status == 'COMPLETE' or meta.verification_status == 'VERIFIED' %}bg-green-100 text-green-800
-                    {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                    {% if meta.verification_status == 'COMPLETE' or meta.verification_status == 'VERIFIED' %}bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300
+                    {% else %}bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300{% endif %}">
                     {{ meta.verification_status or 'UNKNOWN' }}
                 </span>
             </div>
         </div>
-        <div class="flex space-x-2">
+        <div class="flex flex-wrap gap-2">
             <button onclick="document.getElementById('audio-modal').classList.remove('hidden')"
                     class="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium shadow-sm">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -32,33 +32,37 @@
                 </svg>
                 Audio Overview
             </button>
+            <a href="/graph?book={{ folder }}" class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-medium">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                View Graph
+            </a>
         </div>
     </div>
 </div>
 
 <!-- Main content area: Tabs -->
-<div class="bg-white rounded-xl border border-gray-200 overflow-hidden fade-in">
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden fade-in transition-colors">
     <!-- Tab navigation -->
-    <div class="border-b border-gray-200">
+    <div class="border-b border-gray-200 dark:border-gray-700">
         <nav class="flex -mb-px overflow-x-auto" id="tab-nav">
             <button onclick="switchTab('chat')" data-tab="chat"
-                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-brand-600 text-brand-600 whitespace-nowrap">
+                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-brand-600 text-brand-600 dark:text-brand-400 whitespace-nowrap">
                 Chat
             </button>
             <button onclick="switchTab('structure')" data-tab="structure"
-                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap">
+                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">
                 Structure
             </button>
             <button onclick="switchTab('concepts')" data-tab="concepts"
-                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap">
+                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">
                 Concepts
             </button>
             <button onclick="switchTab('logic')" data-tab="logic"
-                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap">
+                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">
                 Logical Map
             </button>
             <button onclick="switchTab('patterns')" data-tab="patterns"
-                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap">
+                    class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">
                 Patterns
             </button>
         </nav>
@@ -67,11 +71,10 @@
     <!-- Tab: Chat -->
     <div id="tab-chat" class="tab-panel">
         <div class="flex flex-col h-[600px]">
-            <!-- Chat messages -->
             <div id="chat-messages" class="flex-1 overflow-y-auto p-6 space-y-4">
                 <div class="flex justify-start">
-                    <div class="chat-bubble bg-gray-100 rounded-2xl rounded-tl-none px-4 py-3">
-                        <p class="text-sm text-gray-800">
+                    <div class="chat-bubble bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-none px-4 py-3">
+                        <p class="text-sm text-gray-800 dark:text-gray-200">
                             Ask me anything about <strong>{{ meta.title }}</strong>.
                             I'll answer with verbatim evidence from the text.
                         </p>
@@ -79,15 +82,14 @@
                 </div>
             </div>
 
-            <!-- Chat input -->
-            <div class="border-t border-gray-200 p-4">
+            <div class="border-t border-gray-200 dark:border-gray-700 p-4">
                 <form id="chat-form" class="flex space-x-3">
                     <input type="hidden" name="book" value="{{ folder }}">
                     <input type="text" name="question" id="chat-input" placeholder="Ask a question about this book..."
-                           class="flex-1 px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                           class="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                            autocomplete="off">
                     <button type="submit" id="chat-submit"
-                            class="px-6 py-3 bg-brand-600 text-white rounded-xl hover:bg-brand-700 transition-colors text-sm font-medium">
+                            class="px-6 py-3 bg-brand-600 text-white rounded-xl hover:bg-brand-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                         Send
                     </button>
                 </form>
@@ -95,14 +97,14 @@
         </div>
     </div>
 
-    <!-- Tab: Structure (Raw Extractions) -->
+    <!-- Tab: Structure -->
     <div id="tab-structure" class="tab-panel hidden">
-        <div class="p-6 prose max-w-none text-sm leading-relaxed max-h-[600px] overflow-y-auto">
+        <div class="p-6 prose max-w-none text-sm leading-relaxed max-h-[600px] overflow-y-auto dark:text-gray-300">
             {% if files['01_Raw_Structure.md'] %}
-                {{ files['01_Raw_Structure.md'][:5000] | e }}
-                {% if files['01_Raw_Structure.md'] | length > 5000 %}
+                <pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">{{ files['01_Raw_Structure.md'][:8000] | e }}</pre>
+                {% if files['01_Raw_Structure.md'] | length > 8000 %}
                 <div class="mt-4 text-center">
-                    <span class="text-gray-400 text-xs">Showing first 5000 characters. Full file available in vault.</span>
+                    <span class="text-gray-400 text-xs">Showing first 8000 characters. Full file available in vault.</span>
                 </div>
                 {% endif %}
             {% else %}
@@ -113,14 +115,9 @@
 
     <!-- Tab: Concepts -->
     <div id="tab-concepts" class="tab-panel hidden">
-        <div class="p-6 prose max-w-none text-sm leading-relaxed max-h-[600px] overflow-y-auto">
+        <div class="p-6 prose max-w-none text-sm leading-relaxed max-h-[600px] overflow-y-auto dark:text-gray-300">
             {% if files['03_Concept_Index.md'] %}
-                <pre class="whitespace-pre-wrap text-gray-700 text-sm">{{ files['03_Concept_Index.md'][:5000] | e }}</pre>
-                {% if files['03_Concept_Index.md'] | length > 5000 %}
-                <div class="mt-4 text-center">
-                    <span class="text-gray-400 text-xs">Truncated. Full concept index available in vault.</span>
-                </div>
-                {% endif %}
+                <pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">{{ files['03_Concept_Index.md'][:8000] | e }}</pre>
             {% else %}
                 <p class="text-gray-500">No concept data available.</p>
             {% endif %}
@@ -129,9 +126,9 @@
 
     <!-- Tab: Logical Map -->
     <div id="tab-logic" class="tab-panel hidden">
-        <div class="p-6 prose max-w-none text-sm leading-relaxed max-h-[600px] overflow-y-auto">
+        <div class="p-6 prose max-w-none text-sm leading-relaxed max-h-[600px] overflow-y-auto dark:text-gray-300">
             {% if files['02_Logical_Map.md'] %}
-                <pre class="whitespace-pre-wrap text-gray-700 text-sm">{{ files['02_Logical_Map.md'][:5000] | e }}</pre>
+                <pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">{{ files['02_Logical_Map.md'][:8000] | e }}</pre>
             {% else %}
                 <p class="text-gray-500">No logical map data available.</p>
             {% endif %}
@@ -140,9 +137,9 @@
 
     <!-- Tab: Patterns -->
     <div id="tab-patterns" class="tab-panel hidden">
-        <div class="p-6 prose max-w-none text-sm leading-relaxed max-h-[600px] overflow-y-auto">
+        <div class="p-6 prose max-w-none text-sm leading-relaxed max-h-[600px] overflow-y-auto dark:text-gray-300">
             {% if files['06_Patterns.md'] %}
-                <pre class="whitespace-pre-wrap text-gray-700 text-sm">{{ files['06_Patterns.md'][:5000] | e }}</pre>
+                <pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">{{ files['06_Patterns.md'][:8000] | e }}</pre>
             {% else %}
                 <p class="text-gray-500">No pattern data available.</p>
             {% endif %}
@@ -151,25 +148,22 @@
 </div>
 
 <!-- Audio Overview Modal -->
-<div id="audio-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6">
+<div id="audio-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6">
         <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-bold text-gray-900">Audio Overview</h3>
-            <button onclick="document.getElementById('audio-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                </svg>
+            <h3 class="text-lg font-bold text-gray-900 dark:text-white">Audio Overview</h3>
+            <button onclick="document.getElementById('audio-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         </div>
-
         <div id="audio-content">
-            <p class="text-sm text-gray-600 mb-4">
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
                 Generate a podcast-style audio conversation about this book.
                 Two AI hosts will discuss the key concepts, arguments, and patterns.
             </p>
             <div class="flex items-center space-x-3 mb-4">
-                <label class="text-sm font-medium text-gray-700">TTS Engine:</label>
-                <select id="tts-provider" class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm">
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">TTS Engine:</label>
+                <select id="tts-provider" class="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
                     <option value="edge">Edge TTS (Free)</option>
                     <option value="openai">OpenAI TTS HD ($)</option>
                 </select>
@@ -179,12 +173,10 @@
                 Generate Audio Overview
             </button>
         </div>
-
         <div id="audio-progress" class="hidden text-center py-6">
             <div class="spinner mb-3"></div>
-            <p class="text-sm text-gray-600">Generating audio overview... This may take a few minutes.</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Generating audio overview... This may take a few minutes.</p>
         </div>
-
         <div id="audio-player-section" class="hidden mt-4">
             <audio id="audio-player" controls class="w-full">
                 <source src="/api/audio/{{ folder }}" type="audio/mpeg">
@@ -194,20 +186,20 @@
 </div>
 
 <script>
-// Tab switching
+// ── Tab switching ──
 function switchTab(tab) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('.tab-btn').forEach(b => {
-        b.classList.remove('border-brand-600', 'text-brand-600');
-        b.classList.add('border-transparent', 'text-gray-500');
+        b.classList.remove('border-brand-600', 'text-brand-600', 'dark:text-brand-400');
+        b.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
     });
     document.getElementById('tab-' + tab).classList.remove('hidden');
     const btn = document.querySelector('[data-tab="' + tab + '"]');
-    btn.classList.add('border-brand-600', 'text-brand-600');
-    btn.classList.remove('border-transparent', 'text-gray-500');
+    btn.classList.add('border-brand-600', 'text-brand-600', 'dark:text-brand-400');
+    btn.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
 }
 
-// Chat functionality
+// ── Chat with SSE streaming ──
 document.getElementById('chat-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     const input = document.getElementById('chat-input');
@@ -216,79 +208,122 @@ document.getElementById('chat-form').addEventListener('submit', async function(e
 
     const messages = document.getElementById('chat-messages');
 
-    // Add user message
-    messages.innerHTML += `
-        <div class="flex justify-end">
-            <div class="chat-bubble bg-brand-600 text-white rounded-2xl rounded-tr-none px-4 py-3">
-                <p class="text-sm">${question}</p>
-            </div>
-        </div>`;
+    // User bubble
+    const userDiv = document.createElement('div');
+    userDiv.className = 'flex justify-end';
+    userDiv.innerHTML = `<div class="chat-bubble bg-brand-600 text-white rounded-2xl rounded-tr-none px-4 py-3"><p class="text-sm">${escapeHtml(question)}</p></div>`;
+    messages.appendChild(userDiv);
 
-    // Add loading indicator
-    const loadingId = 'loading-' + Date.now();
-    messages.innerHTML += `
-        <div id="${loadingId}" class="flex justify-start">
-            <div class="chat-bubble bg-gray-100 rounded-2xl rounded-tl-none px-4 py-3">
-                <div class="spinner"></div>
-            </div>
-        </div>`;
+    // Assistant bubble (streaming target)
+    const assistDiv = document.createElement('div');
+    assistDiv.className = 'flex justify-start fade-in';
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-none px-4 py-3';
+    bubble.innerHTML = '<div class="spinner"></div>';
+    assistDiv.appendChild(bubble);
+    messages.appendChild(assistDiv);
     messages.scrollTop = messages.scrollHeight;
 
     input.value = '';
     document.getElementById('chat-submit').disabled = true;
 
     try {
-        const formData = new FormData();
-        formData.append('book', '{{ folder }}');
-        formData.append('question', question);
+        // Try SSE streaming first
+        const resp = await fetch('/api/query/stream?' + new URLSearchParams({
+            book: '{{ folder }}', question: question
+        }));
 
-        const resp = await fetch('/api/query', { method: 'POST', body: formData });
-        const data = await resp.json();
+        if (resp.ok && resp.headers.get('content-type')?.includes('text/event-stream')) {
+            // SSE streaming path
+            bubble.innerHTML = '<div class="chat-md text-sm text-gray-800 dark:text-gray-200"></div>';
+            const mdContainer = bubble.querySelector('.chat-md');
+            let fullText = '';
 
-        // Remove loading
-        document.getElementById(loadingId).remove();
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
 
-        // Build answer HTML
-        let answerHtml = `<p class="text-sm text-gray-800">${data.answer || 'No answer generated.'}</p>`;
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value, { stream: true });
+                // Parse SSE events
+                const lines = chunk.split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') break;
+                        try {
+                            const parsed = JSON.parse(data);
+                            if (parsed.token) {
+                                fullText += parsed.token;
+                                mdContainer.innerHTML = renderMarkdown(fullText);
+                            }
+                            if (parsed.quotes) {
+                                renderQuotes(bubble, parsed.quotes);
+                            }
+                            if (parsed.confidence) {
+                                renderConfidence(bubble, parsed.confidence);
+                            }
+                        } catch(pe) {
+                            // Non-JSON data line, treat as text token
+                            fullText += data;
+                            mdContainer.innerHTML = renderMarkdown(fullText);
+                        }
+                    }
+                }
+                messages.scrollTop = messages.scrollHeight;
+            }
+        } else {
+            // Fallback: regular JSON response
+            const data = await resp.json();
+            let html = '<div class="chat-md text-sm text-gray-800 dark:text-gray-200">' +
+                       renderMarkdown(data.answer || 'No answer generated.') + '</div>';
+            bubble.innerHTML = html;
 
-        if (data.verbatim_quotes && data.verbatim_quotes.length > 0) {
-            answerHtml += '<div class="mt-3 space-y-2">';
-            data.verbatim_quotes.forEach(q => {
-                answerHtml += `<div class="border-l-2 border-brand-400 pl-3 text-xs text-gray-600">
-                    <span class="font-medium text-brand-600">${q.paragraph_id}</span>: "${q.quote}"
-                </div>`;
-            });
-            answerHtml += '</div>';
+            if (data.verbatim_quotes && data.verbatim_quotes.length > 0) {
+                renderQuotes(bubble, data.verbatim_quotes);
+            }
+            if (data.confidence) {
+                renderConfidence(bubble, data.confidence);
+            }
         }
-
-        if (data.confidence) {
-            const confColor = { high: 'text-green-600', medium: 'text-yellow-600', low: 'text-red-600' };
-            answerHtml += `<div class="mt-2 text-xs ${confColor[data.confidence] || 'text-gray-500'}">Confidence: ${data.confidence}</div>`;
-        }
-
-        messages.innerHTML += `
-            <div class="flex justify-start fade-in">
-                <div class="chat-bubble bg-gray-100 rounded-2xl rounded-tl-none px-4 py-3">
-                    ${answerHtml}
-                </div>
-            </div>`;
     } catch (err) {
-        document.getElementById(loadingId).remove();
-        messages.innerHTML += `
-            <div class="flex justify-start">
-                <div class="chat-bubble bg-red-50 rounded-2xl rounded-tl-none px-4 py-3">
-                    <p class="text-sm text-red-600">Error: ${err.message}</p>
-                </div>
-            </div>`;
+        bubble.innerHTML = `<p class="text-sm text-red-600 dark:text-red-400">Error: ${escapeHtml(err.message)}</p>`;
+        showToast('Query failed: ' + err.message, 'error');
     }
 
     document.getElementById('chat-submit').disabled = false;
     messages.scrollTop = messages.scrollHeight;
 });
 
-// Audio generation
+function renderQuotes(container, quotes) {
+    const quotesDiv = document.createElement('div');
+    quotesDiv.className = 'mt-3 space-y-2';
+    quotes.forEach(q => {
+        quotesDiv.innerHTML += `<div class="border-l-2 border-brand-400 pl-3 text-xs text-gray-600 dark:text-gray-400">
+            <span class="font-medium text-brand-600 dark:text-brand-400">${escapeHtml(q.paragraph_id || '?')}</span>: "${escapeHtml(q.quote || '')}"
+        </div>`;
+    });
+    container.appendChild(quotesDiv);
+}
+
+function renderConfidence(container, confidence) {
+    const colors = { high: 'text-green-600 dark:text-green-400', medium: 'text-yellow-600 dark:text-yellow-400', low: 'text-red-600 dark:text-red-400' };
+    const confDiv = document.createElement('div');
+    confDiv.className = `mt-2 text-xs ${colors[confidence] || 'text-gray-500'}`;
+    confDiv.textContent = `Confidence: ${confidence}`;
+    container.appendChild(confDiv);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ── Audio generation ──
 async function generateAudio() {
-    document.getElementById('audio-content').querySelector('button').disabled = true;
+    document.getElementById('audio-generate-btn').disabled = true;
     document.getElementById('audio-progress').classList.remove('hidden');
 
     const ttsProvider = document.getElementById('tts-provider').value;
@@ -299,19 +334,18 @@ async function generateAudio() {
     try {
         const resp = await fetch('/api/audio-overview', { method: 'POST', body: formData });
         const data = await resp.json();
-
         document.getElementById('audio-progress').classList.add('hidden');
 
         if (data.status === 'completed') {
-            const playerSection = document.getElementById('audio-player-section');
-            playerSection.classList.remove('hidden');
+            document.getElementById('audio-player-section').classList.remove('hidden');
             document.getElementById('audio-player').load();
+            showToast('Audio overview generated!', 'success');
         } else {
-            alert('Audio generation failed: ' + (data.detail || 'Unknown error'));
+            showToast('Audio generation failed: ' + (data.detail || 'Unknown error'), 'error');
         }
     } catch (err) {
         document.getElementById('audio-progress').classList.add('hidden');
-        alert('Audio generation failed: ' + err.message);
+        showToast('Audio generation failed: ' + err.message, 'error');
     }
 }
 </script>

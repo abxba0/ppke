@@ -4,66 +4,65 @@
 {% block content %}
 <div class="max-w-2xl mx-auto">
     <div class="mb-6">
-        <a href="/" class="text-sm text-brand-600 hover:text-brand-700 font-medium">&larr; Back to Library</a>
+        <a href="/" class="text-sm text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium">&larr; Back to Library</a>
     </div>
 
-    <div class="bg-white rounded-xl border border-gray-200 p-8 fade-in">
-        <h1 class="text-2xl font-bold text-gray-900 mb-2">Upload Document</h1>
-        <p class="text-sm text-gray-500 mb-6">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 sm:p-8 fade-in transition-colors">
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Upload Document</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
             Upload any supported document to ingest into your knowledge base.
-            The file will be converted and analyzed automatically.
         </p>
 
         <form id="upload-form" enctype="multipart/form-data">
             <!-- File drop zone -->
             <div id="drop-zone"
-                 class="border-2 border-dashed border-gray-300 rounded-xl p-10 text-center cursor-pointer hover:border-brand-400 hover:bg-brand-50 transition-colors mb-6"
+                 class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-8 sm:p-10 text-center cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/10 transition-colors mb-6"
                  onclick="document.getElementById('file-input').click()">
-                <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
                           d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                 </svg>
-                <p class="text-sm text-gray-600 font-medium">Drop your file here or click to browse</p>
-                <p class="text-xs text-gray-400 mt-2" id="file-name">No file selected</p>
+                <p class="text-sm text-gray-600 dark:text-gray-400 font-medium">Drop your file here or click to browse</p>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-2" id="file-name">No file selected</p>
                 <input type="file" id="file-input" name="file" class="hidden"
                        accept=".md,.txt,.pdf,.docx,.epub,.html,.htm,.jpg,.jpeg,.png,.tiff,.tif,.bmp,.webp,.pptx,.mp3,.mp4,.m4a,.wav,.webm,.ogg">
             </div>
 
-            <!-- Supported formats info -->
-            <div class="bg-gray-50 rounded-lg p-4 mb-6">
-                <p class="text-xs font-medium text-gray-500 mb-2">SUPPORTED FORMATS</p>
+            <!-- Supported formats -->
+            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-6">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">SUPPORTED FORMATS</p>
                 <div class="flex flex-wrap gap-1.5">
                     {% for fmt in supported_formats %}
-                    <span class="inline-flex px-2 py-0.5 bg-white border border-gray-200 rounded text-xs text-gray-600">{{ fmt }}</span>
+                    <span class="inline-flex px-2 py-0.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-xs text-gray-600 dark:text-gray-300">{{ fmt }}</span>
                     {% endfor %}
                 </div>
             </div>
 
-            <!-- Metadata fields -->
+            <!-- Metadata -->
             <div class="space-y-4 mb-6">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
                     <input type="text" name="title" required
-                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                           class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                            placeholder="e.g. Being and Time">
                 </div>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Author *</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Author *</label>
                         <input type="text" name="author" required
-                               class="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                                placeholder="e.g. Martin Heidegger">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Year</label>
                         <input type="text" name="year"
-                               class="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                                placeholder="e.g. 1927">
                     </div>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Domain Template</label>
-                    <select name="domain" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Domain Template</label>
+                    <select name="domain" class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent">
                         <option value="philosophy">Philosophy — Argument mapping, concept tracking</option>
                         <option value="science">Science — Methodology, evidence, findings</option>
                         <option value="legal">Legal — Case law, statutory interpretation</option>
@@ -71,33 +70,32 @@
                 </div>
             </div>
 
-            <!-- Submit -->
             <button type="submit" id="upload-btn"
-                    class="w-full px-6 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm shadow-sm">
+                    class="w-full px-6 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm shadow-sm disabled:opacity-50">
                 Upload &amp; Ingest
             </button>
         </form>
 
-        <!-- Progress section -->
+        <!-- Progress -->
         <div id="progress-section" class="hidden mt-6">
             <div class="flex items-center space-x-3 mb-3">
                 <div class="spinner"></div>
-                <span class="text-sm font-medium text-gray-700" id="progress-stage">Starting...</span>
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300" id="progress-stage">Starting...</span>
             </div>
-            <div class="w-full bg-gray-200 rounded-full h-2">
+            <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                 <div id="progress-bar" class="bg-brand-600 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
             </div>
         </div>
 
-        <!-- Success section -->
-        <div id="success-section" class="hidden mt-6 bg-green-50 border border-green-200 rounded-lg p-4">
+        <!-- Success -->
+        <div id="success-section" class="hidden mt-6 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg p-4">
             <div class="flex items-center space-x-2">
-                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                 </svg>
-                <span class="text-sm font-medium text-green-800">Ingestion complete!</span>
+                <span class="text-sm font-medium text-green-800 dark:text-green-300">Ingestion complete!</span>
             </div>
-            <a id="success-link" href="#" class="mt-2 inline-block text-sm text-green-700 hover:text-green-900 font-medium">
+            <a id="success-link" href="#" class="mt-2 inline-block text-sm text-green-700 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300 font-medium">
                 Open Notebook &rarr;
             </a>
         </div>
@@ -105,29 +103,16 @@
 </div>
 
 <script>
-// Drag and drop
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 
-['dragenter', 'dragover'].forEach(event => {
-    dropZone.addEventListener(event, e => {
-        e.preventDefault();
-        dropZone.classList.add('border-brand-500', 'bg-brand-50');
-    });
+['dragenter', 'dragover'].forEach(ev => {
+    dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('border-brand-500', 'bg-brand-50', 'dark:bg-brand-900/10'); });
 });
-
-['dragleave', 'drop'].forEach(event => {
-    dropZone.addEventListener(event, e => {
-        e.preventDefault();
-        dropZone.classList.remove('border-brand-500', 'bg-brand-50');
-    });
+['dragleave', 'drop'].forEach(ev => {
+    dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('border-brand-500', 'bg-brand-50', 'dark:bg-brand-900/10'); });
 });
-
-dropZone.addEventListener('drop', e => {
-    fileInput.files = e.dataTransfer.files;
-    updateFileName();
-});
-
+dropZone.addEventListener('drop', e => { fileInput.files = e.dataTransfer.files; updateFileName(); });
 fileInput.addEventListener('change', updateFileName);
 
 function updateFileName() {
@@ -135,16 +120,11 @@ function updateFileName() {
     document.getElementById('file-name').textContent = name;
 }
 
-// Upload form
 document.getElementById('upload-form').addEventListener('submit', async function(e) {
     e.preventDefault();
+    if (!fileInput.files[0]) { showToast('Please select a file.', 'warning'); return; }
+
     const formData = new FormData(this);
-
-    if (!fileInput.files[0]) {
-        alert('Please select a file.');
-        return;
-    }
-
     document.getElementById('upload-btn').disabled = true;
     document.getElementById('upload-btn').textContent = 'Uploading...';
     document.getElementById('progress-section').classList.remove('hidden');
@@ -152,14 +132,14 @@ document.getElementById('upload-form').addEventListener('submit', async function
     try {
         const resp = await fetch('/api/upload', { method: 'POST', body: formData });
         const data = await resp.json();
-
-        if (data.job_id) {
+        if (resp.ok && data.job_id) {
+            showToast('Upload started — ingesting...', 'info');
             pollJob(data.job_id);
         } else {
             throw new Error(data.detail || 'Upload failed');
         }
     } catch (err) {
-        alert('Upload failed: ' + err.message);
+        showToast('Upload failed: ' + err.message, 'error');
         document.getElementById('upload-btn').disabled = false;
         document.getElementById('upload-btn').textContent = 'Upload & Ingest';
         document.getElementById('progress-section').classList.add('hidden');
@@ -171,7 +151,6 @@ async function pollJob(jobId) {
         try {
             const resp = await fetch(`/api/jobs/${jobId}`);
             const data = await resp.json();
-
             document.getElementById('progress-stage').textContent = data.stage || 'Processing...';
             document.getElementById('progress-bar').style.width = (data.progress || 0) + '%';
 
@@ -182,15 +161,15 @@ async function pollJob(jobId) {
                 if (data.book_folder) {
                     document.getElementById('success-link').href = '/notebook/' + data.book_folder;
                 }
+                showToast('Ingestion complete!', 'success');
             } else if (data.status === 'failed') {
                 clearInterval(interval);
                 document.getElementById('progress-stage').textContent = 'Failed: ' + (data.error || 'Unknown');
                 document.getElementById('upload-btn').disabled = false;
                 document.getElementById('upload-btn').textContent = 'Upload & Ingest';
+                showToast('Ingestion failed: ' + (data.error || 'Unknown'), 'error');
             }
-        } catch (err) {
-            // Ignore transient poll errors
-        }
+        } catch (err) { /* ignore transient poll errors */ }
     }, 2000);
 }
 </script>
