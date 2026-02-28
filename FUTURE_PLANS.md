@@ -288,30 +288,53 @@ Transform from single-user to team tool with full multi-tenant support.
 
 ---
 
-## Phase 8 — Deployment & Infrastructure (NEXT)
+## Phase 8 — Deployment & Infrastructure (DONE)
 
 Production-grade deployment and monitoring.
 
 ### 8.1 Containerization
-- [ ] **Dockerfile** — Multi-stage build: Python base + optional Tesseract/ffmpeg
-- [ ] **Docker Compose** — App + optional PostgreSQL + Redis + ChromaDB
-- [ ] **Health checks** — `/api/health` endpoint (done), Docker HEALTHCHECK
+- [x] **Dockerfile** — Multi-stage build: Python 3.11 base + Tesseract/ffmpeg + all dependencies; non-root user; health check
+- [x] **Docker Compose** — App + Redis + optional PostgreSQL + ChromaDB + Celery worker; `full` profile for all services; named volumes; health checks on all containers
+- [x] **Health checks** — `/api/health` expanded with dependency checks (database, Redis, vector store, LLM provider); Docker HEALTHCHECK directive
 
 ### 8.2 Production Hardening
-- [ ] **Task queue** — Replace `threading.Thread` with Celery/RQ for background jobs
-- [ ] **Database** — SQLite for single-user, PostgreSQL for multi-user
-- [ ] **Object storage** — S3/GCS for uploaded files and generated audio
-- [ ] **Caching** — Redis for API response caching and rate limiting
+- [x] **Task queue** — `ppke/infra/tasks.py`: Celery with Redis broker; transparent fallback to daemon threads; `create_job()`/`run_task()`/`update_job()`/`get_job()` API; all 4 thread spawning sites migrated
+- [x] **Database** — `ppke/auth/database.py`: auto-detects PostgreSQL from `DATABASE_URL`; `DBConnection` wrapper; psycopg2 connection pooling; `?`-to-`%s` translation
+- [x] **Object storage** — `ppke/infra/storage.py`: `LocalStorage` (default), `S3Storage` (boto3), `GCSStorage` (google-cloud-storage); unified interface
+- [x] **Caching** — `ppke/infra/cache.py`: `RedisCache` with `MemoryCache` LRU fallback; TTL support; rate limiting; applied to expensive endpoints
 
 ### 8.3 Monitoring
-- [ ] **Structured logging** — JSON logs with request IDs
-- [ ] **Metrics** — Prometheus `/metrics` endpoint (request latency, ingestion duration)
-- [ ] **Error tracking** — Sentry integration
-- [ ] **Cost dashboard** — Per-book LLM token usage tracking
+- [x] **Structured logging** — `ppke/infra/logging_config.py`: `JSONFormatter` + `DetailedTextFormatter`; request ID context; `RequestLoggingMiddleware`
+- [x] **Metrics** — `ppke/infra/metrics.py`: Prometheus `/metrics` endpoint; `MetricsMiddleware`; request latency, ingestion duration, LLM tokens/cost, cache stats
+- [x] **Error tracking** — `ppke/infra/sentry_integration.py`: `sentry-sdk` with FastAPI + Celery integrations; `capture_exception()` on all error paths
+- [x] **Cost dashboard** — `/cost-dashboard` page with per-book, per-provider, per-action, daily breakdowns; `/api/cost-dashboard` API
 
-### Implementation notes
-- Celery: `celery_app = Celery(broker='redis://...')`, wrap `_run_ingest` as task
-- SQLite: Use `sqlmodel` for ORM, migrate meta.yml to database tables
+### New Module: `ppke/infra/`
+- `tasks.py` — Celery task queue with threading fallback; Redis-backed job store
+- `cache.py` — Redis cache with in-memory LRU fallback; rate limiting
+- `logging_config.py` — Structured JSON logging with request IDs
+- `metrics.py` — Prometheus metrics collection and `/metrics` endpoint
+- `sentry_integration.py` — Sentry error tracking integration
+- `storage.py` — S3/GCS object storage with local filesystem fallback
+
+### New Files
+- `Dockerfile` — Multi-stage build (builder + runtime)
+- `docker-compose.yml` — Full stack orchestration
+- `.env.example` — Environment configuration template
+- `.dockerignore` — Build context optimization
+- `ppke/web/templates/cost_dashboard.html` — Cost dashboard UI
+
+### New Endpoints (3)
+`GET /metrics` · `GET /cost-dashboard` · `GET /api/cost-dashboard`
+
+### New Dependencies (`[infra]`)
+- `celery[redis]>=5.3.0` — Distributed task queue
+- `redis>=5.0.0` — Caching + broker
+- `psycopg2-binary>=2.9.0` — PostgreSQL driver
+- `prometheus-client>=0.20.0` — Metrics
+- `sentry-sdk[fastapi]>=1.40.0` — Error tracking
+- `boto3>=1.34.0` — S3 storage
+- `google-cloud-storage>=2.14.0` — GCS storage
 
 ---
 
@@ -385,6 +408,6 @@ SaaS model for hosted deployment.
 | 4 | Graph analytics, Path finder | Medium | Medium | DONE |
 | 5 | Full NotebookLM audio parity | Medium | Large | DONE |
 | 6 | PDF/DOCX/Slides export | Medium | Medium | DONE |
-| 7 | Multi-user auth & collab | High | Large | Next |
-| 8 | Docker, Celery, Monitoring | High | Large | Planned |
+| 7 | Multi-user auth & collab | High | Large | DONE |
+| 8 | Docker, Celery, Monitoring | High | Large | DONE |
 | 9 | SaaS monetization | Variable | Large | Optional |

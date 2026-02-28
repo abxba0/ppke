@@ -11,6 +11,10 @@ Phase 7 complete: JWT auth, OAuth (Google/GitHub), multi-tenant workspaces,
 per-user vault isolation, collaboration (shared notebooks, annotations,
 activity feed), access control (roles, API keys, usage quotas).
 
+Phase 8 complete: Docker, Celery task queue, PostgreSQL, Redis caching,
+S3/GCS storage, structured logging, Prometheus metrics, Sentry error
+tracking, cost dashboard.
+
 Run with:
     ppke serve
     uvicorn ppke.web.app:app --reload
@@ -21,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -29,7 +34,7 @@ from typing import Any
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile, Depends
 from typing import List as TypingList
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -37,6 +42,19 @@ from ppke.config import Config, SUPPORTED_PROVIDERS, PROVIDER_ENV_VARS
 from ppke.auth.deps import get_current_user, get_optional_user, get_user_vault_path, require_role, _get_db
 from ppke.auth.jwt_auth import hash_password, verify_password, create_token, decode_token
 from ppke.auth import database as auth_db
+
+# ── Infrastructure initialization (Phase 8) ──
+from ppke.infra.logging_config import configure_logging, RequestLoggingMiddleware
+from ppke.infra.metrics import MetricsMiddleware, generate_metrics, record_ingestion
+from ppke.infra.sentry_integration import init_sentry, capture_exception, set_user as sentry_set_user
+from ppke.infra.tasks import create_job, run_task, set_job, get_job, update_job
+from ppke.infra.cache import get_cache, check_rate_limit, cache_key, get_default_ttl
+
+# Configure structured logging before anything else
+configure_logging()
+
+# Initialize Sentry error tracking
+init_sentry()
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +64,16 @@ app = FastAPI(
     description="Web interface for structured knowledge extraction from documents.",
 )
 
+# ── Middleware stack (Phase 8) ──
+# Order matters: outermost middleware runs first
+app.add_middleware(MetricsMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
+
 # ── Static files & templates ──
 
 _WEB_DIR = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=_WEB_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=_WEB_DIR / "templates")
-
-# ── In-memory job tracker ──
-
-_jobs: dict[str, dict[str, Any]] = {}
 
 
 # ── Error handling middleware ──
@@ -77,6 +96,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def general_exception_handler(request: Request, exc: Exception):
     """Catch-all error handler for unhandled exceptions."""
     logger.exception("Unhandled error: %s", exc)
+    capture_exception(exc, path=str(request.url), method=request.method)
     return JSONResponse(
         status_code=500,
         content={"detail": f"Internal server error: {type(exc).__name__}"},
@@ -838,19 +858,8 @@ async def api_upload(
         # Per-file title: use provided title for single uploads; append filename for batch
         file_title = title if len(files) == 1 else f"{title} — {temp_path.stem}"
 
-        job_id = str(uuid.uuid4())[:8]
-        _jobs[job_id] = {
-            "status": "running",
-            "stage": "Starting ingestion...",
-            "progress": 0,
-            "book_folder": None,
-            "error": None,
-            "started": datetime.now().isoformat(),
-            "filename": safe_filename,
-        }
+        job_id = create_job(extra={"filename": safe_filename})
         job_ids.append(job_id)
-
-        import threading
 
         def _run_ingest(
             jid=job_id,
@@ -858,6 +867,7 @@ async def api_upload(
             mp=md_path,
             ftitle=file_title,
         ):
+            _start = time.time()
             try:
                 from ppke.parser.markdown import parse_markdown_book
                 from ppke.pipeline.orchestrator import ingest_book
@@ -866,8 +876,7 @@ async def api_upload(
                 from ppke.graph.knowledge_graph import KnowledgeGraph
 
                 book = parse_markdown_book(mp, ftitle, author, year or None)
-                _jobs[jid]["stage"] = f"Parsed: {len(book.chapters)} chapters"
-                _jobs[jid]["progress"] = 10
+                update_job(jid, stage=f"Parsed: {len(book.chapters)} chapters", progress=10)
 
                 tracker = ProgressTracker()
                 vector_store = VectorStore(vault) if config.enable_vector_search else None
@@ -877,7 +886,7 @@ async def api_upload(
                 config.vault_path = vault
 
                 def progress_cb(stage: str, detail: str):
-                    _jobs[jid]["stage"] = f"[{stage}] {detail}"
+                    update_job(jid, stage=f"[{stage}] {detail}")
 
                 book_dir = ingest_book(
                     book, config,
@@ -888,21 +897,21 @@ async def api_upload(
                     knowledge_graph=knowledge_graph,
                 )
 
-                _jobs[jid]["status"] = "completed"
-                _jobs[jid]["progress"] = 100
-                _jobs[jid]["book_folder"] = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
-                _jobs[jid]["stage"] = "Ingestion complete!"
+                folder_name = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
+                update_job(jid, status="completed", progress=100,
+                           book_folder=folder_name, stage="Ingestion complete!")
+                record_ingestion("file_upload", "completed", time.time() - _start)
 
             except Exception as e:
                 logger.exception("Ingestion failed for job %s", jid)
-                _jobs[jid]["status"] = "failed"
-                _jobs[jid]["error"] = str(e)
-                _jobs[jid]["stage"] = f"Failed: {e}"
+                update_job(jid, status="failed", error=str(e), stage=f"Failed: {e}")
+                capture_exception(e, job_id=jid)
+                record_ingestion("file_upload", "failed", time.time() - _start)
             finally:
                 tp.unlink(missing_ok=True)
                 mp.unlink(missing_ok=True)
 
-        threading.Thread(target=_run_ingest, daemon=True).start()
+        run_task(_run_ingest, job_id=job_id)
 
     # Backwards-compatible: single file → return {job_id, status}
     # Multiple files → return {jobs: [...], status}
@@ -945,25 +954,14 @@ async def api_import_url(
     upload_dir = vault / ".uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    job_id = str(uuid.uuid4())[:8]
-    _jobs[job_id] = {
-        "status": "running",
-        "stage": "Fetching URL...",
-        "progress": 0,
-        "book_folder": None,
-        "error": None,
-        "started": datetime.now().isoformat(),
-        "url": url,
-        "source_type": "youtube" if is_yt else "web",
-    }
-
-    import threading
+    source_type = "youtube" if is_yt else "web"
+    job_id = create_job(extra={"url": url, "source_type": source_type})
 
     def _run_url_ingest():
+        _start = time.time()
         md_path: Path | None = None
         try:
-            _jobs[job_id]["stage"] = "Downloading content..."
-            _jobs[job_id]["progress"] = 5
+            update_job(job_id, stage="Downloading content...", progress=5)
 
             if is_yt:
                 from ppke.converter.youtube import convert_youtube
@@ -972,8 +970,7 @@ async def api_import_url(
                 from ppke.converter.url import convert_url
                 markdown_text = convert_url(url)
 
-            _jobs[job_id]["stage"] = "Content extracted — starting ingestion..."
-            _jobs[job_id]["progress"] = 20
+            update_job(job_id, stage="Content extracted — starting ingestion...", progress=20)
 
             # Derive title from Markdown h1 if not provided
             ingest_title = title.strip()
@@ -1000,8 +997,7 @@ async def api_import_url(
             from ppke.graph.knowledge_graph import KnowledgeGraph
 
             book = parse_markdown_book(md_path, ingest_title, ingest_author, year or None)
-            _jobs[job_id]["stage"] = f"Parsed: {len(book.chapters)} chapters"
-            _jobs[job_id]["progress"] = 30
+            update_job(job_id, stage=f"Parsed: {len(book.chapters)} chapters", progress=30)
 
             tracker = ProgressTracker()
             vector_store = VectorStore(vault) if config.enable_vector_search else None
@@ -1011,7 +1007,7 @@ async def api_import_url(
             config.vault_path = vault
 
             def progress_cb(stage: str, detail: str):
-                _jobs[job_id]["stage"] = f"[{stage}] {detail}"
+                update_job(job_id, stage=f"[{stage}] {detail}")
 
             book_dir = ingest_book(
                 book, config,
@@ -1022,28 +1018,28 @@ async def api_import_url(
                 knowledge_graph=knowledge_graph,
             )
 
-            _jobs[job_id]["status"] = "completed"
-            _jobs[job_id]["progress"] = 100
-            _jobs[job_id]["book_folder"] = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
-            _jobs[job_id]["stage"] = "Ingestion complete!"
+            folder_name = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
+            update_job(job_id, status="completed", progress=100,
+                       book_folder=folder_name, stage="Ingestion complete!")
+            record_ingestion(source_type, "completed", time.time() - _start)
 
         except Exception as e:
             logger.exception("URL ingestion failed for job %s (url=%s)", job_id, url)
-            _jobs[job_id]["status"] = "failed"
-            _jobs[job_id]["error"] = str(e)
-            _jobs[job_id]["stage"] = f"Failed: {e}"
+            update_job(job_id, status="failed", error=str(e), stage=f"Failed: {e}")
+            capture_exception(e, job_id=job_id, url=url)
+            record_ingestion(source_type, "failed", time.time() - _start)
         finally:
             if md_path is not None:
                 md_path.unlink(missing_ok=True)
 
-    threading.Thread(target=_run_url_ingest, daemon=True).start()
+    run_task(_run_url_ingest, job_id=job_id)
 
-    return {"job_id": job_id, "status": "running", "source_type": "youtube" if is_yt else "web"}
+    return {"job_id": job_id, "status": "running", "source_type": source_type}
 
 
 @app.get("/api/jobs/{job_id}")
 async def api_job_status(job_id: str):
-    job = _jobs.get(job_id)
+    job = get_job(job_id)
     if not job:
         raise HTTPException(404, f"Job not found: {job_id}")
     return job
@@ -1052,6 +1048,20 @@ async def api_job_status(job_id: str):
 @app.get("/api/stats")
 async def api_stats(request: Request):
     user = await _try_get_user(request)
+    user_id = user["id"] if user else "anon"
+
+    # Check cache first
+    cache = get_cache()
+    ck = cache_key("stats", user_id)
+    cached = cache.get(ck)
+    if cached:
+        from ppke.infra.metrics import record_cache_hit
+        record_cache_hit()
+        return cached
+
+    from ppke.infra.metrics import record_cache_miss
+    record_cache_miss()
+
     books = _book_dirs(user)
     total_chapters = 0
     total_paragraphs = 0
@@ -1065,13 +1075,15 @@ async def api_stats(request: Request):
         for ext in extractions:
             total_concepts += len(ext.get("defined_concepts", []))
 
-    return {
+    result = {
         "total_books": len(books),
         "total_chapters": total_chapters,
         "total_paragraphs": total_paragraphs,
         "total_concepts": total_concepts,
         "vault_path": str(_user_vault_path(user)),
     }
+    cache.set(ck, result, ttl=60)
+    return result
 
 
 @app.get("/api/graph")
@@ -1327,18 +1339,14 @@ def _start_rss_episode_job(
     episode: dict, podcast_title: str, podcast_author: str, domain: str
 ) -> str:
     """Start a background ingestion job for one podcast episode."""
-    import threading
-    import uuid
-
-    job_id = str(uuid.uuid4())[:8]
-    _jobs[job_id] = {"status": "running", "progress": 0, "stage": "Downloading episode…"}
+    job_id = create_job(extra={"stage": "Downloading episode..."})
 
     def _worker():
+        _start = time.time()
         try:
             from ppke.audio.rss import download_and_transcribe
 
-            _jobs[job_id]["stage"] = f"Downloading: {episode['title'][:40]}…"
-            _jobs[job_id]["progress"] = 10
+            update_job(job_id, stage=f"Downloading: {episode['title'][:40]}...", progress=10)
 
             markdown = download_and_transcribe(
                 episode["url"],
@@ -1347,12 +1355,10 @@ def _start_rss_episode_job(
                 podcast_author=podcast_author,
             )
 
-            _jobs[job_id]["stage"] = "Transcription complete — starting ingestion…"
-            _jobs[job_id]["progress"] = 50
+            update_job(job_id, stage="Transcription complete — starting ingestion...", progress=50)
 
             # Create book from markdown
             from ppke.parser.markdown_parser import parse_markdown
-            from ppke.config import PPKEConfig
 
             config = _get_config()
             book = parse_markdown(markdown)
@@ -1365,25 +1371,19 @@ def _start_rss_episode_job(
             folder = ingest_book(
                 book, config,
                 progress_callback=lambda p, s: (
-                    _jobs[job_id].update({"progress": 50 + int(p * 0.5), "stage": s})
+                    update_job(job_id, progress=50 + int(p * 0.5), stage=s)
                 ),
             )
 
-            _jobs[job_id].update({
-                "status": "completed",
-                "progress": 100,
-                "stage": "Done",
-                "book_folder": folder,
-            })
+            update_job(job_id, status="completed", progress=100, stage="Done", book_folder=folder)
+            record_ingestion("rss_episode", "completed", time.time() - _start)
         except Exception as exc:
             logger.exception("RSS episode ingestion failed: %s", exc)
-            _jobs[job_id].update({
-                "status": "failed",
-                "stage": str(exc),
-                "error": str(exc),
-            })
+            update_job(job_id, status="failed", stage=str(exc), error=str(exc))
+            capture_exception(exc, job_id=job_id)
+            record_ingestion("rss_episode", "failed", time.time() - _start)
 
-    threading.Thread(target=_worker, daemon=True).start()
+    run_task(_worker, job_id=job_id)
     return job_id
 
 
@@ -1396,8 +1396,6 @@ async def api_upload_recording(
 ):
     """Accept a browser audio recording (WebM/MP3 blob), transcribe, and ingest."""
     import tempfile
-    import threading
-    import uuid
 
     # Save uploaded blob to temp file
     suffix = ".webm" if "webm" in (recording.content_type or "") else ".mp3"
@@ -1406,18 +1404,17 @@ async def api_upload_recording(
         tmp.write(content)
         tmp_path = Path(tmp.name)
 
-    job_id = str(uuid.uuid4())[:8]
-    _jobs[job_id] = {"status": "running", "progress": 0, "stage": "Transcribing recording…"}
+    job_id = create_job(extra={"stage": "Transcribing recording..."})
 
     def _worker():
+        _start = time.time()
         try:
             from ppke.audio.transcriber import transcribe
 
-            _jobs[job_id]["progress"] = 10
+            update_job(job_id, progress=10)
             markdown = transcribe(tmp_path)
 
-            _jobs[job_id]["stage"] = "Transcription complete — starting ingestion…"
-            _jobs[job_id]["progress"] = 50
+            update_job(job_id, stage="Transcription complete — starting ingestion...", progress=50)
 
             # Clean up temp file
             try:
@@ -1437,29 +1434,23 @@ async def api_upload_recording(
             folder = ingest_book(
                 book, config,
                 progress_callback=lambda p, s: (
-                    _jobs[job_id].update({"progress": 50 + int(p * 0.5), "stage": s})
+                    update_job(job_id, progress=50 + int(p * 0.5), stage=s)
                 ),
             )
 
-            _jobs[job_id].update({
-                "status": "completed",
-                "progress": 100,
-                "stage": "Done",
-                "book_folder": folder,
-            })
+            update_job(job_id, status="completed", progress=100, stage="Done", book_folder=folder)
+            record_ingestion("recording", "completed", time.time() - _start)
         except Exception as exc:
             logger.exception("Recording ingestion failed: %s", exc)
-            _jobs[job_id].update({
-                "status": "failed",
-                "stage": str(exc),
-                "error": str(exc),
-            })
+            update_job(job_id, status="failed", stage=str(exc), error=str(exc))
+            capture_exception(exc, job_id=job_id)
+            record_ingestion("recording", "failed", time.time() - _start)
             try:
                 tmp_path.unlink()
             except OSError:
                 pass
 
-    threading.Thread(target=_worker, daemon=True).start()
+    run_task(_worker, job_id=job_id)
     return {"job_id": job_id, "status": "running"}
 
 
@@ -2118,8 +2109,100 @@ async def api_argument_map(request: Request, folder: str):
 
 @app.get("/api/health")
 async def api_health():
-    """Health check endpoint."""
-    return {"status": "ok", "version": "3.0.0"}
+    """Health check endpoint with dependency status."""
+    import os
+    checks: dict[str, str] = {}
+
+    # Database check
+    try:
+        conn = _get_db()
+        conn.execute("SELECT 1").fetchone()
+        checks["database"] = "ok"
+    except Exception as exc:
+        checks["database"] = f"error: {exc}"
+
+    # Redis check
+    redis_url = os.environ.get("REDIS_URL", "")
+    if redis_url:
+        try:
+            from ppke.infra.cache import get_cache
+            cache = get_cache()
+            if hasattr(cache, "client"):
+                cache.client.ping()
+                checks["redis"] = "ok"
+            else:
+                checks["redis"] = "memory_fallback"
+        except Exception as exc:
+            checks["redis"] = f"error: {exc}"
+    else:
+        checks["redis"] = "not_configured"
+
+    # Vector store check
+    try:
+        from ppke.vectordb.store import VectorStore
+        checks["vector_store"] = "available"
+    except ImportError:
+        checks["vector_store"] = "not_installed"
+
+    # LLM provider check
+    config = _get_config()
+    checks["llm_provider"] = config.llm.provider
+    checks["llm_api_key"] = "configured" if config.llm.active_api_key else "not_set"
+
+    overall = "ok" if checks.get("database") == "ok" else "degraded"
+
+    return {
+        "status": overall,
+        "version": "3.0.0",
+        "checks": checks,
+        "database_backend": os.environ.get("DATABASE_URL", "sqlite").split("://")[0] if "://" in os.environ.get("DATABASE_URL", "") else "sqlite",
+    }
+
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus metrics endpoint."""
+    return PlainTextResponse(generate_metrics(), media_type="text/plain; version=0.0.4; charset=utf-8")
+
+
+# ── Cost Dashboard (Phase 8) ──
+
+
+@app.get("/cost-dashboard", response_class=HTMLResponse)
+async def page_cost_dashboard(request: Request):
+    """Cost dashboard page for per-book LLM token usage tracking."""
+    user = await _try_get_user(request)
+    return templates.TemplateResponse("cost_dashboard.html", {
+        "request": request,
+        "user": user,
+    })
+
+
+@app.get("/api/cost-dashboard")
+async def api_cost_dashboard(
+    request: Request,
+    days: int = Query(30, ge=1, le=365),
+):
+    """Return cost dashboard data: per-book, per-provider, per-action, daily."""
+    user = await _try_get_user(request)
+    if not user:
+        raise HTTPException(401, "Authentication required")
+
+    conn = _get_db()
+    summary = auth_db.get_user_usage(conn, user["id"], days=days)
+    by_book = auth_db.get_cost_by_book(conn, user["id"], days=days)
+    by_provider = auth_db.get_cost_by_provider(conn, user["id"], days=days)
+    by_action = auth_db.get_cost_by_action(conn, user["id"], days=days)
+    daily = auth_db.get_cost_daily(conn, user["id"], days=days)
+
+    return {
+        "summary": summary,
+        "by_book": by_book,
+        "by_provider": by_provider,
+        "by_action": by_action,
+        "daily": daily,
+        "period_days": days,
+    }
 
 
 # ── Workspace & Collaboration endpoints (Phase 7) ──

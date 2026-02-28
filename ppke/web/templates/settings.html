@@ -141,7 +141,7 @@
     {% endif %}
 
     <!-- System Info -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-in transition-colors">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6 fade-in transition-colors">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">System Info</h2>
         <div class="space-y-2 text-sm text-gray-600 dark:text-gray-400">
             <div class="flex justify-between"><span>PPKE Version</span><span class="font-mono">3.0.0</span></div>
@@ -151,6 +151,14 @@
             <div class="flex justify-between"><span>User</span><span class="font-mono">{{ user.email }}</span></div>
             <div class="flex justify-between"><span>User Vault</span><span class="font-mono">{{ config.vault_path }}</span></div>
             {% endif %}
+        </div>
+    </div>
+
+    <!-- Infrastructure Status (Phase 8) -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-in transition-colors">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Infrastructure</h2>
+        <div id="infra-status" class="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+            <p class="text-gray-400">Loading...</p>
         </div>
     </div>
 </div>
@@ -209,5 +217,27 @@ async function deleteApiKey(keyId) {
         }
     } catch(err) { showToast(err.message, 'error'); }
 }
+
+// Load infrastructure status
+(async function() {
+    try {
+        const resp = await fetch('/api/health');
+        const data = await resp.json();
+        const div = document.getElementById('infra-status');
+        if (!div) return;
+        const statusIcon = (v) => v === 'ok' || v === 'available' || v === 'configured'
+            ? '<span class="text-green-500">OK</span>'
+            : v === 'not_configured' || v === 'not_installed' || v === 'not_set' || v === 'memory_fallback'
+                ? '<span class="text-amber-500">' + v.replace(/_/g, ' ') + '</span>'
+                : '<span class="text-red-500">' + v + '</span>';
+        const checks = data.checks || {};
+        let html = `<div class="flex justify-between"><span>Overall Status</span><span class="font-medium ${data.status === 'ok' ? 'text-green-500' : 'text-amber-500'}">${data.status}</span></div>`;
+        html += `<div class="flex justify-between"><span>Database Backend</span><span class="font-mono">${data.database_backend || 'sqlite'}</span></div>`;
+        for (const [k, v] of Object.entries(checks)) {
+            html += `<div class="flex justify-between"><span>${k.replace(/_/g, ' ')}</span>${statusIcon(v)}</div>`;
+        }
+        div.innerHTML = html;
+    } catch(e) {}
+})();
 </script>
 {% endblock %}

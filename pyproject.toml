@@ -73,6 +73,16 @@ auth = [
     "PyJWT>=2.8.0",        # JWT token handling
     "bcrypt>=4.0.0",       # Password hashing
 ]
+# Phase 8: deployment & infrastructure
+infra = [
+    "celery[redis]>=5.3.0",    # Distributed task queue
+    "redis>=5.0.0",            # Redis client (caching + broker)
+    "psycopg2-binary>=2.9.0",  # PostgreSQL driver
+    "prometheus-client>=0.20.0", # Prometheus metrics
+    "sentry-sdk[fastapi]>=1.40.0", # Error tracking
+    "boto3>=1.34.0",           # AWS S3 object storage
+    "google-cloud-storage>=2.14.0", # GCS object storage
+]
 # All optional extras at once
 all = [
     "chromadb>=0.4.0",
@@ -98,6 +108,13 @@ all = [
     "python-pptx>=0.6.21",
     "PyJWT>=2.8.0",
     "bcrypt>=4.0.0",
+    "celery[redis]>=5.3.0",
+    "redis>=5.0.0",
+    "psycopg2-binary>=2.9.0",
+    "prometheus-client>=0.20.0",
+    "sentry-sdk[fastapi]>=1.40.0",
+    "boto3>=1.34.0",
+    "google-cloud-storage>=2.14.0",
 ]
 
 [tool.pytest.ini_options]
