@@ -111,35 +111,45 @@ Make the query engine significantly smarter.
 
 ---
 
-## Phase 4 — Knowledge Graph Intelligence (NEXT)
+## Phase 4 — Knowledge Graph Intelligence (DONE)
 
 Make the graph view a real analytical tool, not just visualization.
 
 ### 4.1 Graph Features
-- [ ] **Search within graph** — Type a concept name, zoom to it with highlight animation
-- [ ] **Cluster detection** — Louvain community detection (NetworkX built-in), color by cluster
-- [ ] **Edge labels on hover** — Show "defines", "contradicts", "supports" on link hover
-- [ ] **Path finder** — "How is concept A connected to concept B?" — shortest path with explanation
-- [ ] **Export** — Download graph as PNG/SVG/JSON
+- [x] **Search within graph** — Fuzzy search in sidebar with autocomplete; `focusNode()` zooms + highlights with gold border (2.5s auto-reset)
+- [x] **Cluster detection** — Louvain community detection via `networkx.community.louvain_communities()`; "Color by Cluster" toggle in sidebar; 15-color palette
+- [x] **Edge labels on hover** — Hovering any link shows "Source **relation** Target" tooltip + bold stroke; relation text rendered at link midpoint
+- [x] **Path finder** — Two concept inputs + autocomplete; `nx.shortest_path()`; renders path as colored node chips with "→ relation →" edges; highlights path in graph for 6s
+- [x] **Export** — JSON download, PNG (canvas 2× retina), Obsidian vault ZIP (all via buttons in header)
 
 ### 4.2 Graph Analytics
-- [ ] **Centrality analysis** — PageRank/betweenness to find the most important concepts
-- [ ] **Gap detection** — Concepts that appear in multiple books but are never connected
-- [ ] **Contradiction detection** — Highlight edges where authors disagree
-- [ ] **Temporal view** — Timeline slider showing concept evolution across publication years
+- [x] **Centrality analysis** — PageRank + betweenness centrality on concept nodes; top-10 shown in sidebar with clickable bars; `ppke/graph/analytics.py`
+- [x] **Gap detection** — Concepts in 2+ books with no concept↔concept edges; listed in sidebar with book counts
+- [x] **Contradiction detection** — All `contradicts` edges shown in sidebar with red labels
+- [ ] **Temporal view** — Timeline slider *(deferred — requires year metadata on edges)*
 
 ### 4.3 External Integration
-- [ ] **Obsidian export** — Generate vault with `[[wikilinks]]` matching concept names
-- [ ] **Markdown graph export** — Download concept index as interlinked Markdown files
+- [x] **Obsidian export** — `GET /api/graph/obsidian-export` → ZIP with one `.md` per concept, `[[wikilinks]]` for related concepts, book sources
+- [x] **Markdown graph export** — `GET /api/graph/markdown-export` → ZIP with interlinked Markdown files
 
-### Implementation notes
-- Louvain: `networkx.community.louvain_communities(G)` → assign group colors
-- Path finder: `nx.shortest_path(G, source, target)` → return path + edge labels
-- Obsidian: Write one `.md` per concept with `[[Related Concept]]` links
+### New Module: `ppke/graph/analytics.py`
+Standalone analytics functions: `search_nodes()`, `compute_clusters()`, `compute_centrality()`, `find_shortest_path()`, `detect_gaps()`, `detect_contradictions()`, `obsidian_vault_zip()`, `markdown_export_zip()`
+
+### New Endpoints (8)
+`GET /api/graph/search` · `GET /api/graph/clusters` · `GET /api/graph/analytics` · `GET /api/graph/path` · `GET /api/graph/gaps` · `GET /api/graph/contradictions` · `GET /api/graph/export` · `GET /api/graph/obsidian-export` · `GET /api/graph/markdown-export`
+
+### Bug Fix
+Fixed `api_graph_data` to handle both `src`/`dst` and `source`/`target` edge key formats in `knowledge_graph.json`
+
+### New UI (graph.html)
+- **Layout**: sidebar (280px) + full-height graph area
+- **Sidebar sections**: Search, Path Finder, Clusters toggle, Top Concepts (centrality bars), Knowledge Gaps, Contradictions
+- **Graph enhancements**: edge labels on hover, cluster coloring, path highlighting with gold strokes, search zoom-to-node with highlight
+- **Export buttons**: JSON, PNG, Obsidian ZIP in header bar
 
 ---
 
-## Phase 5 — Audio & Multimedia
+## Phase 5 — Audio & Multimedia (NEXT)
 
 Reach full NotebookLM feature parity and beyond.
 
@@ -308,8 +318,8 @@ SaaS model for hosted deployment.
 | 1 | Dark mode, SSE, Settings, Security | High | Medium | DONE |
 | 2 | URL/YouTube import, Hybrid OCR | High | Medium | DONE |
 | 3 | Multi-turn chat, RAG, Flashcards | High | Medium | DONE |
-| 4 | Graph analytics, Path finder | Medium | Medium | Next |
-| 5 | Full NotebookLM audio parity | Medium | Large | Planned |
+| 4 | Graph analytics, Path finder | Medium | Medium | DONE |
+| 5 | Full NotebookLM audio parity | Medium | Large | Next |
 | 6 | PDF/DOCX/Slides export | Medium | Medium | Planned |
 | 7 | Multi-user auth & collab | High | Large | Planned |
 | 8 | Docker, Celery, Monitoring | High | Large | Planned |

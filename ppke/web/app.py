@@ -852,11 +852,15 @@ async def api_graph_data(book: str | None = None):
         if book:
             relevant_ids = set()
             for edge in edges:
-                if book in edge.get("source", "") or book in edge.get("target", ""):
-                    relevant_ids.add(edge["source"])
-                    relevant_ids.add(edge["target"])
+                src = edge.get("src") or edge.get("source", "")
+                dst = edge.get("dst") or edge.get("target", "")
+                if book in src or book in dst:
+                    relevant_ids.add(src)
+                    relevant_ids.add(dst)
             nodes = [n for n in nodes if n["id"] in relevant_ids]
-            edges = [e for e in edges if e["source"] in relevant_ids and e["target"] in relevant_ids]
+            edges = [e for e in edges
+                     if (e.get("src") or e.get("source", "")) in relevant_ids
+                     and (e.get("dst") or e.get("target", "")) in relevant_ids]
 
         d3_nodes = []
         for n in nodes:
@@ -867,8 +871,10 @@ async def api_graph_data(book: str | None = None):
                 "group": {"concept": 1, "book": 2, "paragraph": 3}.get(node_type, 1),
                 "size": n.get("weight", 1),
             })
-        d3_links = [{"source": e.get("source"), "target": e.get("target"),
-                      "relation": e.get("relation", "related_to")} for e in edges]
+        d3_links = [{"source": e.get("src") or e.get("source"),
+                      "target": e.get("dst") or e.get("target"),
+                      "relation": e.get("rel") or e.get("relation", "related_to")}
+                     for e in edges]
         return {"nodes": d3_nodes, "links": d3_links}
 
     # Fallback: build from extractions
@@ -1259,6 +1265,107 @@ async def api_get_flashcards(folder: str):
         content=tsv_content,
         media_type="text/tab-separated-values",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── Knowledge Graph analytics endpoints ──
+
+
+@app.get("/api/graph/search")
+async def api_graph_search(q: str = Query(..., min_length=1)):
+    """Fuzzy-search nodes by label. Returns top 15 matches."""
+    from ppke.graph.analytics import search_nodes
+
+    return {"results": search_nodes(_vault_path(), q)}
+
+
+@app.get("/api/graph/clusters")
+async def api_graph_clusters():
+    """Run Louvain community detection.  Returns ``{node_id: cluster_id}``."""
+    from ppke.graph.analytics import compute_clusters
+
+    return compute_clusters(_vault_path())
+
+
+@app.get("/api/graph/analytics")
+async def api_graph_analytics():
+    """PageRank + betweenness centrality for top concepts."""
+    from ppke.graph.analytics import compute_centrality
+
+    return compute_centrality(_vault_path())
+
+
+@app.get("/api/graph/path")
+async def api_graph_path(source: str = Query(...), target: str = Query(...)):
+    """Shortest undirected path between two node IDs."""
+    from ppke.graph.analytics import find_shortest_path
+
+    return find_shortest_path(_vault_path(), source, target)
+
+
+@app.get("/api/graph/gaps")
+async def api_graph_gaps():
+    """Concepts in 2+ books but with no concept-to-concept edges."""
+    from ppke.graph.analytics import detect_gaps
+
+    return detect_gaps(_vault_path())
+
+
+@app.get("/api/graph/contradictions")
+async def api_graph_contradictions():
+    """All 'contradicts' edges in the graph."""
+    from ppke.graph.analytics import detect_contradictions
+
+    return detect_contradictions(_vault_path())
+
+
+@app.get("/api/graph/export")
+async def api_graph_export():
+    """Download the knowledge graph as JSON."""
+    vault = _vault_path()
+    graph_path = vault / "knowledge_graph.json"
+    if not graph_path.exists():
+        raise HTTPException(404, "No knowledge graph found")
+    from fastapi.responses import Response
+
+    return Response(
+        content=graph_path.read_bytes(),
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="knowledge_graph.json"'},
+    )
+
+
+@app.get("/api/graph/obsidian-export")
+async def api_graph_obsidian_export():
+    """Download an Obsidian vault ZIP with ``[[wikilinks]]`` per concept."""
+    from ppke.graph.analytics import obsidian_vault_zip
+    from fastapi.responses import Response
+
+    data = obsidian_vault_zip(_vault_path())
+    if not data:
+        raise HTTPException(404, "No knowledge graph found or no concepts to export")
+
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="ppke_obsidian_vault.zip"'},
+    )
+
+
+@app.get("/api/graph/markdown-export")
+async def api_graph_markdown_export():
+    """Download interlinked Markdown concept files as ZIP."""
+    from ppke.graph.analytics import markdown_export_zip
+    from fastapi.responses import Response
+
+    data = markdown_export_zip(_vault_path())
+    if not data:
+        raise HTTPException(404, "No knowledge graph found")
+
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="ppke_concepts.zip"'},
     )
 
 
