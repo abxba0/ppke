@@ -1,7 +1,7 @@
-# PPKE v2.0 API Reference
+# PPKE v3.0 API Reference
 
-**Version:** 2.0.0
-**Last Updated:** 2026-02-21
+**Version:** 3.0.0
+**Last Updated:** 2026-03-01
 **Audience:** Template Developers, Advanced Users, API Consumers
 
 ---
@@ -9,26 +9,186 @@
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Core Interfaces](#core-interfaces)
-3. [Template API](#template-api)
-4. [Configuration API](#configuration-api)
-5. [Pipeline API](#pipeline-api)
-6. [LLM Client API](#llm-client-api)
-7. [Parser API](#parser-api)
-8. [Data Models](#data-models)
-9. [Exceptions](#exceptions)
-10. [Type Definitions](#type-definitions)
+2. [REST API (Web Server)](#rest-api-web-server)
+3. [Core Interfaces](#core-interfaces)
+4. [Template API](#template-api)
+5. [Configuration API](#configuration-api)
+6. [Pipeline API](#pipeline-api)
+7. [LLM Client API](#llm-client-api)
+8. [Parser API](#parser-api)
+9. [Data Models](#data-models)
+10. [Exceptions](#exceptions)
+11. [Type Definitions](#type-definitions)
 
 ---
 
 ## Overview
 
-This document provides comprehensive API documentation for PPKE v2.0, focusing on interfaces for template developers and advanced users building on top of PPKE.
+This document provides comprehensive API documentation for PPKE v3.0, covering the REST API (web server), Python interfaces for template developers, and advanced user APIs.
 
 **Stability Guarantees:**
 - 🟢 **Stable:** Public APIs with backward compatibility guarantees
 - 🟡 **Experimental:** May change in minor versions
 - 🔴 **Internal:** No guarantees, may change anytime
+
+---
+
+## REST API (Web Server) 🟢
+
+**Base URL:** `http://localhost:8000` (default when running `ppke serve`)
+
+All API endpoints return JSON unless otherwise noted. Authentication is via JWT token in the `ppke_token` cookie (set at login).
+
+### Pages (HTML)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Main dashboard — list books, upload, search |
+| GET | `/login` | Login page |
+| GET | `/register` | Registration page |
+| GET | `/notebook/{folder}` | Interactive book notebook view |
+| GET | `/upload` | File upload page |
+| GET | `/settings` | Settings panel |
+| GET | `/graph` | Knowledge graph visualization |
+| GET | `/workspaces` | Workspace management |
+| GET | `/cost-dashboard` | LLM cost tracking dashboard |
+
+### Authentication
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/auth/login` | Login (email + password) → sets JWT cookie |
+| POST | `/auth/register` | Register new account |
+| POST | `/auth/logout` | Logout (clears cookie) |
+| GET | `/auth/oauth/{provider}` | Start OAuth flow (google, github) |
+| GET | `/auth/oauth/{provider}/callback` | OAuth callback |
+| GET | `/api/auth/me` | Get current authenticated user |
+
+### Books
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/books` | List all books in the user's vault |
+| GET | `/api/books/{folder}` | Get book details and metadata |
+| GET | `/api/books/{folder}/extractions` | Get extraction data for a book |
+
+### Query & Search
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/query` | Query a book (JSON response) |
+| POST | `/api/query/stream` | Query with SSE streaming response |
+| POST | `/api/cross-query` | Cross-book synthesis query |
+| POST | `/api/search` | Full-text search across extractions |
+
+### Upload & Import
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/upload` | Upload and ingest files (PDF, DOCX, EPUB, MD, images, etc.) |
+| POST | `/api/import-url` | Import from URL or YouTube link |
+| POST | `/api/import-rss` | Import podcast episodes from RSS feed |
+
+### Jobs
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/jobs/{job_id}` | Check background job status |
+| GET | `/api/stats` | Vault statistics (book count, extraction totals) |
+
+### Content Generation
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/history/{folder}` | Get chat history for a book |
+| GET/POST | `/api/summary/{folder}` | Get or generate executive summary |
+| GET/POST | `/api/study-guide/{folder}` | Get or generate study guide |
+| GET | `/api/glossary/{folder}` | Generate glossary of key terms |
+| GET | `/api/flashcards/{folder}` | Generate study flashcards |
+
+### Audio & Multimedia
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/audio-overview` | Generate podcast-style audio overview |
+| POST | `/api/audio-overview/cross-book` | Generate cross-book comparative audio |
+| GET | `/api/audio/{folder}/transcript` | Get audio script/transcript |
+| GET | `/api/audio/presets` | List available voice presets |
+| POST | `/api/audio/upload-recording` | Upload and transcribe audio recording |
+| GET | `/api/audio/{folder}` | Stream audio file |
+
+### Knowledge Graph
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/graph` | Get graph data (nodes + edges) |
+| GET | `/api/graph/search` | Search graph nodes |
+| GET | `/api/graph/clusters` | Get concept clusters |
+| GET | `/api/graph/analytics` | Full graph analytics |
+| GET | `/api/graph/path` | Find shortest path between concepts |
+| GET | `/api/graph/gaps` | Identify knowledge gaps |
+| GET | `/api/graph/contradictions` | Detect contradictions across books |
+| GET | `/api/graph/export` | Export graph as JSON |
+| GET | `/api/graph/obsidian-export` | Export graph as Obsidian vault (ZIP) |
+| GET | `/api/graph/markdown-export` | Export graph as Markdown |
+
+### Export
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/export/{folder}/pdf` | Export analysis as PDF report |
+| GET | `/api/export/{folder}/docx` | Export analysis as DOCX |
+| GET | `/api/export/{folder}/pptx` | Export analysis as PPTX slides |
+| GET | `/api/export/{folder}/zip` | Export all book files as ZIP |
+
+### Academic
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/bibliography` | Generate bibliography across books |
+| GET/POST | `/api/literature-review` | Generate or retrieve literature review |
+| GET | `/api/argument-map/{folder}` | Generate argument map for a book |
+
+### Settings & Config
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/config` | Get current configuration |
+| POST | `/api/settings` | Update LLM provider/model settings |
+
+### Workspaces & Collaboration
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/workspaces` | List user's workspaces |
+| POST | `/api/workspaces` | Create a new workspace |
+| GET | `/api/workspaces/{ws_id}/members` | List workspace members |
+| POST | `/api/workspaces/{ws_id}/invite` | Invite user to workspace |
+| PUT | `/api/workspaces/{ws_id}/members/{user_id}/role` | Update member role |
+| DELETE | `/api/workspaces/{ws_id}/members/{user_id}` | Remove member |
+| POST | `/api/workspaces/{ws_id}/share` | Share a book with workspace |
+| GET | `/api/workspaces/{ws_id}/shared-books` | List shared books |
+
+### Annotations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/annotations` | Create annotation on an extraction |
+| GET | `/api/annotations/{folder}` | Get annotations for a book |
+| DELETE | `/api/annotations/{ann_id}` | Delete an annotation |
+
+### Infrastructure
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/health` | Health check (DB, Redis, Vector Store, LLM) |
+| GET | `/metrics` | Prometheus metrics |
+| GET | `/api/cost-dashboard` | LLM cost/usage data |
+| GET | `/api/activity` | User activity log |
+| POST | `/api/keys` | Create API key |
+| GET | `/api/keys` | List API keys |
+| DELETE | `/api/keys/{key_id}` | Revoke API key |
+| GET | `/api/usage` | Usage statistics |
 
 ---
 
@@ -834,6 +994,6 @@ See [CHANGELOG.md](./CHANGELOG.md) for API changes across versions.
 
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2026-02-21
+**Document Version:** 3.0
+**Last Updated:** 2026-03-01
 **Maintained By:** PPKE Core Team

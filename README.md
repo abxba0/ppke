@@ -2,19 +2,64 @@
 
 **Extract deep insights from any domain**: philosophy, legal, scientific, and more.
 
-PPKE is a CLI tool for structured knowledge extraction from text documents. Using LLMs and a flexible template system, PPKE analyzes books and documents across multiple domains, extracting their logical structure and building a queryable knowledge base with full verbatim fidelity.
+PPKE is a CLI + Web platform for structured knowledge extraction from text documents. Using LLMs and a flexible template system, PPKE analyzes books and documents across multiple domains, extracting their logical structure and building a queryable knowledge base with full verbatim fidelity. Access everything via the command line or through a full-featured web interface.
 
-## 🌟 What's New in v2.0
+## 🌟 What's New in v3.0
 
-**Multi-Domain Support**: PPKE v2.0 is now domain-agnostic! Analyze texts from any field while maintaining 100% backward compatibility for philosophy.
+**Full Web Interface & Platform Features**: PPKE v3.0 adds a complete web GUI, multi-user collaboration, document converters, audio/podcast analysis, and production deployment infrastructure.
 
-- **Philosophy** (default) - Argument mapping, concept tracking, logical structure
-- **Legal** - Case law, statutory analysis, legal standards
-- **Scientific** - Methodology, findings, research questions (community template)
-- **Custom Domains** - Create your own templates ([Guide](PLUGINS.md))
+### Web GUI (Phase 1)
+- **Full-featured web interface** at `ppke serve` — dark mode, responsive design
+- **Server-Sent Events (SSE)** streaming for real-time query responses
+- **Settings panel** for LLM provider/model configuration in the browser
+- **Notebook view** with interactive book exploration
+
+### Document Intelligence (Phase 2)
+- **23+ format support** — PDF, DOCX, EPUB, HTML, images (OCR), and more
+- **URL & YouTube import** — ingest web pages and video transcripts directly
+- **Hybrid OCR** with multi-script support (Latin, CJK, Arabic, Cyrillic)
+
+### AI Chat & RAG (Phase 3)
+- **Chat history** persistence per book
+- **RAG-enhanced queries** with vector DB retrieval
+- **AI-powered suggestions** and content generation (summaries, study guides, glossaries, flashcards)
+
+### Knowledge Graph Intelligence (Phase 4)
+- **Graph analytics** — clusters, shortest paths, gap analysis, contradiction detection
+- **Interactive graph visualization** in the browser
+- **Export to Obsidian** and Markdown formats
+
+### Audio & Multimedia (Phase 5)
+- **Audio overviews** — generate podcast-style audio summaries of books
+- **Cross-book audio** — comparative podcast episodes for two books
+- **Podcast RSS import** — ingest and transcribe podcast episodes
+- **Voice recording** — record and transcribe directly in the browser
+
+### Export & Content Generation (Phase 6)
+- **PDF, DOCX, PPTX export** of analysis reports
+- **Literature reviews** and **argument maps** generated via LLM
+- **Bibliography management** across books
+
+### Multi-User & Collaboration (Phase 7)
+- **JWT authentication** with registration/login
+- **Workspaces** — create teams, invite members, share books
+- **Annotations** — add notes to specific extractions
+- **Activity logging** and **API key management**
+
+### Infrastructure & Deployment (Phase 8)
+- **Docker** deployment with `docker-compose.yml`
+- **Celery + Redis** for background task processing
+- **PostgreSQL** support for production databases
+- **Prometheus metrics** and **Sentry** error tracking
+- **Cost dashboard** for LLM usage monitoring
+
+### v2.0 Features (Maintained)
+- **Multi-Domain Support** — Analyze texts from any field
+- **Philosophy** (default), **Legal**, **Scientific**, and **Custom** domain templates
 
 ## Features
 
+### CLI Features
 - **Multi-Domain Analysis** - Use different templates for philosophy, legal, scientific, or custom domains
 - **Structural Extraction** - Parses documents into chapters and paragraphs, extracts domain-specific insights via LLM
 - **Two-Tier LLM Architecture** - Uses a configurable fast/cheap `small_model` (e.g. `gpt-4o-mini`, `claude-3-haiku`) for extraction (Skill 1) and the main model for deep analysis (Skills 3–7), reducing cost and latency
@@ -42,13 +87,27 @@ PPKE is a CLI tool for structured knowledge extraction from text documents. Usin
 
 ## Quick Start
 
-### 1. Install
+### Option A: Web Interface (Recommended)
+
+```bash
+# Install with web dependencies
+pip install -e ".[web]"
+
+# Start the web server
+ppke serve
+```
+
+Open http://localhost:8000 in your browser. Upload documents, run queries, explore the knowledge graph, and manage settings \u2014 all from the GUI.
+
+### Option B: CLI
+
+#### 1. Install
 
 ```bash
 pip install -e .
 ```
 
-### 2. First-Time Setup
+#### 2. First-Time Setup
 
 Run the setup wizard on first launch:
 
@@ -131,6 +190,7 @@ ppke re-read --book "Book_Being_and_Time_Heidegger_1927" --chapters "1,3,5"
 
 | Command | Description |
 |---------|-------------|
+| `ppke serve` | **Start the web GUI** (opens at http://localhost:8000) |
 | `ppke init` | First-time setup wizard (API keys, provider, vault path) |
 | `ppke ingest <file>` | Ingest a document (use `--domain` to specify template, defaults to philosophy) |
 | `ppke list-domains` | List all available domain templates |
@@ -269,16 +329,42 @@ ppke tui --vault-path ~/my-vault
 
 ```mermaid
 flowchart LR
-    A["📄 Markdown\nDocument"] --> B["PPKE CLI\nppke ingest"]
+    A["🌐 Web GUI\nppke serve"] --> B["PPKE Core\nEngine"]
+    A2["💻 CLI\nppke ingest"] --> B
     B --> C["🧠 LLM Analysis\n(multi-stage)"]
     C --> D["🗂️ Knowledge\nVault"]
-    D --> E["💬 Query\nppke query"]
-    D --> F["🔍 Search\nppke search"]
-    D --> G["📊 Cross-Book\nSynthesis"]
+    D --> E["💬 Query\nRAG + Chat"]
+    D --> F["🔍 Search\nSemantic + Text"]
+    D --> G["📊 Graph\nAnalytics"]
+    D --> H["🎧 Audio\nOverviews"]
+    D --> I["📄 Export\nPDF/DOCX/PPTX"]
 
     style A fill:#e8f4f8
+    style A2 fill:#e8f4f8
     style D fill:#f0f8e8
     style C fill:#fff3e0
+```
+
+### Web Architecture
+
+```mermaid
+flowchart TD
+    Browser["🌐 Browser"] --> FastAPI["FastAPI + Jinja2 + HTMX"]
+    FastAPI --> Auth["JWT Auth\nMiddleware"]
+    Auth --> Routes["📡 80+ API Routes"]
+    Routes --> Pipeline["Ingestion Pipeline"]
+    Routes --> LLM["🧠 LLM Client"]
+    Routes --> Graph["📊 Knowledge Graph"]
+    Routes --> Audio["🎧 Audio Module"]
+    Routes --> Export["📄 Export Engine"]
+    Routes --> Converters["📥 Doc Converters\n23+ formats"]
+    Pipeline --> Celery["Celery Workers\n(background jobs)"]
+    Celery --> Redis["Redis\n(cache + broker)"]
+    Auth --> DB["PostgreSQL / SQLite"]
+
+    style Browser fill:#e8f4f8
+    style FastAPI fill:#fff3e0
+    style DB fill:#f0f8e8
 ```
 
 ### Ingestion Pipeline (Technical)
@@ -385,43 +471,60 @@ Stage 8: Write all output files
 
 ```
 ppke/
-├── cli.py               # CLI entry point (Click) — all 15 commands
-├── config.py            # Configuration & .env management (LLMConfig, small_model)
+├── cli.py               # CLI entry point (Click)
+├── config.py            # Configuration & .env management
 ├── tui.py               # Terminal dashboard (ppke tui)
+├── web/
+│   ├── app.py           # FastAPI web server (80+ routes)
+│   ├── static/          # CSS, JS, favicon
+│   └── templates/       # Jinja2 HTML templates
+├── auth/
+│   ├── database.py      # User/workspace/annotation storage
+│   ├── deps.py          # FastAPI auth dependencies
+│   └── jwt_auth.py      # JWT token management
+├── converter/
+│   ├── registry.py      # PDF, DOCX, EPUB, HTML converters
+│   ├── ocr.py           # Image/PDF OCR (Tesseract + multi-script)
+│   ├── url.py           # Web page → Markdown conversion
+│   └── youtube.py       # YouTube transcript extraction
+├── audio/
+│   ├── overview.py      # Podcast-style audio generation
+│   ├── rss.py           # Podcast RSS feed import
+│   └── transcriber.py   # Whisper audio transcription
+├── export/
+│   ├── exporters.py     # PDF, DOCX, PPTX export
+│   └── academic.py      # Bibliography, literature review, argument maps
+├── graph/
+│   ├── knowledge_graph.py  # Concept graph construction
+│   └── analytics.py     # Graph analytics (clusters, paths, gaps)
+├── infra/
+│   ├── cache.py         # Redis/memory cache
+│   ├── tasks.py         # Celery background tasks
+│   ├── metrics.py       # Prometheus metrics
+│   ├── sentry_integration.py  # Error tracking
+│   ├── storage.py       # S3/GCS cloud storage
+│   └── logging_config.py     # Structured logging
 ├── parser/
-│   ├── models.py        # Data models (Book, Chapter, Paragraph, ExtractionResult, etc.)
-│   └── markdown.py      # Markdown parsing + sub-paragraph splitting
+│   ├── models.py        # Pydantic data models
+│   ├── markdown.py      # Markdown parsing + splitting
+│   └── schema_builder.py  # Dynamic schema generation
 ├── llm/
-│   ├── client.py        # Unified LLM client (Anthropic/OpenAI/DeepSeek/Gemini/OpenRouter)
-│   │                    #   • model_override for two-tier architecture
-│   │                    #   • Anthropic prompt caching (cache_control: ephemeral)
-│   │                    #   • Exponential backoff retry (429 / 5xx)
-│   └── prompts.py       # Prompt templates for all pipeline stages
+│   ├── client.py        # Multi-provider LLM client
+│   └── prompts.py       # Prompt templates
 ├── pipeline/
-│   ├── orchestrator.py  # Master controller
-│   │                    #   • Skip logic (_is_low_information)
-│   │                    #   • Parallel extraction (ThreadPoolExecutor)
-│   │                    #   • Parallel analysis (Skills 3/4/5 concurrent)
-│   │                    #   • Checkpoint save/resume
-│   ├── extractor.py     # Skill 1: Structural extraction (model_override support)
-│   ├── validator.py     # Skill 2: Coverage validation (pure logic)
-│   ├── logical_map.py   # Skill 3: Logical architecture builder
-│   ├── concepts.py      # Skill 4: Concept indexer (chunked)
-│   ├── patterns.py      # Skill 5: Pattern & tension detector (chunked)
-│   └── synthesizer.py   # Skill 6: Cross-book synthesizer
+│   ├── orchestrator.py  # Master pipeline controller
+│   ├── async_orchestrator.py  # Async pipeline variant
+│   ├── extractor.py     # Structural extraction
+│   ├── validator.py     # Coverage validation
+│   ├── logical_map.py   # Logical architecture
+│   ├── concepts.py      # Concept indexing
+│   ├── patterns.py      # Pattern detection
+│   └── synthesizer.py   # Cross-book synthesis
+├── templates/           # Domain template system
+├── vectordb/            # Vector database integration
 ├── output/
-│   └── writer.py        # File generation + semantic concept deduplication
-└── tests/
-    ├── test_parser.py
-    ├── test_validator.py
-    ├── test_splitter.py
-    ├── test_new_features.py
-    ├── test_security.py
-    ├── test_coverage_boost.py
-    ├── test_providers.py
-    ├── test_loop2_coverage.py
-    ├── test_orchestrator.py
-    └── test_usability_commands.py  # cheat, doctor, notebook, menu, tui
+│   └── writer.py        # Output file generation
+└── tests/               # Test suite (91% coverage)
 ```
 
 ## Output Structure
@@ -456,14 +559,33 @@ Each ingested book creates a folder in the vault:
   - [Google Gemini](https://aistudio.google.com/app/apikey)
   - [OpenRouter](https://openrouter.ai/keys) (multi-provider gateway)
 
+### Optional Dependencies
+
+| Extra | Command | Features |
+|-------|---------|----------|
+| `web` | `pip install -e ".[web]"` | Web GUI (FastAPI, Jinja2, HTMX) |
+| `ocr` | `pip install -e ".[ocr]"` | PDF/image OCR (PyMuPDF, Tesseract) |
+| `audio` | `pip install -e ".[audio]"` | Audio generation & transcription |
+| `dev` | `pip install -e ".[dev]"` | Testing & development tools |
+
+### Docker Deployment
+
+```bash
+# Production deployment with PostgreSQL, Redis, Celery
+docker-compose up -d
+```
+
+See [docker-compose.yml](docker-compose.yml) for the full stack configuration.
+
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,web]"
 pytest ppke/tests/
 ```
 
 ## License
 
-Private project.
+Dual-licensed under Apache 2.0 and the PPKE Social Impact License.
+See [DUAL-LICENSE.md](DUAL-LICENSE.md) for details.
 

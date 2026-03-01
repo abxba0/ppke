@@ -525,6 +525,159 @@ Upgrading to PPKE v2.0 is seamless for existing users while unlocking powerful n
 
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2026-02-21
+---
+---
+
+# PPKE v2.0 → v3.0 Migration Guide
+
+**Version:** 3.0.0
+**Last Updated:** 2025-07-17
+**Target Audience:** Existing PPKE v2.x Users
+
+---
+
+## Overview
+
+PPKE v3.0 adds a **full-featured web GUI**, multi-user authentication, AI chat, knowledge graphs, audio overviews, and production infrastructure — while preserving 100% backward compatibility for CLI workflows.
+
+**Key Points:**
+- ✅ **Zero Breaking CLI Changes** — all v2.x commands work identically
+- ✅ **Web GUI is Optional** — install only if you want it
+- ✅ **Same Output Formats** — existing vaults and exports unchanged
+- ✅ **New Optional Dependencies** — modular extras for web, OCR, audio
+- ✅ **Docker Deployment** — production-ready with one command
+
+**Upgrade Time:** ~2 minutes
+**Risk Level:** Low (CLI fully backward-compatible)
+
+---
+
+## What's New in v3.0
+
+| Feature | Description |
+|---------|-------------|
+| **Web GUI** | FastAPI + Jinja2 + HTMX dashboard with 80+ API endpoints |
+| **Document Intelligence** | URL/YouTube/RSS ingestion, OCR, content conversion |
+| **AI Chat** | Streaming chat with citation-backed answers per book |
+| **Knowledge Graph** | Interactive concept visualization with D3.js |
+| **Audio Overviews** | Podcast-style audio summaries via TTS |
+| **Export Suite** | PDF, DOCX, PPTX export with academic citations |
+| **Multi-User Auth** | JWT authentication, roles, workspaces |
+| **Infrastructure** | Celery task queue, Redis cache, Sentry monitoring, S3 storage |
+
+---
+
+## Breaking Changes
+
+### For CLI Users: **NONE**
+
+All v2.x CLI commands continue to work without modification:
+```bash
+ppke ingest book.md --title "..." --author "..."
+ppke query --book "..." --question "..."
+ppke template list
+```
+
+### For Python API Consumers
+
+If you import from `ppke.parser`:
+```python
+# v2.x
+from ppke.parser.models import BookAnalysis
+
+# v3.0 — same import still works
+from ppke.parser.models import BookAnalysis
+```
+
+No internal API changes affect existing integrations.
+
+---
+
+## Migration Steps
+
+### Step 1: Update Installation
+
+```bash
+# CLI only (same as before)
+pip install -e .
+
+# With web GUI
+pip install -e ".[web]"
+
+# With all features
+pip install -e ".[web,ocr,audio]"
+```
+
+### Step 2: Try the Web GUI (Optional)
+
+```bash
+# Start the web server
+ppke serve
+
+# Open in browser
+open http://localhost:8000
+```
+
+### Step 3: Docker Deployment (Optional)
+
+For production with PostgreSQL, Redis, and Celery:
+
+```bash
+docker-compose up -d
+```
+
+---
+
+## New CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `ppke serve` | Start the web GUI server |
+
+All existing commands (`ingest`, `query`, `template`, `init`, `config`) remain unchanged.
+
+---
+
+## Optional Dependencies
+
+v3.0 uses a modular extras system. You only install what you need:
+
+| Extra | Install Command | What It Adds |
+|-------|----------------|--------------|
+| _(none)_ | `pip install -e .` | CLI-only (same as v2.x) |
+| `web` | `pip install -e ".[web]"` | Web GUI, FastAPI, Jinja2 |
+| `ocr` | `pip install -e ".[ocr]"` | PDF/image OCR (pytesseract) |
+| `audio` | `pip install -e ".[audio]"` | Audio generation (gTTS, pydub) |
+| `dev` | `pip install -e ".[dev]"` | Testing and linting tools |
+
+---
+
+## Python Version
+
+v3.0 requires **Python ≥ 3.10** (same as v2.x). The CI matrix now tests against Python 3.10, 3.11, and 3.12.
+
+---
+
+## Environment Variables (New, Optional)
+
+These are only needed if you use the web GUI or Docker deployment:
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SECRET_KEY` | JWT signing secret | Auto-generated |
+| `DATABASE_URL` | PostgreSQL connection | SQLite (local) |
+| `REDIS_URL` | Redis for caching/tasks | In-memory cache |
+| `SENTRY_DSN` | Error monitoring | Disabled |
+| `S3_BUCKET` | Cloud storage | Local filesystem |
+
+---
+
+## Rollback
+
+To return to v2.x behavior, simply don't install web extras and don't run `ppke serve`. The CLI works identically to v2.x.
+
+---
+
+**Document Version:** 2.0
+**Last Updated:** 2025-07-17
 **Maintained By:** PPKE Core Team
