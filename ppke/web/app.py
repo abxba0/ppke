@@ -39,16 +39,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from ppke.config import Config, SUPPORTED_PROVIDERS, PROVIDER_ENV_VARS
-from ppke.auth.deps import get_current_user, get_optional_user, get_user_vault_path, require_role, _get_db
-from ppke.auth.jwt_auth import hash_password, verify_password, create_token, decode_token
+from ppke.auth.deps import get_current_user, get_optional_user, get_user_vault_path, _get_db
+from ppke.auth.jwt_auth import hash_password, verify_password, create_token
 from ppke.auth import database as auth_db
 
 # ── Infrastructure initialization (Phase 8) ──
 from ppke.infra.logging_config import configure_logging, RequestLoggingMiddleware
 from ppke.infra.metrics import MetricsMiddleware, generate_metrics, record_ingestion
-from ppke.infra.sentry_integration import init_sentry, capture_exception, set_user as sentry_set_user
-from ppke.infra.tasks import create_job, run_task, set_job, get_job, update_job
-from ppke.infra.cache import get_cache, check_rate_limit, cache_key, get_default_ttl
+from ppke.infra.sentry_integration import init_sentry, capture_exception
+from ppke.infra.tasks import create_job, run_task, get_job, update_job
+from ppke.infra.cache import get_cache, cache_key
 
 # Configure structured logging before anything else
 configure_logging()
@@ -80,7 +80,10 @@ templates = Jinja2Templates(directory=_WEB_DIR / "templates")
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+async def validation_exception_handler(
+    request: Request,  # pylint: disable=unused-argument
+    exc: RequestValidationError,
+):
     """Return clean validation errors instead of 422 blobs."""
     errors = []
     for error in exc.errors():
@@ -849,7 +852,7 @@ async def api_upload(
             markdown_text = convert_to_markdown(temp_path)
         except (ValueError, ImportError) as e:
             temp_path.unlink(missing_ok=True)
-            raise HTTPException(400, str(e))
+            raise HTTPException(400, str(e)) from e
 
         # Use the original (unsuffixed) stem so we don't duplicate extensions
         md_path = upload_dir / f"{temp_path.stem}.md"
@@ -1196,7 +1199,7 @@ async def api_generate_audio_overview(
             topic=topic.strip() or None,
         )
     except Exception as e:
-        raise HTTPException(500, f"Script generation failed: {e}")
+        raise HTTPException(500, f"Script generation failed: {e}") from e
 
     script_path = book_dir / "audio_script.json"
     script_path.write_text(json.dumps(script, indent=2))
@@ -1208,7 +1211,7 @@ async def api_generate_audio_overview(
         else:
             synthesize_audio(script, audio_path, provider=tts_provider)
     except Exception as e:
-        raise HTTPException(500, f"Audio synthesis failed: {e}")
+        raise HTTPException(500, f"Audio synthesis failed: {e}") from e
 
     return {
         "status": "completed",
@@ -1250,7 +1253,7 @@ async def api_generate_cross_book_audio(
     try:
         script = generate_cross_book_script(book_dir_a, book_dir_b, client, length=length)
     except Exception as e:
-        raise HTTPException(500, f"Cross-book script generation failed: {e}")
+        raise HTTPException(500, f"Cross-book script generation failed: {e}") from e
 
     # Save to first book's directory
     out_dir = book_dir_a
@@ -1261,7 +1264,7 @@ async def api_generate_cross_book_audio(
     try:
         synthesize_from_preset(script, audio_path, voice_preset)
     except Exception as e:
-        raise HTTPException(500, f"Audio synthesis failed: {e}")
+        raise HTTPException(500, f"Audio synthesis failed: {e}") from e
 
     return {
         "status": "completed",
@@ -1309,12 +1312,12 @@ async def api_import_rss(
     Parses the feed, downloads the most recent audio episodes, transcribes
     them via Whisper, and ingests each as a separate book.
     """
-    from ppke.audio.rss import parse_feed, download_and_transcribe
+    from ppke.audio.rss import parse_feed
 
     try:
         feed_info = parse_feed(rss_url, max_episodes=min(max_episodes, 5))
     except Exception as e:
-        raise HTTPException(400, f"Failed to parse RSS feed: {e}")
+        raise HTTPException(400, f"Failed to parse RSS feed: {e}") from e
 
     if not feed_info["episodes"]:
         raise HTTPException(400, "No audio episodes found in this RSS feed")
@@ -1336,7 +1339,8 @@ async def api_import_rss(
 
 
 def _start_rss_episode_job(
-    episode: dict, podcast_title: str, podcast_author: str, domain: str
+    episode: dict, podcast_title: str, podcast_author: str,
+    domain: str,  # pylint: disable=unused-argument
 ) -> str:
     """Start a background ingestion job for one podcast episode."""
     job_id = create_job(extra={"stage": "Downloading episode..."})
@@ -1358,10 +1362,10 @@ def _start_rss_episode_job(
             update_job(job_id, stage="Transcription complete — starting ingestion...", progress=50)
 
             # Create book from markdown
-            from ppke.parser.markdown_parser import parse_markdown
+            from ppke.parser.markdown import parse_markdown_text
 
             config = _get_config()
-            book = parse_markdown(markdown)
+            book = parse_markdown_text(markdown, episode["title"], podcast_author)
             book.title = episode["title"]
             book.author = podcast_author
 
@@ -1392,7 +1396,7 @@ async def api_upload_recording(
     recording: UploadFile = File(...),
     title: str = Form("Voice Recording"),
     author: str = Form("User"),
-    domain: str = Form("philosophy"),
+    domain: str = Form("philosophy"),  # pylint: disable=unused-argument
 ):
     """Accept a browser audio recording (WebM/MP3 blob), transcribe, and ingest."""
     import tempfile
@@ -1422,10 +1426,10 @@ async def api_upload_recording(
             except OSError:
                 pass
 
-            from ppke.parser.markdown_parser import parse_markdown
+            from ppke.parser.markdown import parse_markdown_text
 
             config = _get_config()
-            book = parse_markdown(f"# {title}\n\n**Author:** {author}\n\n---\n\n{markdown}")
+            book = parse_markdown_text(f"# {title}\n\n**Author:** {author}\n\n---\n\n{markdown}", title, author)
             book.title = title
             book.author = author
 
@@ -1633,7 +1637,6 @@ async def api_generate_study_guide(request: Request, folder: str):
 
     config = _get_config()
     meta = _load_book_meta(book_dir)
-    raw_path = book_dir / "01_Raw_Structure.md"
     extractions = _load_extractions(book_dir)
 
     # Group extractions by chapter
@@ -1909,9 +1912,9 @@ async def api_export_pdf(request: Request, folder: str):
     try:
         pdf_bytes = export_pdf(book_dir)
     except ImportError as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, str(e)) from e
     except Exception as e:
-        raise HTTPException(500, f"PDF export failed: {e}")
+        raise HTTPException(500, f"PDF export failed: {e}") from e
 
     meta = _load_book_meta(book_dir)
     safe_title = re.sub(r"[^\w\-]", "_", meta.get("title", folder))
@@ -1943,9 +1946,9 @@ async def api_export_docx(request: Request, folder: str):
     try:
         docx_bytes = export_docx(book_dir)
     except ImportError as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, str(e)) from e
     except Exception as e:
-        raise HTTPException(500, f"DOCX export failed: {e}")
+        raise HTTPException(500, f"DOCX export failed: {e}") from e
 
     meta = _load_book_meta(book_dir)
     safe_title = re.sub(r"[^\w\-]", "_", meta.get("title", folder))
@@ -1973,9 +1976,9 @@ async def api_export_pptx(request: Request, folder: str):
     try:
         pptx_bytes = export_pptx(book_dir)
     except ImportError as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, str(e)) from e
     except Exception as e:
-        raise HTTPException(500, f"PPTX export failed: {e}")
+        raise HTTPException(500, f"PPTX export failed: {e}") from e
 
     meta = _load_book_meta(book_dir)
     safe_title = re.sub(r"[^\w\-]", "_", meta.get("title", folder))
@@ -2071,7 +2074,7 @@ async def api_generate_literature_review(
     try:
         content = generate_literature_review(vault, client, book_folders=book_folders)
     except Exception as e:
-        raise HTTPException(500, f"Literature review generation failed: {e}")
+        raise HTTPException(500, f"Literature review generation failed: {e}") from e
 
     # Cache the result
     review_path = vault / "literature_review.md"
@@ -2125,7 +2128,6 @@ async def api_health():
     redis_url = os.environ.get("REDIS_URL", "")
     if redis_url:
         try:
-            from ppke.infra.cache import get_cache
             cache = get_cache()
             if hasattr(cache, "client"):
                 cache.client.ping()
@@ -2139,7 +2141,7 @@ async def api_health():
 
     # Vector store check
     try:
-        from ppke.vectordb.store import VectorStore
+        from ppke.vectordb.store import VectorStore  # pylint: disable=unused-import
         checks["vector_store"] = "available"
     except ImportError:
         checks["vector_store"] = "not_installed"
@@ -2224,8 +2226,7 @@ async def api_create_workspace(request: Request, user: dict = Depends(get_curren
     if not name:
         raise HTTPException(400, "Workspace name is required")
 
-    import re as _re
-    slug = _re.sub(r"[^a-z0-9\-]", "-", name.lower())[:40]
+    slug = re.sub(r"[^a-z0-9\-]", "-", name.lower())[:40]
 
     conn = _get_db()
     ws = auth_db.create_workspace(conn, name, f"{slug}-{str(uuid.uuid4())[:6]}", user["id"])
