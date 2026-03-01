@@ -122,7 +122,11 @@ testpaths = ["ppke/tests"]
 
 [tool.coverage.run]
 source = ["ppke"]
-omit = ["ppke/tests/*"]
+omit = [
+    "ppke/tests/*",
+    "ppke/parser/models_v1_backup.py",
+    "ppke/llm/prompts_v1_backup.py",
+]
 
 [tool.coverage.report]
 show_missing = true
