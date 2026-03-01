@@ -104,11 +104,15 @@ class TestErrorHandlers:
         real_app.dependency_overrides[deps.get_current_user] = lambda: _FAKE_USER
         real_app.dependency_overrides[deps.get_optional_user] = lambda: _FAKE_USER
 
-        # Patch _book_dirs to raise an unexpected exception inside api_stats
+        # Use a cache mock that always misses, so _book_dirs is reached
+        cache_mock = MagicMock()
+        cache_mock.get.return_value = None
+
         with patch.object(app_module, "_vault_path", return_value=tmp_vault), \
              patch.object(app_module, "_user_vault_path", return_value=tmp_vault), \
              patch.object(app_module, "_try_get_user", new=_fake_get_optional_user()), \
              patch.object(app_module, "_get_db", return_value=MagicMock()), \
+             patch("ppke.web.app.get_cache", return_value=cache_mock), \
              patch.object(app_module, "_book_dirs", side_effect=RuntimeError("boom")):
             tc = TestClient(real_app, raise_server_exceptions=False)
             resp = tc.get("/api/stats")

@@ -1654,7 +1654,7 @@ async def api_generate_study_guide(request: Request, folder: str):
         chapter_summaries.append(
             f"Chapter {ch_num}: {len(paras)} paragraphs | "
             f"Claims: {'; '.join(claims[:3])} | "
-            f"Concepts: {', '.join(list(set(concepts))[:5])}"
+            f"Concepts: {', '.join(list(dict.fromkeys(concepts))[:5])}"
         )
 
     system = "You are an academic study guide writer. Write clear, student-friendly Markdown."
