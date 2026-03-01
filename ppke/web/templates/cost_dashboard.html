@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Cost Dashboard{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Cost Dashboard</h1>
+        <div class="flex items-center space-x-2">
+            <label class="text-sm text-gray-600 dark:text-gray-400">Period:</label>
+            <select id="period-select" onchange="loadDashboard()"
+                    class="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                <option value="7">Last 7 days</option>
+                <option value="30" selected>Last 30 days</option>
+                <option value="90">Last 90 days</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 fade-in">
+            <div class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Total Cost</div>
+            <div id="total-cost" class="text-2xl font-bold text-brand-600 mt-1">$0.00</div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 fade-in">
+            <div class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Total Tokens</div>
+            <div id="total-tokens" class="text-2xl font-bold text-brand-600 mt-1">0</div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 fade-in">
+            <div class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Requests</div>
+            <div id="total-requests" class="text-2xl font-bold text-brand-600 mt-1">0</div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 fade-in">
+            <div class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Avg Cost/Request</div>
+            <div id="avg-cost" class="text-2xl font-bold text-brand-600 mt-1">$0.00</div>
+        </div>
+    </div>
+
+    <!-- Daily Cost Chart -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6 fade-in">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Daily Usage</h2>
+        <div id="daily-chart" class="h-48 flex items-end space-x-1 overflow-x-auto"></div>
+        <div id="daily-labels" class="flex space-x-1 mt-1 text-xs text-gray-400 overflow-x-auto"></div>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mb-6">
+        <!-- Per-Book Costs -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-in">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Cost by Book</h2>
+            <div id="book-costs" class="space-y-3 max-h-96 overflow-y-auto">
+                <p class="text-sm text-gray-400">Loading...</p>
+            </div>
+        </div>
+
+        <!-- Per-Provider Costs -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-in">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Cost by Provider</h2>
+            <div id="provider-costs" class="space-y-3 max-h-96 overflow-y-auto">
+                <p class="text-sm text-gray-400">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Per-Action Costs -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6 fade-in">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Cost by Action Type</h2>
+        <div id="action-costs" class="space-y-3">
+            <p class="text-sm text-gray-400">Loading...</p>
+        </div>
+    </div>
+</div>
+
+<script>
+function formatCost(val) { return '$' + parseFloat(val || 0).toFixed(4); }
+function formatTokens(val) { return parseInt(val || 0).toLocaleString(); }
+
+function renderBar(label, cost, tokens, maxCost, extra) {
+    const pct = maxCost > 0 ? Math.max(2, (cost / maxCost) * 100) : 2;
+    const shortLabel = label.length > 40 ? label.slice(0, 37) + '...' : label;
+    return `<div class="group">
+        <div class="flex justify-between text-sm mb-1">
+            <span class="text-gray-700 dark:text-gray-300 truncate max-w-[60%]" title="${label}">${shortLabel}</span>
+            <span class="text-gray-500 dark:text-gray-400">${formatCost(cost)} &middot; ${formatTokens(tokens)} tokens${extra || ''}</span>
+        </div>
+        <div class="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5">
+            <div class="bg-brand-500 h-2.5 rounded-full transition-all" style="width: ${pct}%"></div>
+        </div>
+    </div>`;
+}
+
+async function loadDashboard() {
+    const days = document.getElementById('period-select').value;
+
+    try {
+        const resp = await fetch('/api/cost-dashboard?days=' + days);
+        if (!resp.ok) { showToast('Failed to load cost data', 'error'); return; }
+        const data = await resp.json();
+
+        // Summary cards
+        document.getElementById('total-cost').textContent = formatCost(data.summary.total_cost);
+        document.getElementById('total-tokens').textContent = formatTokens(data.summary.total_tokens);
+        document.getElementById('total-requests').textContent = data.summary.total_requests.toLocaleString();
+        const avgCost = data.summary.total_requests > 0
+            ? data.summary.total_cost / data.summary.total_requests : 0;
+        document.getElementById('avg-cost').textContent = formatCost(avgCost);
+
+        // Daily chart
+        const dailyChart = document.getElementById('daily-chart');
+        const dailyLabels = document.getElementById('daily-labels');
+        if (data.daily && data.daily.length > 0) {
+            const maxDailyCost = Math.max(...data.daily.map(d => d.total_cost || 0), 0.001);
+            dailyChart.innerHTML = data.daily.map(d => {
+                const h = Math.max(4, (d.total_cost / maxDailyCost) * 180);
+                return `<div class="flex-1 min-w-[12px] bg-brand-400 dark:bg-brand-500 rounded-t hover:bg-brand-600 transition-colors cursor-default"
+                            style="height: ${h}px" title="${d.date}: ${formatCost(d.total_cost)} (${formatTokens(d.total_tokens)} tokens)"></div>`;
+            }).join('');
+            dailyLabels.innerHTML = data.daily.map((d, i) => {
+                const show = data.daily.length <= 14 || i % Math.ceil(data.daily.length / 10) === 0;
+                return show ? `<div class="flex-1 min-w-[12px] text-center">${d.date.slice(5)}</div>` : `<div class="flex-1 min-w-[12px]"></div>`;
+            }).join('');
+        } else {
+            dailyChart.innerHTML = '<p class="text-sm text-gray-400 self-center mx-auto">No data for this period</p>';
+            dailyLabels.innerHTML = '';
+        }
+
+        // Book costs
+        const bookDiv = document.getElementById('book-costs');
+        if (data.by_book && data.by_book.length > 0) {
+            const maxBookCost = data.by_book[0].total_cost;
+            bookDiv.innerHTML = data.by_book.map(b =>
+                renderBar(b.book_folder, b.total_cost, b.total_tokens, maxBookCost,
+                    ` &middot; ${b.request_count} reqs`)
+            ).join('');
+        } else {
+            bookDiv.innerHTML = '<p class="text-sm text-gray-400">No per-book cost data yet</p>';
+        }
+
+        // Provider costs
+        const provDiv = document.getElementById('provider-costs');
+        if (data.by_provider && data.by_provider.length > 0) {
+            const maxProvCost = data.by_provider[0].total_cost;
+            provDiv.innerHTML = data.by_provider.map(p =>
+                renderBar(`${p.provider} / ${p.model}`, p.total_cost, p.total_tokens, maxProvCost)
+            ).join('');
+        } else {
+            provDiv.innerHTML = '<p class="text-sm text-gray-400">No provider cost data yet</p>';
+        }
+
+        // Action costs
+        const actDiv = document.getElementById('action-costs');
+        if (data.by_action && data.by_action.length > 0) {
+            const maxActCost = data.by_action[0].total_cost;
+            actDiv.innerHTML = data.by_action.map(a =>
+                renderBar(a.action, a.total_cost, a.total_tokens, maxActCost,
+                    ` &middot; ${a.request_count} reqs`)
+            ).join('');
+        } else {
+            actDiv.innerHTML = '<p class="text-sm text-gray-400">No action cost data yet</p>';
+        }
+
+    } catch (err) {
+        showToast('Error loading dashboard: ' + err.message, 'error');
+    }
+}
+
+// Load on page ready
+loadDashboard();
+</script>
+{% endblock %}

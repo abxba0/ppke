@@ -1,0 +1,154 @@
+# PPKE Docker Compose — Full production stack
+#
+# Usage:
+#   docker compose up -d             # Start all services
+#   docker compose up -d app         # Start app only (SQLite mode)
+#   docker compose --profile full up # Start with all optional services
+#   docker compose logs -f app       # Follow app logs
+#
+# Environment:
+#   Copy .env.example to .env and fill in your API keys
+
+services:
+  # ── PPKE Web Application ──
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PPKE_PORT:-8000}:8000"
+    environment:
+      # Database: PostgreSQL when 'full' profile, SQLite otherwise
+      - DATABASE_URL=${DATABASE_URL:-}
+      # Redis: for caching, rate limiting, and task queue
+      - REDIS_URL=${REDIS_URL:-}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-}
+      # Monitoring
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - PPKE_ENVIRONMENT=${PPKE_ENVIRONMENT:-production}
+      - PPKE_LOG_FORMAT=${PPKE_LOG_FORMAT:-json}
+      - PPKE_LOG_LEVEL=${PPKE_LOG_LEVEL:-INFO}
+      - PPKE_METRICS_ENABLED=${PPKE_METRICS_ENABLED:-true}
+      # Storage
+      - PPKE_STORAGE_BACKEND=${PPKE_STORAGE_BACKEND:-local}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-}
+      - AWS_S3_PREFIX=${AWS_S3_PREFIX:-ppke/}
+      - AWS_S3_REGION=${AWS_S3_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - GCS_BUCKET=${GCS_BUCKET:-}
+      # LLM API Keys
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      # Auth
+      - PPKE_JWT_SECRET=${PPKE_JWT_SECRET:-}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+    volumes:
+      - ppke-data:/home/ppke/.ppke
+      - ppke-vault:/home/ppke/KnowledgeBase
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+        required: false
+      postgres:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── Celery Worker (background tasks) ──
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      python -m celery -A ppke.infra.tasks:_celery_app worker
+      --loglevel=info --concurrency=2
+    environment:
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - DATABASE_URL=${DATABASE_URL:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - PPKE_ENVIRONMENT=${PPKE_ENVIRONMENT:-production}
+      - PPKE_LOG_FORMAT=${PPKE_LOG_FORMAT:-json}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - ppke-data:/home/ppke/.ppke
+      - ppke-vault:/home/ppke/KnowledgeBase
+    profiles:
+      - full
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ── Redis (caching + task broker) ──
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── PostgreSQL (multi-user database) ──
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-ppke}
+      - POSTGRES_USER=${POSTGRES_USER:-ppke}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-ppke_secret}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    profiles:
+      - full
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ppke}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── ChromaDB (vector database) ──
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "${CHROMA_PORT:-8001}:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    profiles:
+      - full
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  ppke-data:
+  ppke-vault:
+  redis-data:
+  postgres-data:
+  chroma-data:

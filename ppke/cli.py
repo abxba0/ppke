@@ -2455,5 +2455,53 @@ def template_list():
     click.echo(f"\nTotal: {len(templates)} templates ({len(official)} official, {len(custom)} custom)")
 
 
+# ── serve command (Web GUI) ──
+
+
+@main.command()
+@click.option("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+@click.option("--port", default=8000, type=int, help="Port number (default: 8000)")
+@click.option("--reload", "do_reload", is_flag=True, help="Auto-reload on code changes")
+def serve(host: str, port: int, do_reload: bool):
+    """Launch the PPKE web GUI in your browser.
+
+    Starts a local web server with a full-featured interface for uploading
+    documents, querying books, exploring concepts, and generating audio
+    overviews.
+
+    Examples:
+        ppke serve
+        ppke serve --port 9000
+        ppke serve --host 0.0.0.0 --reload
+    """
+    try:
+        import uvicorn  # noqa: F401
+    except ImportError:
+        click.echo(
+            "Error: Web GUI requires additional dependencies.\n"
+            "Install with: pip install 'ppke[web]'",
+            err=True,
+        )
+        sys.exit(1)
+
+    click.echo(
+        _render(
+            _Panel(
+                f"[bold]PPKE Web GUI[/bold]\n"
+                f"Open [cyan]http://{host}:{port}[/cyan] in your browser",
+                border_style="green",
+            )
+        )
+    )
+    import uvicorn
+
+    uvicorn.run(
+        "ppke.web.app:app",
+        host=host,
+        port=port,
+        reload=do_reload,
+    )
+
+
 if __name__ == "__main__":  # pragma: no cover
     main()  # pylint: disable=no-value-for-parameter

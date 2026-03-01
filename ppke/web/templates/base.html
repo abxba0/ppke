@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}PPKE{% endblock %} — Knowledge Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe',
+                            300: '#93c5fd', 400: '#60a5fa', 500: '#3b82f6',
+                            600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af',
+                            900: '#1e3a5f',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .chat-bubble { max-width: 85%; }
+        .prose h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .prose h2 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+        .prose p { margin-bottom: 0.75rem; line-height: 1.7; }
+        .spinner { border: 3px solid #e5e7eb; border-top: 3px solid #3b82f6; border-radius: 50%; width: 20px; height: 20px; animation: spin 0.8s linear infinite; display: inline-block; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        /* Dark mode overrides */
+        .dark .spinner { border-color: #374151; border-top-color: #60a5fa; }
+        /* Toast animations */
+        .toast-enter { animation: toastIn 0.3s ease-out; }
+        .toast-exit { animation: toastOut 0.3s ease-in forwards; }
+        @keyframes toastIn { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes toastOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(100%); } }
+        /* Markdown in chat */
+        .chat-md p { margin-bottom: 0.5rem; }
+        .chat-md p:last-child { margin-bottom: 0; }
+        .chat-md ul, .chat-md ol { margin-left: 1.25rem; margin-bottom: 0.5rem; }
+        .chat-md li { margin-bottom: 0.15rem; }
+        .chat-md code { background: rgba(0,0,0,0.06); padding: 0.15em 0.35em; border-radius: 3px; font-size: 0.85em; }
+        .dark .chat-md code { background: rgba(255,255,255,0.1); }
+        .chat-md pre { background: #1e293b; color: #e2e8f0; padding: 0.75rem; border-radius: 0.5rem; overflow-x: auto; margin: 0.5rem 0; font-size: 0.8rem; }
+        .chat-md blockquote { border-left: 3px solid #3b82f6; padding-left: 0.75rem; margin: 0.5rem 0; color: #6b7280; }
+        .dark .chat-md blockquote { color: #9ca3af; }
+        .chat-md strong { font-weight: 600; }
+        /* Kbd style for shortcut hints */
+        kbd { display: inline-block; padding: 2px 6px; font-size: 11px; font-family: ui-monospace, monospace; color: #6b7280; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; box-shadow: 0 1px 0 #d1d5db; }
+        .dark kbd { color: #9ca3af; background: #374151; border-color: #4b5563; box-shadow: 0 1px 0 #4b5563; }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body class="h-full bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200">
+
+<!-- Toast container -->
+<div id="toast-container" class="fixed top-4 right-4 z-[100] space-y-2 pointer-events-none"></div>
+
+<!-- Keyboard shortcut help modal -->
+<div id="shortcut-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100">Keyboard Shortcuts</h3>
+            <button onclick="document.getElementById('shortcut-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div class="space-y-3 text-sm">
+            <div class="flex justify-between items-center"><span class="text-gray-600 dark:text-gray-400">Focus search</span><kbd>Ctrl+K</kbd></div>
+            <div class="flex justify-between items-center"><span class="text-gray-600 dark:text-gray-400">Upload document</span><kbd>Ctrl+U</kbd></div>
+            <div class="flex justify-between items-center"><span class="text-gray-600 dark:text-gray-400">Go to library</span><kbd>Ctrl+H</kbd></div>
+            <div class="flex justify-between items-center"><span class="text-gray-600 dark:text-gray-400">Toggle dark mode</span><kbd>Ctrl+D</kbd></div>
+            <div class="flex justify-between items-center"><span class="text-gray-600 dark:text-gray-400">Show shortcuts</span><kbd>?</kbd></div>
+            <div class="flex justify-between items-center"><span class="text-gray-600 dark:text-gray-400">Close modal / Escape</span><kbd>Esc</kbd></div>
+        </div>
+    </div>
+</div>
+
+<!-- Navigation -->
+<nav class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50 transition-colors">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between h-16">
+            <div class="flex items-center space-x-8">
+                <a href="/" class="flex items-center space-x-2">
+                    <div class="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center">
+                        <span class="text-white font-bold text-sm">PK</span>
+                    </div>
+                    <span class="text-xl font-bold text-gray-900 dark:text-white">PPKE</span>
+                </a>
+                <div class="hidden md:flex space-x-6">
+                    <a href="/" class="text-gray-600 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Library</a>
+                    <a href="/upload" class="text-gray-600 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Upload</a>
+                    <a href="/graph" class="text-gray-600 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Graph</a>
+                    <a href="/workspaces" class="text-gray-600 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Workspaces</a>
+                    <a href="/cost-dashboard" class="text-gray-600 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Costs</a>
+                    <a href="/settings" class="text-gray-600 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Settings</a>
+                </div>
+            </div>
+            <div class="flex items-center space-x-3">
+                <!-- Search -->
+                <div class="relative hidden sm:block">
+                    <input type="search" id="global-search" placeholder="Search... (Ctrl+K)"
+                           class="w-56 lg:w-64 pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                           hx-get="/api/search" hx-trigger="keyup changed delay:300ms" hx-target="#search-results"
+                           hx-include="this" name="q">
+                    <svg class="absolute left-3 top-2.5 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+                <div id="search-results" class="absolute top-16 right-4 w-96 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-xl z-50 hidden max-h-96 overflow-y-auto"></div>
+
+                <!-- Dark mode toggle -->
+                <button id="dark-toggle" onclick="toggleDarkMode()" class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Toggle dark mode (Ctrl+D)">
+                    <svg id="sun-icon" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <svg id="moon-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                </button>
+
+                <!-- User menu -->
+                {% if user %}
+                <div class="relative" id="user-menu-wrapper">
+                    <button onclick="document.getElementById('user-dropdown').classList.toggle('hidden')"
+                            class="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <div class="w-7 h-7 rounded-full bg-brand-600 flex items-center justify-center text-white text-xs font-bold">
+                            {{ user.name[:2]|upper }}
+                        </div>
+                        <span class="hidden lg:block text-sm font-medium text-gray-700 dark:text-gray-300 max-w-[100px] truncate">{{ user.name }}</span>
+                    </button>
+                    <div id="user-dropdown" class="hidden absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-50">
+                        <div class="px-4 py-2 border-b border-gray-100 dark:border-gray-700">
+                            <p class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ user.name }}</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ user.email }}</p>
+                        </div>
+                        <a href="/workspaces" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Workspaces</a>
+                        <a href="/settings" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Settings</a>
+                        <div class="border-t border-gray-100 dark:border-gray-700"></div>
+                        <a href="/auth/logout" class="block px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700">Sign Out</a>
+                    </div>
+                </div>
+                {% else %}
+                <a href="/login" class="px-3 py-1.5 text-sm font-medium text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors">Sign In</a>
+                {% endif %}
+
+                <!-- Mobile hamburger -->
+                <button id="mobile-menu-btn" onclick="toggleMobileMenu()" class="md:hidden p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile menu -->
+    <div id="mobile-menu" class="hidden md:hidden border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <div class="px-4 py-3 space-y-2">
+            <a href="/" class="block px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Library</a>
+            <a href="/upload" class="block px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Upload</a>
+            <a href="/graph" class="block px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Graph</a>
+            <a href="/workspaces" class="block px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Workspaces</a>
+            <a href="/cost-dashboard" class="block px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Costs</a>
+            <a href="/settings" class="block px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Settings</a>
+            {% if user %}
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-2 mt-2">
+                <div class="px-3 py-1 text-sm text-gray-500 dark:text-gray-400">{{ user.name }} ({{ user.email }})</div>
+                <a href="/auth/logout" class="block px-3 py-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Sign Out</a>
+            </div>
+            {% else %}
+            <a href="/login" class="block px-3 py-2 rounded-lg text-brand-600 dark:text-brand-400 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium">Sign In</a>
+            {% endif %}
+            <!-- Mobile search -->
+            <div class="relative sm:hidden pt-2">
+                <input type="search" placeholder="Search..."
+                       class="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200"
+                       hx-get="/api/search" hx-trigger="keyup changed delay:300ms" hx-target="#search-results" name="q">
+                <svg class="absolute left-3 top-4.5 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<!-- Main content -->
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    {% block content %}{% endblock %}
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 mt-12 transition-colors">
+    <div class="max-w-7xl mx-auto px-4 py-6 flex flex-col sm:flex-row justify-between items-center text-sm text-gray-500 dark:text-gray-400">
+        <span>PPKE v3.0 — Personal &amp; Professional Knowledge Engine</span>
+        <span class="mt-2 sm:mt-0">Press <kbd>?</kbd> for keyboard shortcuts</span>
+    </div>
+</footer>
+
+<script>
+// ── Dark Mode ──
+function initDarkMode() {
+    const saved = localStorage.getItem('ppke-dark-mode');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (saved === 'true' || (saved === null && prefersDark)) {
+        document.documentElement.classList.add('dark');
+    }
+    updateDarkIcons();
+}
+function toggleDarkMode() {
+    document.documentElement.classList.toggle('dark');
+    const isDark = document.documentElement.classList.contains('dark');
+    localStorage.setItem('ppke-dark-mode', isDark);
+    updateDarkIcons();
+    showToast(isDark ? 'Dark mode enabled' : 'Light mode enabled', 'info');
+}
+function updateDarkIcons() {
+    const isDark = document.documentElement.classList.contains('dark');
+    document.getElementById('sun-icon').classList.toggle('hidden', !isDark);
+    document.getElementById('moon-icon').classList.toggle('hidden', isDark);
+}
+initDarkMode();
+
+// ── Mobile Menu ──
+function toggleMobileMenu() {
+    document.getElementById('mobile-menu').classList.toggle('hidden');
+}
+
+// ── Toast Notifications ──
+function showToast(message, type = 'info', duration = 3000) {
+    const container = document.getElementById('toast-container');
+    const colors = {
+        success: 'bg-green-600', error: 'bg-red-600',
+        info: 'bg-brand-600', warning: 'bg-amber-500'
+    };
+    const icons = {
+        success: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>',
+        error: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
+        info: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>',
+        warning: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path>'
+    };
+
+    const toast = document.createElement('div');
+    toast.className = `pointer-events-auto flex items-center space-x-3 px-4 py-3 rounded-lg shadow-lg text-white text-sm font-medium toast-enter ${colors[type] || colors.info}`;
+    toast.innerHTML = `<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">${icons[type] || icons.info}</svg><span>${message}</span>`;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.classList.remove('toast-enter');
+        toast.classList.add('toast-exit');
+        setTimeout(() => toast.remove(), 300);
+    }, duration);
+}
+
+// ── Keyboard Shortcuts ──
+document.addEventListener('keydown', function(e) {
+    // Don't fire in inputs/textareas (except for Escape)
+    const inInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+
+    if (e.key === 'Escape') {
+        // Close any open modal
+        document.querySelectorAll('[id$="-modal"]').forEach(m => m.classList.add('hidden'));
+        document.getElementById('search-results')?.classList.add('hidden');
+        document.activeElement.blur();
+        return;
+    }
+
+    if (inInput) return;
+
+    // ? = show shortcuts
+    if (e.key === '?') {
+        e.preventDefault();
+        document.getElementById('shortcut-modal').classList.toggle('hidden');
+        return;
+    }
+
+    // Ctrl+K = focus search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        document.getElementById('global-search')?.focus();
+        return;
+    }
+
+    // Ctrl+U = upload
+    if ((e.ctrlKey || e.metaKey) && e.key === 'u') {
+        e.preventDefault();
+        window.location.href = '/upload';
+        return;
+    }
+
+    // Ctrl+H = home/library
+    if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+        e.preventDefault();
+        window.location.href = '/';
+        return;
+    }
+
+    // Ctrl+D = toggle dark mode
+    if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        e.preventDefault();
+        toggleDarkMode();
+        return;
+    }
+});
+
+// ── Global Search Results Handler ──
+document.body.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.elt.id === 'global-search' || evt.detail.elt.name === 'q') {
+        const resultsDiv = document.getElementById('search-results');
+        const q = evt.detail.elt.value.trim();
+        if (q.length > 0) {
+            try {
+                const data = JSON.parse(evt.detail.xhr.responseText);
+                if (data.results && data.results.length > 0) {
+                    let html = '<div class="p-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-700 text-xs text-gray-500 dark:text-gray-400 font-medium">' +
+                               data.total + ' results for "' + data.query + '"</div>';
+                    data.results.slice(0, 10).forEach(r => {
+                        html += '<a href="/notebook/' + r.folder + '" class="block p-3 hover:bg-blue-50 dark:hover:bg-gray-700 border-b dark:border-gray-700">' +
+                                '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + (r.topic || 'Untitled') + '</div>' +
+                                '<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">' + r.book + ' &middot; ' + r.paragraph_id + '</div>' +
+                                '<div class="text-xs text-gray-400 dark:text-gray-500 mt-1">' + r.snippet + '</div></a>';
+                    });
+                    resultsDiv.innerHTML = html;
+                    resultsDiv.classList.remove('hidden');
+                } else {
+                    resultsDiv.innerHTML = '<div class="p-4 text-sm text-gray-500 dark:text-gray-400">No results found.</div>';
+                    resultsDiv.classList.remove('hidden');
+                }
+            } catch(e) {}
+        } else {
+            resultsDiv.classList.add('hidden');
+        }
+    }
+});
+
+// Close search on click outside
+document.addEventListener('click', function(e) {
+    const sr = document.getElementById('search-results');
+    const si = document.getElementById('global-search');
+    if (sr && !sr.contains(e.target) && e.target !== si) {
+        sr.classList.add('hidden');
+    }
+    // Close user dropdown on click outside
+    const ud = document.getElementById('user-dropdown');
+    const uw = document.getElementById('user-menu-wrapper');
+    if (ud && uw && !uw.contains(e.target)) {
+        ud.classList.add('hidden');
+    }
+});
+
+// ── Markdown rendering helper ──
+function renderMarkdown(text) {
+    if (typeof marked !== 'undefined') {
+        marked.setOptions({ breaks: true, gfm: true });
+        return marked.parse(text);
+    }
+    return text.replace(/\n/g, '<br>');
+}
+</script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>
