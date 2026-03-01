@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ppke"
-version = "0.1.0"
-description = "Personal Philosophical Knowledge Engine - CLI tool for structured book analysis"
+version = "3.0.0"
+description = "Personal & Professional Knowledge Engine - CLI + Web platform for structured knowledge extraction and analysis"
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.0",
@@ -122,7 +122,11 @@ testpaths = ["ppke/tests"]
 
 [tool.coverage.run]
 source = ["ppke"]
-omit = ["ppke/tests/*"]
+omit = [
+    "ppke/tests/*",
+    "ppke/parser/models_v1_backup.py",
+    "ppke/llm/prompts_v1_backup.py",
+]
 
 [tool.coverage.report]
 show_missing = true

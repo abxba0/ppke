@@ -1,6 +1,6 @@
 # Contributing to PPKE
 
-**Welcome!** 🎉 Thank you for considering contributing to the Personal Philosophical Knowledge Engine (PPKE). This document provides guidelines for contributing to the project.
+**Welcome!** Thank you for considering contributing to PPKE — the Personal Philosophical Knowledge Engine & Web Platform. This document provides guidelines for contributing to the project.
 
 ---
 
@@ -101,6 +101,10 @@ Look for issues labeled `good first issue` or `help wanted`
 
 **High-Impact Areas:**
 - New domain templates (Legal, Scientific, Medical)
+- Web GUI improvements (FastAPI routes, Jinja2 templates, HTMX interactions)
+- Knowledge graph visualization
+- Audio overview generation
+- Export format enhancements (PDF, DOCX, PPTX)
 - Performance optimizations
 - Test coverage improvements
 - CLI enhancements
@@ -152,8 +156,11 @@ source venv/bin/activate
 # Activate (Windows)
 venv\Scripts\activate
 
-# Install development dependencies
+# Install development dependencies (CLI only)
 pip install -e ".[dev]"
+
+# Install with all features (web, OCR, audio)
+pip install -e ".[dev,web,ocr,audio]"
 ```
 
 ### Install Development Tools
@@ -167,6 +174,21 @@ pip install pytest pytest-cov pytest-asyncio
 
 # Documentation tools
 pip install mkdocs mkdocs-material
+```
+
+### Docker Development (Optional)
+
+For full-stack development with PostgreSQL, Redis, and Celery:
+
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f ppke
+
+# Run tests inside container
+docker-compose exec ppke pytest
 ```
 
 ### Verify Setup

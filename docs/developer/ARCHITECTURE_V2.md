@@ -1,8 +1,8 @@
-# PPKE v2.0 Architecture: Universal Knowledge Framework
+# PPKE v3.0 Architecture: Universal Knowledge Platform
 
-**Version:** 2.0.0-alpha
-**Status:** Design Specification
-**Last Updated:** 2026-02-21
+**Version:** 3.0.0
+**Status:** Production
+**Last Updated:** 2026-03-01
 
 ---
 
@@ -11,13 +11,14 @@
 1. [Executive Summary](#executive-summary)
 2. [System Overview](#system-overview)
 3. [Core Architecture](#core-architecture)
-4. [Template System](#template-system)
-5. [Plugin Ecosystem](#plugin-ecosystem)
-6. [Data Flow](#data-flow)
-7. [Component Specifications](#component-specifications)
-8. [Security Model](#security-model)
-9. [Performance Considerations](#performance-considerations)
-10. [Migration from v1.x](#migration-from-v1x)
+4. [Web Server Layer](#web-server-layer)
+5. [Template System](#template-system)
+6. [Plugin Ecosystem](#plugin-ecosystem)
+7. [Data Flow](#data-flow)
+8. [Component Specifications](#component-specifications)
+9. [Security Model](#security-model)
+10. [Performance Considerations](#performance-considerations)
+11. [Migration from v1.x](#migration-from-v1x)
 
 ---
 
@@ -52,12 +53,14 @@ PPKE v2.0 transforms the Personal Philosophical Knowledge Engine into a **domain
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      CLI Interface (cli.py)                  │
-│  ┌────────────┬─────────────┬──────────────┬──────────────┐ │
-│  │  ppke      │   ppke      │    ppke      │    ppke      │ │
-│  │  ingest    │   query     │    analyze   │   notebook   │ │
-│  └────────────┴─────────────┴──────────────┴──────────────┘ │
-└───────────────────────────┬─────────────────────────────────┘
+│          Web Interface (web/app.py — FastAPI)               │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │  Jinja2 + HTMX  │  80+ API Routes  │  SSE Streaming  │ │
+│  └───────────────────────────────────────────────────────┘ │
+├───────────────────────────┬─────────────────────────────────┤
+│  CLI Interface (cli.py)    │  Auth (JWT + OAuth)             │
+│  ppke ingest/query/serve   │  Database (SQLite / PostgreSQL) │
+└───────────────────────────┴──────────────┬──────────────────┘
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -68,21 +71,15 @@ PPKE v2.0 transforms the Personal Philosophical Knowledge Engine into a **domain
 │  └──────────────────┴──────────────────┴─────────────────┘  │
 └───────────────────────────┬─────────────────────────────────┘
                             │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Template Registry                         │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Template Discovery & Loading                        │   │
-│  │  - Official: ppke/templates/official/                │   │
-│  │  - Custom:   ~/.ppke/templates/custom/               │   │
-│  └──────────────────────────────────────────────────────┘   │
-│  ┌──────────────┬──────────────┬──────────────┬─────────┐   │
-│  │ Philosophy   │ Legal        │ Scientific   │ Medical │   │
-│  │ Template     │ Template     │ Template     │ Template│   │
-│  └──────────────┴──────────────┴──────────────┴─────────┘   │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-                            ▼
+              ┌─────────────┼───────────────────────┐
+              ▼              ▼                       ▼
+┌───────────────┐ ┌───────────┐ ┌───────────────────────┐
+│ Doc Converters  │ │ Template  │ │ Infrastructure          │
+│ PDF/DOCX/EPUB   │ │ Registry  │ │ Celery + Redis          │
+│ URL/YouTube/OCR │ │           │ │ Prometheus + Sentry     │
+└───────┬───────┘ └─────┬─────┘ │ S3/GCS + Cost Dashboard  │
+        │               │       └───────────────────────┘
+        ▼               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   Core Processing Engine                     │
 │  ┌────────────────────────────────────────────────────────┐ │
@@ -99,10 +96,12 @@ PPKE v2.0 transforms the Personal Philosophical Knowledge Engine into a **domain
 │  │  └──────────┴──────────┴──────────┴──────────┴──────┘ │ │
 │  └────────────────────────────────────────────────────────┘ │
 │  ┌────────────────────────────────────────────────────────┐ │
-│  │           Optional Advanced Features                   │ │
-│  │  ┌─────────────────┬────────────────┬───────────────┐ │ │
-│  │  │ Vector DB       │ Knowledge Graph│ Progress Track│ │ │
-│  │  │ (ChromaDB)      │ (NetworkX)     │ (Checkpoints) │ │ │
+│  │           Advanced Features                             │ │
+│  │  ┌──────────────┬─────────────┬────────────┬────────────┐ │ │
+│  │  │ Audio        │ Export/PDF  │ Graph      │ Vector DB  │ │ │
+│  │  │ Podcast/TTS  │ DOCX/PPTX  │ Analytics  │ ChromaDB   │ │ │
+│  │  └──────────────┴─────────────┴────────────┴────────────┘ │ │
+│  └────────────────────────────────────────────────────────┘ │
 │  │  └─────────────────┴────────────────┴───────────────┘ │ │
 │  └────────────────────────────────────────────────────────┘ │
 └───────────────────────────┬─────────────────────────────────┘

@@ -1,238 +1,129 @@
-# PPKE v2.0 Refactoring - Quick Start Guide
+# PPKE Quick Start Guide
 
-**Get started refactoring PPKE in 5 minutes**
+**Get up and running with PPKE in 5 minutes**
 
 ---
 
-## 🚀 Fastest Path to Phase 1
+## 🚀 Option A: Web Interface (Recommended)
 
 ```bash
-# 1. Verify prerequisites (30 seconds)
-python prompts/verify-prerequisites.py
+# 1. Install with web dependencies
+pip install -e ".[web]"
 
-# 2. Run Phase 1 automation (2-5 minutes)
-python prompts/quick-start-phase-1.py
-
-# 3. Review generated files
-ls -la spec-plan-v2.md LICENSE REFACTORING_CHECKLIST.md
+# 2. Start the web server
+ppke serve
 ```
 
-**That's it!** You now have your refactoring specification ready.
+Open http://localhost:8000 in your browser. You'll see the PPKE dashboard.
+
+### Upload Your First Document
+
+1. Click **Upload** or drag a file onto the page
+2. Supported formats: PDF, DOCX, EPUB, HTML, Markdown, images (OCR), and more
+3. Enter a title and author, select domain (philosophy, legal, scientific)
+4. Click **Ingest** — progress updates stream in real-time via SSE
+
+### Query Your Book
+
+1. Open the book's **Notebook** view
+2. Type a question in the chat box
+3. Get answers with verbatim evidence from the text
+4. Chat history is saved automatically
+
+### Explore Features
+
+- **Knowledge Graph** — visualize concept relationships across books
+- **Audio Overview** — generate podcast-style audio summaries
+- **Export** — download analysis as PDF, DOCX, or PPTX
+- **Study Tools** — auto-generate glossaries, flashcards, study guides
 
 ---
 
-## 📋 What Just Happened?
-
-### Files Created:
-- ✅ `spec-plan-v2.md` - Complete architecture design
-- ✅ `LICENSE` - Apache 2.0 license
-- ✅ `REFACTORING_CHECKLIST.md` - Migration tracker
-
-### Audit Completed:
-- ✅ Analyzed `ppke/llm/prompts.py` (hardcoded prompts)
-- ✅ Analyzed `ppke/parser/models.py` (dataclasses)
-- ✅ Analyzed `ppke/pipeline/*.py` (philosophy coupling)
-- ✅ Analyzed `ppke/output/writer.py` (output structure)
-
----
-
-## 🎯 Next Steps
-
-### Option 1: Continue with Automation
-```bash
-# Check progress
-python prompts/progress-tracker.py
-
-# Move to Phase 2 (requires AI or manual work)
-# Read: prompts/phase-2-refactor-core.md
-```
-
-### Option 2: Use AI Assistant
-```
-1. Copy prompts/phase-2-refactor-core.md
-2. Paste into Claude/GPT-4
-3. AI executes Phase 2 refactoring
-4. Review changes and run tests
-```
-
-### Option 3: Manual Implementation
-```
-1. Read spec-plan-v2.md
-2. Follow REFACTORING_CHECKLIST.md
-3. Implement changes step-by-step
-4. Track progress with progress-tracker.py
-```
-
----
-
-## 📊 Track Progress
+## 🚀 Option B: Command Line
 
 ```bash
-# Simple progress view
-python prompts/progress-tracker.py
+# 1. Install
+pip install -e .
 
-# Detailed with task lists
-python prompts/progress-tracker.py --detailed
-```
+# 2. First-time setup
+ppke init
 
-**Example Output:**
-```
-PPKE v2.0 Refactoring Progress
+# 3. Ingest a document
+ppke ingest book.md --title "Being and Time" --author "Heidegger" --year 1927
 
-Overall Progress:
-  [████████████████████] 100.0% (6/6 tasks)
-
-Phase 1: Audit & Specification         ✅
-  [████████████████████] 100.0% (6/6)
-
-Phase 2: Refactor Core                 ⏳
-  [░░░░░░░░░░░░░░░░░░░░]   0.0% (0/9)
-
-Next Task: Phase 2: Convert to Pydantic
+# 4. Query
+ppke query --book "Book_Being_and_Time_Heidegger_1927" --question "What is Dasein?"
 ```
 
 ---
 
-## 🛠️ All Available Scripts
+## 🐳 Docker Deployment
 
-| Script | Purpose | Runtime |
-|--------|---------|---------|
-| `verify-prerequisites.py` | Check system readiness | 30 sec |
-| `quick-start-phase-1.py` | Automate Phase 1 audit | 2-5 min |
-| `progress-tracker.py` | Track completion status | 5 sec |
-| `run-phase.sh` / `.bat` | Run phases sequentially | Varies |
-
----
-
-## 🎓 Learning Path
-
-### If You're New to PPKE:
-1. Read `prompts/README.md` - Master index
-2. Read `prompts/phase-1-audit-specification.md` - Understand coupling
-3. Run `verify-prerequisites.py` - Check readiness
-4. Run `quick-start-phase-1.py` - Generate spec
-
-### If You're Experienced:
-1. Run prerequisites check
-2. Run Phase 1 automation
-3. Copy Phase 2 metaprompt to AI assistant
-4. Review AI changes, run tests
-5. Repeat for Phases 3-4
-
----
-
-## 💡 Tips
-
-### Backup First
-```bash
-# Backup your vault
-cp -r ~/KnowledgeBase ~/KnowledgeBase_backup
-
-# Create git branch
-git checkout -b refactor-v2
-git add .
-git commit -m "Pre-refactoring checkpoint"
-```
-
-### Test Frequently
-```bash
-# After Phase 2 changes
-pytest tests/ -v
-
-# After CLI changes
-ppke ingest --domain philosophy test.md
-```
-
-### Use Progress Tracker
-```bash
-# After completing each task
-python prompts/progress-tracker.py
-```
-
----
-
-## 🆘 Troubleshooting
-
-### "Python version too old"
-Install Python 3.10+: https://python.org
-
-### "Pydantic not found"
-```bash
-pip install pydantic>=2.0
-```
-
-### "PPKE codebase not found"
-Run from repository root:
-```bash
-cd /path/to/ppke
-python prompts/quick-start-phase-1.py
-```
-
-### "Phase 1 script fails"
-Run with verbose mode:
-```bash
-python prompts/quick-start-phase-1.py --verbose
-```
-
----
-
-## 📅 Estimated Timeline
-
-| Phase | AI-Assisted | Manual | Part-Time (10h/week) |
-|-------|-------------|--------|----------------------|
-| Phase 1 | 5 min | 4-6 hours | 1 week |
-| Phase 2 | 2-4 hours | 20-30 hours | 3-4 weeks |
-| Phase 3 | 1-2 hours | 12-16 hours | 2 weeks |
-| Phase 4 | 1-2 hours | 16-20 hours | 2-3 weeks |
-| **Total** | **6-8 hours** | **56-78 hours** | **8-10 weeks** |
-
----
-
-## ✅ Success Criteria
-
-After Phase 1:
-- [ ] `spec-plan-v2.md` exists and is detailed
-- [ ] All philosophy couplings documented
-- [ ] LICENSE file created (Apache 2.0)
-
-After Phase 2:
-- [ ] `ppke ingest philosophy.md` produces identical output to v1.x
-- [ ] `ppke ingest --domain legal contract.md` works
-- [ ] All existing tests pass
-
-After Phase 3:
-- [ ] `ppke list-domains` shows 3+ domains
-- [ ] Custom plugin works
-- [ ] `PLUGINS.md` complete
-
-After Phase 4:
-- [ ] 100% backward compatibility verified
-- [ ] Test coverage >80%
-- [ ] Zero security vulnerabilities
-- [ ] Ready for v2.0 release
-
----
-
-## 🎉 Ready to Start?
+For production deployment with PostgreSQL, Redis, and Celery:
 
 ```bash
-# Step 1: Verify
-python prompts/verify-prerequisites.py
+# 1. Clone the repo
+git clone https://github.com/abxba0/ppke.git && cd ppke
 
-# Step 2: Launch Phase 1
-python prompts/quick-start-phase-1.py
+# 2. Set environment variables
+cp .env.example .env
+# Edit .env with your API keys and settings
 
-# Step 3: Review spec
-cat spec-plan-v2.md
+# 3. Start the full stack
+docker-compose up -d
 
-# Step 4: Proceed to Phase 2
-# (Read prompts/phase-2-refactor-core.md)
+# 4. Open http://localhost:8000
 ```
 
 ---
 
-**Questions?** Read the full documentation: `prompts/README.md`
+## ⚙️ Configuration
 
-**Stuck?** Check: `prompts/phase-<N>-*.md` for detailed instructions
+### Via Web UI
+Navigate to **Settings** (gear icon) to configure:
+- LLM provider (Anthropic, OpenAI, DeepSeek, Gemini, OpenRouter)
+- Model selection
+- API keys
 
-**Want help?** Open GitHub issue with `refactoring` label
+### Via CLI
+```bash
+ppke init                    # Interactive setup wizard
+ppke config --show           # View current settings
+ppke config --provider anthropic --model claude-sonnet-4-20250514
+```
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `DATABASE_URL` | PostgreSQL connection string (optional) |
+| `REDIS_URL` | Redis connection string (optional) |
+| `SECRET_KEY` | JWT signing secret (auto-generated if not set) |
+
+---
+
+## 📦 Optional Dependencies
+
+| Extra | Install | Features |
+|-------|---------|----------|
+| `web` | `pip install -e ".[web]"` | Web GUI (FastAPI, Jinja2) |
+| `ocr` | `pip install -e ".[ocr]"` | PDF/image OCR |
+| `audio` | `pip install -e ".[audio]"` | Audio generation & transcription |
+| `dev` | `pip install -e ".[dev]"` | Testing & linting tools |
+
+Install everything:
+```bash
+pip install -e ".[web,ocr,audio,dev]"
+```
+
+---
+
+## 📖 Next Steps
+
+- [README](../README.md) — Full feature overview and architecture
+- [API Reference](developer/API_REFERENCE.md) — REST API documentation (80+ endpoints)
+- [Architecture](developer/ARCHITECTURE_V2.md) — System design and data flow
+- [Plugins](user-guides/PLUGINS.md) — Create custom domain templates
+- [Migration Guide](user-guides/MIGRATION_GUIDE.md) — Upgrading from v1.x or v2.x
