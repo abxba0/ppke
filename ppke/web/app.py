@@ -28,6 +28,7 @@ import os
 import re
 import secrets
 import time
+import urllib.request
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -357,8 +358,6 @@ def _get_oauth_credentials(provider: str) -> tuple[str, str] | None:
 
 def _oauth_exchange_code(provider: str, code: str, redirect_uri: str) -> dict:
     """Exchange an authorization code for an access token using stdlib urllib."""
-    import urllib.request
-
     cfg = _OAUTH_CONFIGS[provider]
     creds = _get_oauth_credentials(provider)
     if not creds:
@@ -381,8 +380,6 @@ def _oauth_exchange_code(provider: str, code: str, redirect_uri: str) -> dict:
 
 def _oauth_get_userinfo(provider: str, access_token: str) -> dict:
     """Fetch user profile from the OAuth provider using stdlib urllib."""
-    import urllib.request
-
     cfg = _OAUTH_CONFIGS[provider]
     req = urllib.request.Request(cfg["userinfo_url"])
     req.add_header("Authorization", f"Bearer {access_token}")
