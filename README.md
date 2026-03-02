@@ -32,7 +32,7 @@ PPKE is an open-source CLI + Web platform that uses LLMs to extract, organize, a
 | **Plugin marketplace** | ❌ Not implemented | Template system exists; no marketplace or discovery UI |
 | **Hybrid search** | ❌ Not implemented | Full-text + vector combined retrieval deferred |
 | **Speaker diarization** | ❌ Not implemented | Requires `pyannote.audio`; deferred |
-| **Test coverage** | ⚠️ 74% | See [test-coverage.md](test-coverage.md) for the full breakdown and improvement plan |
+| **Test coverage** | ✅ ~91% | See [test-coverage.md](test-coverage.md) for the full breakdown |
 
 ## Features
 
@@ -475,7 +475,7 @@ ppke/
 ├── vectordb/            # Vector database integration
 ├── output/
 │   └── writer.py        # Output file generation
-└── tests/               # Test suite (74% coverage — see test-coverage.md)
+└── tests/               # Test suite (~91% coverage — see test-coverage.md)
 ```
 
 ## Output Structure
@@ -553,5 +553,5 @@ The following features are referenced in documentation or UI but are **not yet f
 | Plugin marketplace | Template system only | `ppke/templates/` |
 | Hybrid search (full-text + vector) | Deferred | See `FUTURE_PLANS.md` Phase 3 |
 | Speaker diarization | Deferred | Requires `pyannote.audio` |
-| Test coverage 90%+ | Currently 74% | See [test-coverage.md](test-coverage.md) |
+| Test coverage 90%+ | Currently ~91% | See [test-coverage.md](test-coverage.md) |
 
