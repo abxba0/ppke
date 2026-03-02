@@ -2218,6 +2218,22 @@ async def api_graph_markdown_export(request: Request):
 
 # ── Obsidian / PKM sync endpoints ──
 
+_BLOCKED_PREFIXES = ("/etc", "/usr", "/var", "/sys", "/proc", "/dev", "/boot", "/sbin", "/bin")
+
+
+def _validate_sync_path(raw: str) -> Path:
+    """Resolve and validate an Obsidian vault target path.
+
+    Rejects system-critical directories to prevent accidental or
+    malicious writes outside of user-controlled locations.
+    """
+    resolved = Path(raw).resolve()
+    resolved_str = str(resolved)
+    for prefix in _BLOCKED_PREFIXES:
+        if resolved_str == prefix or resolved_str.startswith(prefix + "/"):
+            raise HTTPException(400, f"Sync target must not be under {prefix}")
+    return resolved
+
 
 @app.post("/api/sync/obsidian")
 async def api_sync_obsidian(request: Request):
@@ -2235,8 +2251,7 @@ async def api_sync_obsidian(request: Request):
     if not target:
         raise HTTPException(400, "vault_path is required")
 
-    # Prevent path traversal
-    target_path = Path(target).resolve()
+    target_path = _validate_sync_path(target)
 
     from ppke.export.obsidian_sync import ObsidianSyncEngine
 
@@ -2258,7 +2273,7 @@ async def api_sync_obsidian_status(request: Request, vault_path: str = Query(...
     user = await _try_get_user(request)
     ppke_vault = _user_vault_path(user)
 
-    target_path = Path(vault_path).resolve()
+    target_path = _validate_sync_path(vault_path)
 
     from ppke.export.obsidian_sync import ObsidianSyncEngine
 

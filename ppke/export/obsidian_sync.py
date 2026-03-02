@@ -17,7 +17,6 @@ import hashlib
 import json
 import logging
 import re
-import shutil
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
