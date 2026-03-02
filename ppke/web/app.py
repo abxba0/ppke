@@ -1257,6 +1257,110 @@ async def api_import_url(
     return {"job_id": job_id, "status": "running", "source_type": source_type}
 
 
+@app.post("/api/import-zotero")
+async def api_import_zotero(
+    request: Request,
+    file: UploadFile = File(...),
+    domain: str = Form("philosophy"),
+):
+    """Import a Zotero export file (.bib, .json, or .rdf).
+
+    Parses bibliographic entries, deduplicates, converts to Markdown,
+    and starts a background ingestion job.
+
+    Returns ``{"job_id": ..., "status": "running", "entries": N}``.
+    """
+    user = await _try_get_user(request)
+    config = _get_config()
+    vault = _user_vault_path(user)
+    upload_dir = vault / ".uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_filename = re.sub(r"[^\w\.\-]", "_", Path(file.filename or "zotero_import").name)
+    # Prevent path traversal via dot sequences
+    safe_filename = safe_filename.lstrip(".")
+    if not safe_filename:
+        safe_filename = "zotero_import"
+    temp_path = upload_dir / safe_filename
+    content = await file.read()
+    temp_path.write_bytes(content)
+
+    # Parse and convert
+    try:
+        from ppke.converter.zotero import parse_zotero_file, deduplicate_entries, entries_to_markdown
+
+        entries = parse_zotero_file(temp_path)
+        entries = deduplicate_entries(entries)
+        if not entries:
+            temp_path.unlink(missing_ok=True)
+            raise HTTPException(400, "No bibliographic entries found in the uploaded file.")
+
+        source_name = temp_path.stem.replace("_", " ").replace("-", " ").title()
+        markdown_text = entries_to_markdown(entries, source_name=source_name)
+    except ValueError as e:
+        temp_path.unlink(missing_ok=True)
+        raise HTTPException(400, str(e)) from e
+
+    entry_count = len(entries)
+
+    # Derive title and author from first entry or filename
+    ingest_title = source_name
+    ingest_author = entries[0].get("author", "Zotero Import") if entries else "Zotero Import"
+
+    md_path = upload_dir / f"{temp_path.stem}_zotero.md"
+    md_path.write_text(markdown_text)
+
+    job_id = create_job(extra={"filename": safe_filename, "source_type": "zotero", "entries": entry_count})
+
+    def _run_zotero_ingest(jid=job_id, tp=temp_path, mp=md_path):
+        _start = time.time()
+        try:
+            from ppke.parser.markdown import parse_markdown_book
+            from ppke.pipeline.orchestrator import ingest_book
+            from ppke.progress.tracker import ProgressTracker
+            from ppke.vectordb.store import VectorStore
+            from ppke.graph.knowledge_graph import KnowledgeGraph
+
+            book = parse_markdown_book(mp, ingest_title, ingest_author, None)
+            update_job(jid, stage=f"Parsed: {entry_count} Zotero entries", progress=20)
+
+            tracker = ProgressTracker()
+            vector_store = VectorStore(vault) if config.enable_vector_search else None
+            knowledge_graph = KnowledgeGraph(vault) if config.enable_knowledge_graph else None
+
+            config.vault_path = vault
+
+            def progress_cb(stage: str, detail: str):
+                update_job(jid, stage=f"[{stage}] {detail}")
+
+            book_dir = ingest_book(
+                book, config,
+                domain=domain,
+                progress_callback=progress_cb,
+                tracker=tracker,
+                vector_store=vector_store,
+                knowledge_graph=knowledge_graph,
+            )
+
+            folder_name = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
+            update_job(jid, status="completed", progress=100,
+                       book_folder=folder_name, stage="Ingestion complete!")
+            record_ingestion("zotero", "completed", time.time() - _start)
+
+        except Exception as e:
+            logger.exception("Zotero ingestion failed for job %s", jid)
+            update_job(jid, status="failed", error=str(e), stage=f"Failed: {e}")
+            capture_exception(e, job_id=jid)
+            record_ingestion("zotero", "failed", time.time() - _start)
+        finally:
+            tp.unlink(missing_ok=True)
+            mp.unlink(missing_ok=True)
+
+    run_task(_run_zotero_ingest, job_id=job_id)
+
+    return {"job_id": job_id, "status": "running", "source_type": "zotero", "entries": entry_count}
+
+
 @app.get("/api/jobs/{job_id}")
 async def api_job_status(job_id: str):
     job = get_job(job_id)
