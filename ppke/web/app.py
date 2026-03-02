@@ -2827,3 +2827,136 @@ async def api_get_usage(
     """Get the current user's LLM usage summary."""
     conn = _get_db()
     return auth_db.get_user_usage(conn, user["id"], days=days)
+
+
+# ── Plugin Marketplace ──
+
+
+@app.get("/marketplace", response_class=HTMLResponse)
+async def marketplace_page(request: Request):
+    """Render the plugin marketplace UI."""
+    user = await _try_get_user(request)
+    from ppke.templates.marketplace import list_marketplace_plugins
+
+    result = list_marketplace_plugins()
+    return templates.TemplateResponse("marketplace.html", {
+        "request": request,
+        "user": user,
+        "plugins": result["plugins"],
+        "categories": result["categories"],
+        "total": result["total"],
+    })
+
+
+@app.get("/api/marketplace/plugins")
+async def api_marketplace_list(
+    category: str | None = Query(None),
+    search: str | None = Query(None, alias="q"),
+    sort_by: str = Query("downloads"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+):
+    """List and search marketplace plugins."""
+    from ppke.templates.marketplace import list_marketplace_plugins
+
+    return list_marketplace_plugins(
+        category=category,
+        search=search,
+        sort_by=sort_by,
+        page=page,
+        per_page=per_page,
+    )
+
+
+@app.get("/api/marketplace/plugins/{name}")
+async def api_marketplace_detail(name: str):
+    """Get details for a single marketplace plugin."""
+    from ppke.templates.marketplace import get_marketplace_plugin
+
+    plugin = get_marketplace_plugin(name)
+    if plugin is None:
+        raise HTTPException(404, f"Plugin '{name}' not found")
+    return plugin
+
+
+@app.post("/api/marketplace/plugins/{name}/rate")
+async def api_marketplace_rate(
+    name: str,
+    request: Request,
+):
+    """Rate a marketplace plugin (1-5 stars)."""
+    body = await request.json()
+    rating = body.get("rating")
+    if not isinstance(rating, int) or not 1 <= rating <= 5:
+        raise HTTPException(422, "rating must be an integer between 1 and 5")
+
+    from ppke.templates.marketplace import rate_plugin
+
+    result = rate_plugin(name, rating)
+    if result is None:
+        raise HTTPException(404, f"Plugin '{name}' not found")
+    return result
+
+
+@app.post("/api/marketplace/plugins/{name}/install")
+async def api_marketplace_install(name: str):
+    """Install a plugin from the marketplace (official plugins are bundled)."""
+    from ppke.templates.marketplace import get_marketplace_plugin, increment_downloads
+
+    plugin = get_marketplace_plugin(name)
+    if plugin is None:
+        raise HTTPException(404, f"Plugin '{name}' not found")
+
+    # Official plugins are already bundled; just bump the counter
+    if plugin.get("tier") == "official":
+        increment_downloads(name)
+        return {"status": "already_installed", "plugin": name, "message": "Official plugin is bundled with PPKE"}
+
+    # Community plugins with a GitHub source can be installed
+    source = plugin.get("source", "")
+    if source.startswith("github:"):
+        from ppke.templates.installer import install_from_github, TemplateInstallError
+
+        github_url = source.replace("github:", "")
+        try:
+            install_from_github(github_url, force=True)
+            increment_downloads(name)
+            return {"status": "installed", "plugin": name}
+        except TemplateInstallError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    increment_downloads(name)
+    return {"status": "registered", "plugin": name, "message": "Plugin registered locally"}
+
+
+@app.post("/api/marketplace/submit")
+async def api_marketplace_submit(request: Request):
+    """Submit a new plugin to the marketplace."""
+    body = await request.json()
+
+    required = ["name", "version", "author", "description"]
+    for field in required:
+        if not body.get(field):
+            raise HTTPException(422, f"Missing required field: {field}")
+
+    import re
+    if not re.fullmatch(r'[a-z_]+', body["name"]):
+        raise HTTPException(422, "Plugin name must be lowercase letters and underscores only")
+    if not re.fullmatch(r'\d+\.\d+\.\d+', body["version"]):
+        raise HTTPException(422, "Version must be semantic (e.g. 1.0.0)")
+
+    from ppke.templates.marketplace import submit_plugin
+
+    try:
+        plugin = submit_plugin(
+            name=body["name"],
+            version=body["version"],
+            author=body["author"],
+            description=body["description"],
+            category=body.get("category", "other"),
+            tags=[t.strip() for t in body.get("tags", "").split(",") if t.strip()] if isinstance(body.get("tags"), str) else body.get("tags", []),
+            source_url=body.get("source_url"),
+        )
+        return plugin
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
