@@ -14,6 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+_RESULT_KEYS = ("paragraph_id", "book_folder", "book_title", "author", "document", "score", "source")
+
 
 # ── Fixtures ──
 
@@ -135,13 +137,8 @@ class TestFulltextSearch:
 
         hits = fulltext_search(vault_with_books, "justice")
         h = hits[0]
-        assert "paragraph_id" in h
-        assert "book_folder" in h
-        assert "book_title" in h
-        assert "author" in h
-        assert "document" in h
-        assert "score" in h
-        assert "source" in h
+        for key in _RESULT_KEYS:
+            assert key in h
         assert h["source"] == "fulltext"
         assert h["score"] == 1.0
 
@@ -254,7 +251,7 @@ class TestHybridSearch:
         hits = hybrid_search(vault_with_books, "justice")
         assert len(hits) >= 1
         h = hits[0]
-        for key in ("paragraph_id", "book_folder", "book_title", "author", "document", "score", "source"):
+        for key in _RESULT_KEYS:
             assert key in h
 
     def test_results_sorted_by_score_descending(self, vault_with_books: Path):

@@ -210,7 +210,9 @@ def hybrid_search(
     # -- Merge & deduplicate -------------------------------------------------
     merged: dict[str, dict[str, Any]] = {}  # key = "book_folder::paragraph_id"
 
-    # Normalise vector distances → scores (cosine distance in [0, 2])
+    # Normalise vector distances → scores.
+    # ChromaDB cosine distance ranges from 0 (identical) to 2 (opposite).
+    # We clamp to [0, 1] via: score = max(0, 1 - distance).
     for hit in vector_hits:
         key = f"{hit['book_folder']}::{hit['paragraph_id']}"
         # Convert cosine distance to similarity score in [0, 1]
