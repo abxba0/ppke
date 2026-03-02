@@ -31,7 +31,7 @@ PPKE is an open-source CLI + Web platform that uses LLMs to extract, organize, a
 | **Deep Obsidian/PKM sync** | ❌ Not implemented | One-time ZIP export only; no live vault synchronization |
 | **Plugin marketplace** | ❌ Not implemented | Template system exists; no marketplace or discovery UI |
 | **Hybrid search** | ❌ Not implemented | Full-text + vector combined retrieval deferred |
-| **Speaker diarization** | ❌ Not implemented | Requires `pyannote.audio`; deferred |
+| **Speaker diarization** | ✅ Working | Identifies 'who spoke when' via `pyannote.audio`; install with `pip install 'ppke[diarization]'` |
 | **Test coverage** | ✅ ~91% | See [test-coverage.md](test-coverage.md) for the full breakdown |
 
 ## Features
@@ -552,6 +552,6 @@ The following features are referenced in documentation or UI but are **not yet f
 | Deep Obsidian/PKM sync | One-time ZIP export | `ppke/graph/analytics.py` (`obsidian_vault_zip`), `/api/graph/obsidian-export` |
 | Plugin marketplace | Template system only | `ppke/templates/` |
 | Hybrid search (full-text + vector) | Deferred | See `FUTURE_PLANS.md` Phase 3 |
-| Speaker diarization | Deferred | Requires `pyannote.audio` |
+| Speaker diarization | Implemented | `ppke/audio/diarization.py`; requires `pip install 'ppke[diarization]'` + HF token |
 | Test coverage 90%+ | Currently ~91% | See [test-coverage.md](test-coverage.md) |
 

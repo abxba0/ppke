@@ -272,3 +272,111 @@ class TestDownloadAndTranscribe:
     def test_function_exists(self):
         from ppke.audio.rss import download_and_transcribe
         assert callable(download_and_transcribe)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# audio/diarization.py
+# ═══════════════════════════════════════════════════════════════════
+
+
+class TestFormatTs:
+    def test_seconds(self):
+        from ppke.audio.diarization import _format_ts
+        assert _format_ts(45) == "00:45"
+
+    def test_minutes(self):
+        from ppke.audio.diarization import _format_ts
+        assert _format_ts(125) == "02:05"
+
+    def test_hours(self):
+        from ppke.audio.diarization import _format_ts
+        assert _format_ts(3661) == "01:01:01"
+
+
+class TestDiarize:
+    def test_requires_pyannote(self, tmp_path):
+        from ppke.audio.diarization import diarize
+        f = tmp_path / "test.wav"
+        f.write_bytes(b"fake audio")
+        with pytest.raises(ImportError, match="pyannote"):
+            diarize(f, hf_token="fake")
+
+    def test_requires_hf_token(self, tmp_path, monkeypatch):
+        from ppke.audio.diarization import diarize
+        monkeypatch.delenv("HF_TOKEN", raising=False)
+        f = tmp_path / "test.wav"
+        f.write_bytes(b"fake audio")
+        # Mock pyannote so ImportError is not raised
+        mock_pipeline = MagicMock()
+        with patch.dict("sys.modules", {"pyannote": MagicMock(), "pyannote.audio": mock_pipeline}):
+            with pytest.raises(ValueError, match="Hugging Face token"):
+                diarize(f)
+
+
+class TestMergeTranscriptionDiarization:
+    def test_basic_merge(self):
+        from ppke.audio.diarization import merge_transcription_diarization
+        transcript = [
+            {"start": 0.0, "end": 5.0, "text": "Hello world"},
+            {"start": 5.0, "end": 10.0, "text": "How are you"},
+        ]
+        diar = [
+            {"speaker": "SPEAKER_00", "start": 0.0, "end": 6.0},
+            {"speaker": "SPEAKER_01", "start": 6.0, "end": 12.0},
+        ]
+        merged = merge_transcription_diarization(transcript, diar)
+        assert len(merged) == 2
+        assert merged[0]["speaker"] == "SPEAKER_00"
+        assert merged[0]["text"] == "Hello world"
+        assert merged[1]["speaker"] == "SPEAKER_01"
+
+    def test_empty_diarization(self):
+        from ppke.audio.diarization import merge_transcription_diarization
+        transcript = [{"start": 0.0, "end": 5.0, "text": "Hi"}]
+        merged = merge_transcription_diarization(transcript, [])
+        assert merged[0]["speaker"] == "UNKNOWN"
+
+    def test_does_not_mutate(self):
+        from ppke.audio.diarization import merge_transcription_diarization
+        transcript = [{"start": 0.0, "end": 5.0, "text": "Hi"}]
+        diar = [{"speaker": "S1", "start": 0.0, "end": 5.0}]
+        merge_transcription_diarization(transcript, diar)
+        assert "speaker" not in transcript[0]
+
+
+class TestFormatDiarizedTranscript:
+    def test_basic_format(self):
+        from ppke.audio.diarization import format_diarized_transcript
+        segments = [
+            {"speaker": "SPEAKER_00", "start": 0.0, "text": "Hello"},
+            {"speaker": "SPEAKER_01", "start": 5.0, "text": "Hi there"},
+        ]
+        result = format_diarized_transcript(segments, title="Test")
+        assert "# Test" in result
+        assert "Speaker 1" in result
+        assert "Speaker 2" in result
+        assert "Hello" in result
+        assert "Hi there" in result
+
+    def test_empty_segments(self):
+        from ppke.audio.diarization import format_diarized_transcript
+        result = format_diarized_transcript([])
+        assert "# Diarized Transcript" in result
+
+    def test_with_source(self):
+        from ppke.audio.diarization import format_diarized_transcript
+        result = format_diarized_transcript([], source="audio.mp3")
+        assert "audio.mp3" in result
+
+
+class TestDiarizationPersistence:
+    def test_save_and_load(self, tmp_path):
+        from ppke.audio.diarization import save_diarization, load_diarization
+        segments = [
+            {"speaker": "S1", "start": 0.0, "end": 5.0},
+            {"speaker": "S2", "start": 5.0, "end": 10.0},
+        ]
+        path = tmp_path / "diarization.json"
+        save_diarization(segments, path)
+        loaded = load_diarization(path)
+        assert loaded == segments

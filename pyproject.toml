@@ -55,6 +55,10 @@ audio = [
     "pydub>=0.25.1",
     "edge-tts>=6.1.0",
 ]
+# Speaker diarization — identifies 'who spoke when'
+diarization = [
+    "pyannote.audio>=3.1",
+]
 # Phase 2: document intelligence — URL scraping, YouTube import, spreadsheets
 ingest = [
     "trafilatura>=1.6.0",   # URL / article content extraction
@@ -100,6 +104,7 @@ all = [
     "beautifulsoup4>=4.12.0",
     "pydub>=0.25.1",
     "edge-tts>=6.1.0",
+    "pyannote.audio>=3.1",
     "trafilatura>=1.6.0",
     "requests>=2.31.0",
     "yt-dlp>=2024.1.0",
