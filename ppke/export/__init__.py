@@ -1,1 +1,1 @@
-"""Export module — generate PDF, DOCX, PPTX, and ZIP archives from book data."""
+"""Export module — generate PDF, DOCX, PPTX, ZIP archives, and Obsidian vault sync."""
