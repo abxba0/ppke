@@ -2216,6 +2216,56 @@ async def api_graph_markdown_export(request: Request):
     )
 
 
+# ── Obsidian / PKM sync endpoints ──
+
+
+@app.post("/api/sync/obsidian")
+async def api_sync_obsidian(request: Request):
+    """Trigger an Obsidian vault sync (two-way by default)."""
+    user = await _try_get_user(request)
+    vault = _user_vault_path(user)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    target = body.get("vault_path", "")
+    direction = body.get("direction", "full")  # full | to_vault | from_vault
+
+    if not target:
+        raise HTTPException(400, "vault_path is required")
+
+    # Prevent path traversal
+    target_path = Path(target).resolve()
+
+    from ppke.export.obsidian_sync import ObsidianSyncEngine
+
+    engine = ObsidianSyncEngine(vault, target_path)
+
+    if direction == "to_vault":
+        result = engine.sync_to_vault()
+    elif direction == "from_vault":
+        result = engine.sync_from_vault()
+    else:
+        result = engine.full_sync()
+
+    return result
+
+
+@app.get("/api/sync/obsidian/status")
+async def api_sync_obsidian_status(request: Request, vault_path: str = Query(...)):
+    """Get sync status for a configured Obsidian vault."""
+    user = await _try_get_user(request)
+    ppke_vault = _user_vault_path(user)
+
+    target_path = Path(vault_path).resolve()
+
+    from ppke.export.obsidian_sync import ObsidianSyncEngine
+
+    engine = ObsidianSyncEngine(ppke_vault, target_path)
+    return engine.get_status()
+
+
 # ── Export endpoints (Phase 6) ──
 
 
