@@ -2403,6 +2403,62 @@ async def api_export_zip(request: Request, folder: str):
     )
 
 
+@app.get("/api/export/{folder}/tex")
+async def api_export_latex(request: Request, folder: str):
+    """Export a book's analysis as a LaTeX (.tex) document."""
+    user = await _try_get_user(request)
+    folder = _safe_folder(folder)
+    book_dir = _user_vault_path(user) / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+
+    from ppke.export.exporters import export_latex
+
+    try:
+        tex_bytes = export_latex(book_dir)
+    except Exception as e:
+        raise HTTPException(500, f"LaTeX export failed: {e}") from e
+
+    meta = _load_book_meta(book_dir)
+    safe_title = re.sub(r"[^\w\-]", "_", meta.get("title", folder))
+
+    from fastapi.responses import Response
+
+    return Response(
+        content=tex_bytes,
+        media_type="application/x-latex",
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}_report.tex"'},
+    )
+
+
+@app.get("/api/export/{folder}/bib")
+async def api_export_bibtex(request: Request, folder: str):
+    """Export a book's metadata as a BibTeX (.bib) entry."""
+    user = await _try_get_user(request)
+    folder = _safe_folder(folder)
+    book_dir = _user_vault_path(user) / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+
+    from ppke.export.exporters import export_bibtex
+
+    try:
+        bib_bytes = export_bibtex(book_dir)
+    except Exception as e:
+        raise HTTPException(500, f"BibTeX export failed: {e}") from e
+
+    meta = _load_book_meta(book_dir)
+    safe_title = re.sub(r"[^\w\-]", "_", meta.get("title", folder))
+
+    from fastapi.responses import Response
+
+    return Response(
+        content=bib_bytes,
+        media_type="application/x-bibtex",
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}.bib"'},
+    )
+
+
 # ── Academic tools endpoints (Phase 6) ──
 
 
@@ -2425,6 +2481,32 @@ async def api_bibliography(
     book_folders = [b.strip() for b in books.split(",") if b.strip()] or None
     content = generate_bibliography(vault, style=style, book_folders=book_folders)
     return {"style": style, "content": content}
+
+
+@app.get("/api/bibliography/bib")
+async def api_bibliography_bibtex(
+    request: Request,
+    books: str = Query(""),
+):
+    """Export all (or selected) books as a BibTeX bibliography file.
+
+    Parameters:
+    - books: comma-separated book folder names (empty = all books)
+    """
+    user = await _try_get_user(request)
+    from ppke.export.academic import export_bibliography_bibtex
+
+    vault = _user_vault_path(user)
+    book_folders = [b.strip() for b in books.split(",") if b.strip()] or None
+    bib_content = export_bibliography_bibtex(vault, book_folders=book_folders)
+
+    from fastapi.responses import Response
+
+    return Response(
+        content=bib_content.encode("utf-8"),
+        media_type="application/x-bibtex",
+        headers={"Content-Disposition": 'attachment; filename="bibliography.bib"'},
+    )
 
 
 @app.get("/api/literature-review")

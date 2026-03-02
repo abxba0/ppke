@@ -252,8 +252,354 @@ class TestExportMarkdownZip:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# export/academic.py
+# export/exporters.py — LaTeX export
 # ═══════════════════════════════════════════════════════════════════
+
+
+class TestLatexEscape:
+    def test_ampersand(self):
+        from ppke.export.exporters import _latex_escape
+        assert _latex_escape("A & B") == "A \\& B"
+
+    def test_percent(self):
+        from ppke.export.exporters import _latex_escape
+        assert _latex_escape("100%") == "100\\%"
+
+    def test_underscore(self):
+        from ppke.export.exporters import _latex_escape
+        assert _latex_escape("some_var") == "some\\_var"
+
+    def test_dollar(self):
+        from ppke.export.exporters import _latex_escape
+        assert _latex_escape("$price") == "\\$price"
+
+    def test_hash(self):
+        from ppke.export.exporters import _latex_escape
+        assert _latex_escape("#1") == "\\#1"
+
+
+class TestInlineLatex:
+    def test_bold(self):
+        from ppke.export.exporters import _inline_latex
+        result = _inline_latex("**bold text**")
+        assert "\\textbf{bold text}" in result
+
+    def test_italic(self):
+        from ppke.export.exporters import _inline_latex
+        result = _inline_latex("*italic text*")
+        assert "\\textit{italic text}" in result
+
+    def test_code(self):
+        from ppke.export.exporters import _inline_latex
+        result = _inline_latex("`code`")
+        assert "\\texttt{code}" in result
+
+
+class TestMdToLatex:
+    def test_section_heading(self):
+        from ppke.export.exporters import _md_to_latex
+        result = _md_to_latex("# Title")
+        assert "\\section{Title}" in result
+
+    def test_subsection_heading(self):
+        from ppke.export.exporters import _md_to_latex
+        result = _md_to_latex("## Subtitle")
+        assert "\\subsection{Subtitle}" in result
+
+    def test_subsubsection_heading(self):
+        from ppke.export.exporters import _md_to_latex
+        result = _md_to_latex("### Sub")
+        assert "\\subsubsection{Sub}" in result
+
+    def test_paragraph_heading(self):
+        from ppke.export.exporters import _md_to_latex
+        result = _md_to_latex("#### Para")
+        assert "\\paragraph{Para}" in result
+
+    def test_itemize_list(self):
+        from ppke.export.exporters import _md_to_latex
+        result = _md_to_latex("- Item one\n- Item two")
+        assert "\\begin{itemize}" in result
+        assert "\\item Item one" in result
+        assert "\\end{itemize}" in result
+
+    def test_code_block(self):
+        from ppke.export.exporters import _md_to_latex
+        result = _md_to_latex("```\ncode here\n```")
+        assert "\\begin{verbatim}" in result
+        assert "code here" in result
+        assert "\\end{verbatim}" in result
+
+    def test_horizontal_rule(self):
+        from ppke.export.exporters import _md_to_latex
+        result = _md_to_latex("---")
+        assert "\\hrule" in result
+
+    def test_empty_line(self):
+        from ppke.export.exporters import _md_to_latex
+        result = _md_to_latex("Line 1\n\nLine 2")
+        assert "Line 1" in result
+        assert "Line 2" in result
+
+    def test_unclosed_list(self):
+        from ppke.export.exporters import _md_to_latex
+        result = _md_to_latex("- Only item")
+        assert "\\end{itemize}" in result
+
+    def test_unclosed_code(self):
+        from ppke.export.exporters import _md_to_latex
+        result = _md_to_latex("```\nunclosed")
+        assert "\\end{verbatim}" in result
+
+
+class TestExportLatex:
+    def test_returns_bytes(self, book_dir):
+        from ppke.export.exporters import export_latex
+        result = export_latex(book_dir)
+        assert isinstance(result, bytes)
+
+    def test_contains_document_structure(self, book_dir):
+        from ppke.export.exporters import export_latex
+        tex = export_latex(book_dir).decode("utf-8")
+        assert "\\documentclass" in tex
+        assert "\\begin{document}" in tex
+        assert "\\end{document}" in tex
+        assert "\\maketitle" in tex
+        assert "\\tableofcontents" in tex
+
+    def test_contains_metadata(self, book_dir):
+        from ppke.export.exporters import export_latex
+        tex = export_latex(book_dir).decode("utf-8")
+        assert "Export Test Book" in tex
+        assert "Export Author" in tex
+        assert "2025" in tex
+
+    def test_minimal_book(self, tmp_path):
+        from ppke.export.exporters import export_latex
+        d = tmp_path / "Book_Minimal"
+        d.mkdir()
+        (d / "meta.yml").write_text(yaml.dump({"title": "Min Book", "author": "A. Author"}))
+        result = export_latex(d)
+        assert b"\\documentclass" in result
+        assert b"Min Book" in result
+
+    def test_no_meta(self, tmp_path):
+        from ppke.export.exporters import export_latex
+        d = tmp_path / "Book_NoMeta"
+        d.mkdir()
+        result = export_latex(d)
+        assert isinstance(result, bytes)
+        assert b"\\documentclass" in result
+
+    def test_today_date_when_no_year(self, tmp_path):
+        from ppke.export.exporters import export_latex
+        d = tmp_path / "Book_NoYear"
+        d.mkdir()
+        (d / "meta.yml").write_text(yaml.dump({"title": "No Year", "author": "Auth"}))
+        tex = export_latex(d).decode("utf-8")
+        assert "\\today" in tex
+
+    def test_year_used_when_present(self, book_dir):
+        from ppke.export.exporters import export_latex
+        tex = export_latex(book_dir).decode("utf-8")
+        assert "\\today" not in tex
+        assert "2025" in tex
+
+
+# ═══════════════════════════════════════════════════════════════════
+# export/exporters.py — BibTeX export
+# ═══════════════════════════════════════════════════════════════════
+
+
+class TestMakeCiteKey:
+    def test_basic(self):
+        from ppke.export.exporters import _make_cite_key
+        key = _make_cite_key({"author": "Smith, J.", "year": 2025})
+        assert key == "Smith2025"
+
+    def test_no_year(self):
+        from ppke.export.exporters import _make_cite_key
+        key = _make_cite_key({"author": "Doe"})
+        assert key == "Doe"
+
+    def test_no_author(self):
+        from ppke.export.exporters import _make_cite_key
+        key = _make_cite_key({"year": 2020})
+        assert "Unknown" in key
+
+    def test_space_separated_author(self):
+        from ppke.export.exporters import _make_cite_key
+        key = _make_cite_key({"author": "John Doe", "year": 2000})
+        assert key.startswith("John")
+
+
+class TestBibtexEscape:
+    def test_backslash_left_as_is(self):
+        from ppke.export.exporters import _bibtex_escape
+        # Backslashes are intentionally left as-is (LaTeX commands)
+        result = _bibtex_escape("a\\b")
+        assert "a\\b" in result
+
+    def test_braces(self):
+        from ppke.export.exporters import _bibtex_escape
+        result = _bibtex_escape("{test}")
+        assert "\\{" in result
+        assert "\\}" in result
+
+
+class TestMetaToBibtexEntry:
+    def test_basic_fields(self):
+        from ppke.export.exporters import meta_to_bibtex_entry
+        meta = {"title": "Test Book", "author": "Smith, J.", "year": 2025}
+        entry = meta_to_bibtex_entry(meta)
+        assert "@book{" in entry
+        assert "title" in entry
+        assert "Test Book" in entry
+        assert "author" in entry
+        assert "Smith" in entry
+        assert "year" in entry
+        assert "2025" in entry
+
+    def test_custom_cite_key(self):
+        from ppke.export.exporters import meta_to_bibtex_entry
+        meta = {"title": "T", "author": "A", "year": 2020}
+        entry = meta_to_bibtex_entry(meta, cite_key="CustomKey2020")
+        assert "@book{CustomKey2020," in entry
+
+    def test_optional_fields(self):
+        from ppke.export.exporters import meta_to_bibtex_entry
+        meta = {
+            "title": "T",
+            "author": "A",
+            "year": 2020,
+            "publisher": "Publisher Co",
+            "isbn": "978-0-000-00000-0",
+            "doi": "10.1234/test",
+            "url": "https://example.com",
+            "language": "English",
+            "domain": "philosophy",
+        }
+        entry = meta_to_bibtex_entry(meta)
+        assert "publisher" in entry
+        assert "Publisher Co" in entry
+        assert "isbn" in entry
+        assert "doi" in entry
+        assert "url" in entry
+        assert "language" in entry
+        assert "note" in entry
+        assert "philosophy" in entry
+
+    def test_empty_meta(self):
+        from ppke.export.exporters import meta_to_bibtex_entry
+        entry = meta_to_bibtex_entry({})
+        assert "@book{" in entry
+
+
+class TestExportBibtex:
+    def test_returns_bytes(self, book_dir):
+        from ppke.export.exporters import export_bibtex
+        result = export_bibtex(book_dir)
+        assert isinstance(result, bytes)
+
+    def test_contains_book_entry(self, book_dir):
+        from ppke.export.exporters import export_bibtex
+        bib = export_bibtex(book_dir).decode("utf-8")
+        assert "@book{" in bib
+        assert "Export Test Book" in bib
+        assert "Export Author" in bib
+
+    def test_header_comment(self, book_dir):
+        from ppke.export.exporters import export_bibtex
+        bib = export_bibtex(book_dir).decode("utf-8")
+        assert "% BibTeX export generated by PPKE" in bib
+
+    def test_minimal_book(self, tmp_path):
+        from ppke.export.exporters import export_bibtex
+        d = tmp_path / "Book_Min"
+        d.mkdir()
+        (d / "meta.yml").write_text(yaml.dump({"title": "Minimal", "author": "Auth"}))
+        result = export_bibtex(d)
+        assert b"@book{" in result
+
+    def test_no_meta(self, tmp_path):
+        from ppke.export.exporters import export_bibtex
+        d = tmp_path / "Book_NoMeta"
+        d.mkdir()
+        result = export_bibtex(d)
+        assert isinstance(result, bytes)
+        assert b"@book{" in result
+
+
+# ═══════════════════════════════════════════════════════════════════
+# export/academic.py — BibTeX bibliography export
+# ═══════════════════════════════════════════════════════════════════
+
+
+class TestExportBibliographyBibtex:
+    def test_basic_export(self, tmp_path):
+        from ppke.export.academic import export_bibliography_bibtex
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        b1 = vault / "Book_A"
+        b1.mkdir()
+        (b1 / "meta.yml").write_text(yaml.dump({"title": "Alpha", "author": "AA", "year": 2020}))
+        b2 = vault / "Book_B"
+        b2.mkdir()
+        (b2 / "meta.yml").write_text(yaml.dump({"title": "Beta", "author": "BB", "year": 2021}))
+
+        result = export_bibliography_bibtex(vault)
+        assert "@book{" in result
+        assert "Alpha" in result
+        assert "Beta" in result
+        assert "2 entries" in result
+
+    def test_empty_vault(self, tmp_path):
+        from ppke.export.academic import export_bibliography_bibtex
+        vault = tmp_path / "empty"
+        vault.mkdir()
+        result = export_bibliography_bibtex(vault)
+        assert "No books found" in result
+        assert "0 entries" in result
+
+    def test_nonexistent_vault(self):
+        from ppke.export.academic import export_bibliography_bibtex
+        from pathlib import Path
+        result = export_bibliography_bibtex(Path("/nonexistent/path"))
+        assert "0 entries" in result
+
+    def test_specific_folders(self, tmp_path):
+        from ppke.export.academic import export_bibliography_bibtex
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        b1 = vault / "Book_A"
+        b1.mkdir()
+        (b1 / "meta.yml").write_text(yaml.dump({"title": "Alpha", "author": "AA"}))
+        b2 = vault / "Book_B"
+        b2.mkdir()
+        (b2 / "meta.yml").write_text(yaml.dump({"title": "Beta", "author": "BB"}))
+
+        result = export_bibliography_bibtex(vault, book_folders=["Book_A"])
+        assert "Alpha" in result
+        assert "Beta" not in result
+
+    def test_unique_cite_keys(self, tmp_path):
+        from ppke.export.academic import export_bibliography_bibtex
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        # Two books with the same author and year → should get unique cite keys
+        b1 = vault / "Book_A"
+        b1.mkdir()
+        (b1 / "meta.yml").write_text(yaml.dump({"title": "A1", "author": "Smith", "year": 2020}))
+        b2 = vault / "Book_B"
+        b2.mkdir()
+        (b2 / "meta.yml").write_text(yaml.dump({"title": "A2", "author": "Smith", "year": 2020}))
+
+        result = export_bibliography_bibtex(vault)
+        # Both entries are present
+        assert result.count("@book{") == 2
+        # First entry uses the base key, second uses a numeric suffix
+        assert "@book{Smith2020," in result
+        assert "@book{Smith2020_2," in result
 
 
 class TestCitations:
