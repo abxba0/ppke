@@ -86,7 +86,7 @@ def diarize(
         )
 
     logger.info("Loading diarization pipeline %s", pipeline_name)
-    pipeline = Pipeline.from_pretrained(pipeline_name, use_auth_token=token)
+    pipeline = Pipeline.from_pretrained(pipeline_name, token=token)
 
     params: dict[str, Any] = {}
     if num_speakers is not None:

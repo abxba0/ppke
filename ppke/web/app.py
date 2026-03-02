@@ -1839,7 +1839,6 @@ async def api_diarize_audio(
 
             # Persist to book folder when provided
             if safe:
-                user_sync = None  # background thread — no request context
                 vault = _get_config().get("vault_path", "vault")
                 book_dir = Path(vault) / safe
                 if book_dir.is_dir():
