@@ -1835,6 +1835,100 @@ def vector_search(
     click.echo(_render(result_tbl))
 
 
+# ── hybrid-search command ──
+
+
+@main.command("hybrid-search")
+@click.argument("query")
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Vault path",
+)
+@click.option("--book", default=None, help="Restrict search to a specific book folder")
+@click.option(
+    "--n-results", type=int, default=10, help="Number of results to return (default: 10)"
+)
+@click.option(
+    "--vector-weight",
+    type=float,
+    default=0.6,
+    help="Weight for vector similarity (0-1, default: 0.6)",
+)
+@click.option(
+    "--text-weight",
+    type=float,
+    default=0.4,
+    help="Weight for full-text match (0-1, default: 0.4)",
+)
+def hybrid_search_cmd(
+    query: str,
+    vault_path: Path | None,
+    book: str | None,
+    n_results: int,
+    vector_weight: float,
+    text_weight: float,
+):
+    """Combined full-text + vector search across all indexed paragraphs.
+
+    Merges results from keyword matching and semantic similarity, then
+    ranks them using a weighted score.  Falls back gracefully to whichever
+    backend is available.
+
+    Examples:
+        ppke hybrid-search "the nature of consciousness"
+        ppke hybrid-search "free will" --book "Book_Republic_Plato"
+        ppke hybrid-search "time" --vector-weight 0.8 --text-weight 0.2
+    """
+    from ppke.search import hybrid_search
+
+    cfg = Config.load()
+    vp = vault_path or cfg.vault_path
+
+    if not vp.exists():
+        click.echo(f"Vault not found: {vp}", err=True)
+        sys.exit(1)
+
+    book_filter: str | None = None
+    if book:
+        book_filter = _safe_book_dir(vp, book).name
+
+    hits = hybrid_search(
+        vp,
+        query,
+        book_filter=book_filter,
+        n_results=n_results,
+        vector_weight=vector_weight,
+        text_weight=text_weight,
+    )
+
+    if not hits:
+        click.echo(f'No hybrid search results for "{query}".')
+        return
+
+    result_tbl = _Table(
+        title=f'Hybrid Search: "{_escape(query)}" — {len(hits)} result(s)',
+        border_style="dim",
+        show_header=True,
+    )
+    result_tbl.add_column("Book / Para ID", style="cyan", width=30)
+    result_tbl.add_column("Score", width=7, justify="right")
+    result_tbl.add_column("Source", width=8)
+    result_tbl.add_column("Snippet")
+    for hit in hits:
+        snippet = hit["document"]
+        if len(snippet) > 80:
+            snippet = snippet[:80] + "..."
+        result_tbl.add_row(
+            f"{hit['book_folder']}\n{hit['paragraph_id']}",
+            str(hit["score"]),
+            hit["source"],
+            snippet,
+        )
+    click.echo(_render(result_tbl))
+
+
 # ── async-ingest command ──
 
 

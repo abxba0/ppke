@@ -216,23 +216,37 @@ def _history_context_block(history: list[dict], max_turns: int = 6) -> str:
 
 
 def _rag_context_block(
-    folder: str, question: str, config: Any, n_results: int = 5
+    folder: str, question: str, config: Any, n_results: int = 5,
+    *, use_hybrid: bool = False,
 ) -> tuple[list[dict], str]:
-    """Run vector search and return (hits, formatted context block).
+    """Run search and return (hits, formatted context block).
 
-    Returns ([], "") gracefully when ChromaDB is unavailable or the book
-    has no indexed vectors.
+    When *use_hybrid* is ``True`` the function uses the hybrid search engine
+    (full-text + vector combined).  Otherwise it falls back to the original
+    vector-only search.  Returns ([], "") gracefully when no results are found.
     """
     try:
-        from ppke.vectordb.store import VectorStore
+        if use_hybrid:
+            from ppke.search import hybrid_search
 
-        store = VectorStore(config.vault_path)
-        if not store.available:
-            return [], ""
-        hits = store.search(question, n_results=n_results, book_filter=folder)
+            hits = hybrid_search(
+                config.vault_path,
+                question,
+                book_filter=folder,
+                n_results=n_results,
+            )
+        else:
+            from ppke.vectordb.store import VectorStore
+
+            store = VectorStore(config.vault_path)
+            if not store.available:
+                return [], ""
+            hits = store.search(question, n_results=n_results, book_filter=folder)
+
         if not hits:
             return [], ""
-        lines = ["SEMANTICALLY RELEVANT PASSAGES (vector search):"]
+        label = "hybrid" if use_hybrid else "vector"
+        lines = [f"SEMANTICALLY RELEVANT PASSAGES ({label} search):"]
         for h in hits:
             lines.append(f"  [{h['paragraph_id']}] {h['document'][:280]}")
         return hits, "\n".join(lines) + "\n\n"
@@ -950,8 +964,38 @@ async def api_cross_query(request: Request, question: str = Form(...)):
 
 
 @app.get("/api/search")
-async def api_search(request: Request, q: str = Query(..., min_length=1), book: str | None = None):
+async def api_search(
+    request: Request,
+    q: str = Query(..., min_length=1),
+    book: str | None = None,
+    mode: str = Query("fulltext", regex="^(fulltext|hybrid)$"),
+):
     user = await _try_get_user(request)
+
+    if mode == "hybrid":
+        from ppke.search import hybrid_search
+
+        vault = _user_vault_path(user)
+        hits = hybrid_search(
+            vault, q, book_filter=book, n_results=100
+        )
+        results = [
+            {
+                "book": h.get("book_title", h["book_folder"]),
+                "folder": h["book_folder"],
+                "paragraph_id": h["paragraph_id"],
+                "topic": "",
+                "snippet": (h.get("document", "")[:180] + "...")
+                if len(h.get("document", "")) > 180
+                else h.get("document", ""),
+                "score": h.get("score", 0),
+                "source": h.get("source", "hybrid"),
+            }
+            for h in hits
+        ]
+        return {"query": q, "mode": "hybrid", "total": len(results), "results": results}
+
+    # Default: full-text search (original behaviour)
     results = []
     query_lower = q.lower()
 
@@ -987,7 +1031,7 @@ async def api_search(request: Request, q: str = Query(..., min_length=1), book: 
         if len(results) >= 100:
             break
 
-    return {"query": q, "total": len(results), "results": results}
+    return {"query": q, "mode": "fulltext", "total": len(results), "results": results}
 
 
 @app.post("/api/upload")

@@ -95,7 +95,7 @@ Make the query engine significantly smarter.
 - [x] **Vector-enhanced queries** — `_rag_context_block()` calls `VectorStore.search(question, book_filter=folder)`; top-5 hits prepended to prompt as `SEMANTICALLY RELEVANT PASSAGES` block; degrades gracefully when ChromaDB unavailable
 - [x] **Sources badge** — `sources` SSE event; rendered as "N vector sources used" indigo badge on assistant bubble
 - [x] **Citation jump** — Clicking a paragraph ID in quotes switches to Structure tab
-- [ ] **Hybrid search** — Full-text + vector combined retrieval *(deferred to Phase 4)*
+- [x] **Hybrid search** — `ppke/search.py` merges full-text keyword matching with vector similarity; combined relevance ranking via weighted scores; exposed as `ppke hybrid-search` CLI command and `GET /api/search?mode=hybrid`; `_rag_context_block()` supports `use_hybrid=True`; backward compatible — existing endpoints default to original behaviour
 
 ### 3.3 Content Generation
 - [x] **Executive summaries** — `POST /api/summary/{folder}` generates via LLM (cached `summary.md`); `GET` serves it; "Generate" button in Summary tab with Markdown rendering
