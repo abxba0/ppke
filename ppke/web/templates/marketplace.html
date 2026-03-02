@@ -1,0 +1,408 @@
+{% extends "base.html" %}
+{% block title %}Plugin Marketplace{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Plugin Marketplace</h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Discover, install, and rate domain analysis plugins &middot; {{ total }} plugins available</p>
+        </div>
+        <button onclick="document.getElementById('submit-modal').classList.remove('hidden')"
+                class="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-medium inline-flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+            Submit Plugin
+        </button>
+    </div>
+
+    <!-- Search & Filters -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6 fade-in transition-colors">
+        <div class="flex flex-col sm:flex-row gap-3">
+            <div class="relative flex-1">
+                <input type="search" id="marketplace-search" placeholder="Search plugins..."
+                       class="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent">
+                <svg class="absolute left-3 top-3 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+            </div>
+            <select id="marketplace-category"
+                    class="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                <option value="">All Categories</option>
+                {% for cat in categories %}
+                <option value="{{ cat }}">{{ cat|capitalize }}</option>
+                {% endfor %}
+            </select>
+            <select id="marketplace-sort"
+                    class="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                <option value="downloads">Most Popular</option>
+                <option value="rating">Highest Rated</option>
+                <option value="updated">Recently Updated</option>
+                <option value="name">Name (A-Z)</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Plugin Grid -->
+    <div id="plugin-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
+        {% for plugin in plugins %}
+        <div class="plugin-card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-lg transition-all duration-200 hover:border-brand-300 dark:hover:border-brand-600 fade-in flex flex-col"
+             data-name="{{ plugin.name }}" data-category="{{ plugin.category }}">
+
+            <!-- Header -->
+            <div class="flex items-start justify-between mb-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm
+                        {% if plugin.tier == 'official' %}bg-brand-600{% else %}bg-emerald-600{% endif %}">
+                        {{ plugin.name[:2]|upper }}
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white text-sm">{{ plugin.name|replace('_', ' ')|title }}</h3>
+                        <span class="text-xs {% if plugin.tier == 'official' %}text-brand-600 dark:text-brand-400{% else %}text-emerald-600 dark:text-emerald-400{% endif %} font-medium">{{ plugin.tier|capitalize }}</span>
+                    </div>
+                </div>
+                <span class="text-xs text-gray-400 dark:text-gray-500 font-mono">v{{ plugin.version }}</span>
+            </div>
+
+            <!-- Description -->
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4 flex-1 line-clamp-2">{{ plugin.description }}</p>
+
+            <!-- Tags -->
+            <div class="flex flex-wrap gap-1.5 mb-4">
+                {% for tag in plugin.tags[:4] %}
+                <span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-full">{{ tag }}</span>
+                {% endfor %}
+            </div>
+
+            <!-- Stats -->
+            <div class="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-700">
+                <div class="flex items-center gap-3">
+                    <!-- Star rating -->
+                    <div class="flex items-center gap-1">
+                        {% set avg = plugin.average_rating %}
+                        {% for i in range(1, 6) %}
+                        <svg class="w-3.5 h-3.5 {% if i <= avg %}text-amber-400{% else %}text-gray-300 dark:text-gray-600{% endif %}" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path>
+                        </svg>
+                        {% endfor %}
+                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">{{ avg }} ({{ plugin.rating_count }})</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    {{ plugin.downloads }}
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex gap-2 mt-4">
+                <button onclick="showPluginDetail('{{ plugin.name }}')"
+                        class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    Details
+                </button>
+                <button onclick="installPlugin('{{ plugin.name }}')"
+                        class="flex-1 px-3 py-2 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 transition-colors">
+                    {% if plugin.tier == 'official' %}Installed{% else %}Install{% endif %}
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if not plugins %}
+    <div class="text-center py-16">
+        <svg class="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+        <p class="text-gray-500 dark:text-gray-400">No plugins found</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Plugin Detail Modal -->
+<div id="detail-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-start mb-4">
+            <div>
+                <h3 id="detail-name" class="text-lg font-bold text-gray-900 dark:text-gray-100"></h3>
+                <p id="detail-meta" class="text-xs text-gray-500 dark:text-gray-400 mt-1"></p>
+            </div>
+            <button onclick="document.getElementById('detail-modal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <p id="detail-description" class="text-sm text-gray-600 dark:text-gray-400 mb-4"></p>
+        <div id="detail-tags" class="flex flex-wrap gap-1.5 mb-4"></div>
+        <div class="grid grid-cols-3 gap-3 mb-4">
+            <div class="text-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div id="detail-downloads" class="text-xl font-bold text-brand-600"></div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Downloads</div>
+            </div>
+            <div class="text-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div id="detail-rating" class="text-xl font-bold text-amber-500"></div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Rating</div>
+            </div>
+            <div class="text-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div id="detail-version" class="text-xl font-bold text-gray-700 dark:text-gray-300"></div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Version</div>
+            </div>
+        </div>
+
+        <!-- Rate this plugin -->
+        <div class="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Rate this plugin</p>
+            <div id="rate-stars" class="flex gap-1">
+                {% for i in range(1, 6) %}
+                <button onclick="ratePlugin(this.dataset.value)" data-value="{{ i }}"
+                        class="rate-star text-gray-300 dark:text-gray-600 hover:text-amber-400 transition-colors">
+                    <svg class="w-7 h-7" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path>
+                    </svg>
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="flex gap-2">
+            <button id="detail-install-btn" class="flex-1 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors">
+                Install
+            </button>
+            <button onclick="document.getElementById('detail-modal').classList.add('hidden')"
+                    class="px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Submit Plugin Modal -->
+<div id="submit-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100">Submit a Plugin</h3>
+            <button onclick="document.getElementById('submit-modal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <form id="submit-form" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Plugin Name</label>
+                <input type="text" name="name" required placeholder="e.g. my_domain" pattern="[a-z_]+"
+                       class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500">
+                <p class="text-xs text-gray-400 mt-1">Lowercase letters and underscores only</p>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Version</label>
+                    <input type="text" name="version" required placeholder="1.0.0" pattern="\d+\.\d+\.\d+"
+                           class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
+                    <select name="category"
+                            class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                        <option value="humanities">Humanities</option>
+                        <option value="science">Science</option>
+                        <option value="professional">Professional</option>
+                        <option value="other" selected>Other</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Author</label>
+                <input type="text" name="author" required placeholder="Your Name"
+                       class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                <textarea name="description" required rows="3" placeholder="What does your plugin do?"
+                          class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tags</label>
+                <input type="text" name="tags" placeholder="e.g. science, chemistry, analysis"
+                       class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500">
+                <p class="text-xs text-gray-400 mt-1">Comma-separated</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">GitHub URL (optional)</label>
+                <input type="url" name="source_url" placeholder="https://github.com/user/ppke-template-name"
+                       class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500">
+            </div>
+            <button type="submit"
+                    class="w-full px-6 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm">
+                Submit Plugin
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+let _currentPlugin = null;
+
+// ── Search & Filter ──
+const searchInput = document.getElementById('marketplace-search');
+const categorySelect = document.getElementById('marketplace-category');
+const sortSelect = document.getElementById('marketplace-sort');
+
+async function refreshPlugins() {
+    const params = new URLSearchParams();
+    const q = searchInput.value.trim();
+    if (q) params.set('q', q);
+    const cat = categorySelect.value;
+    if (cat) params.set('category', cat);
+    params.set('sort_by', sortSelect.value);
+
+    try {
+        const resp = await fetch('/api/marketplace/plugins?' + params.toString());
+        const data = await resp.json();
+        renderPluginGrid(data.plugins);
+    } catch(e) {
+        showToast('Failed to load plugins', 'error');
+    }
+}
+
+function formatPluginName(name) {
+    return name.replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); });
+}
+
+function renderPluginGrid(plugins) {
+    const grid = document.getElementById('plugin-grid');
+    if (!plugins.length) {
+        grid.innerHTML = '<div class="col-span-full text-center py-16"><p class="text-gray-500 dark:text-gray-400">No plugins match your search</p></div>';
+        return;
+    }
+    grid.innerHTML = plugins.map(p => {
+        const stars = Array.from({length: 5}, (_, i) =>
+            `<svg class="w-3.5 h-3.5 ${i < p.average_rating ? 'text-amber-400' : 'text-gray-300 dark:text-gray-600'}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>`
+        ).join('');
+        const tags = (p.tags || []).slice(0, 4).map(t =>
+            `<span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-full">${t}</span>`
+        ).join('');
+        const bgClass = p.tier === 'official' ? 'bg-brand-600' : 'bg-emerald-600';
+        const tierClass = p.tier === 'official' ? 'text-brand-600 dark:text-brand-400' : 'text-emerald-600 dark:text-emerald-400';
+        const installLabel = p.tier === 'official' ? 'Installed' : 'Install';
+        return `<div class="plugin-card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-lg transition-all duration-200 hover:border-brand-300 dark:hover:border-brand-600 fade-in flex flex-col">
+            <div class="flex items-start justify-between mb-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm ${bgClass}">${p.name.substring(0,2).toUpperCase()}</div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white text-sm">${formatPluginName(p.name)}</h3>
+                        <span class="text-xs ${tierClass} font-medium">${p.tier.charAt(0).toUpperCase() + p.tier.slice(1)}</span>
+                    </div>
+                </div>
+                <span class="text-xs text-gray-400 dark:text-gray-500 font-mono">v${p.version}</span>
+            </div>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4 flex-1">${p.description}</p>
+            <div class="flex flex-wrap gap-1.5 mb-4">${tags}</div>
+            <div class="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-700">
+                <div class="flex items-center gap-1">${stars}<span class="text-xs text-gray-500 dark:text-gray-400 ml-1">${p.average_rating} (${p.rating_count})</span></div>
+                <div class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    ${p.downloads}
+                </div>
+            </div>
+            <div class="flex gap-2 mt-4">
+                <button onclick="showPluginDetail('${p.name}')" class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Details</button>
+                <button onclick="installPlugin('${p.name}')" class="flex-1 px-3 py-2 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 transition-colors">${installLabel}</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+let _debounceTimer;
+searchInput.addEventListener('input', function() {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(refreshPlugins, 300);
+});
+categorySelect.addEventListener('change', refreshPlugins);
+sortSelect.addEventListener('change', refreshPlugins);
+
+// ── Detail Modal ──
+async function showPluginDetail(name) {
+    try {
+        const resp = await fetch('/api/marketplace/plugins/' + encodeURIComponent(name));
+        if (!resp.ok) { showToast('Plugin not found', 'error'); return; }
+        const p = await resp.json();
+        _currentPlugin = p;
+        document.getElementById('detail-name').textContent = formatPluginName(p.name);
+        document.getElementById('detail-meta').textContent = `by ${p.author} · ${p.tier} · ${p.category}`;
+        document.getElementById('detail-description').textContent = p.description;
+        document.getElementById('detail-downloads').textContent = p.downloads;
+        document.getElementById('detail-rating').textContent = p.average_rating;
+        document.getElementById('detail-version').textContent = 'v' + p.version;
+        document.getElementById('detail-tags').innerHTML = (p.tags || []).map(t =>
+            `<span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-full">${t}</span>`
+        ).join('');
+        const btn = document.getElementById('detail-install-btn');
+        btn.onclick = () => installPlugin(p.name);
+        btn.textContent = p.tier === 'official' ? 'Installed' : 'Install';
+        document.getElementById('detail-modal').classList.remove('hidden');
+    } catch(e) { showToast('Failed to load plugin details', 'error'); }
+}
+
+// ── Rate ──
+async function ratePlugin(rating) {
+    if (!_currentPlugin) return;
+    try {
+        const resp = await fetch('/api/marketplace/plugins/' + encodeURIComponent(_currentPlugin.name) + '/rate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({rating: parseInt(rating)})
+        });
+        if (resp.ok) {
+            const updated = await resp.json();
+            document.getElementById('detail-rating').textContent = updated.average_rating;
+            showToast('Thanks for rating!', 'success');
+            // Highlight selected stars
+            document.querySelectorAll('.rate-star').forEach((star, i) => {
+                star.classList.toggle('text-amber-400', i < parseInt(rating));
+                star.classList.toggle('text-gray-300', i >= parseInt(rating));
+                star.classList.toggle('dark:text-gray-600', i >= parseInt(rating));
+            });
+        } else {
+            const err = await resp.json();
+            showToast(err.detail || 'Failed to rate', 'error');
+        }
+    } catch(e) { showToast('Failed to submit rating', 'error'); }
+}
+
+// ── Install ──
+async function installPlugin(name) {
+    try {
+        const resp = await fetch('/api/marketplace/plugins/' + encodeURIComponent(name) + '/install', {method: 'POST'});
+        const data = await resp.json();
+        if (resp.ok) {
+            showToast(data.message || `Plugin "${name}" installed successfully!`, 'success');
+        } else {
+            showToast(data.detail || 'Installation failed', 'error');
+        }
+    } catch(e) { showToast('Installation failed: ' + e.message, 'error'); }
+}
+
+// ── Submit ──
+document.getElementById('submit-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const form = this;
+    const body = {};
+    new FormData(form).forEach((v, k) => { body[k] = v; });
+
+    try {
+        const resp = await fetch('/api/marketplace/submit', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        if (resp.ok) {
+            showToast('Plugin submitted successfully!', 'success');
+            document.getElementById('submit-modal').classList.add('hidden');
+            form.reset();
+            refreshPlugins();
+        } else {
+            const err = await resp.json();
+            showToast(err.detail || 'Submission failed', 'error');
+        }
+    } catch(e) { showToast('Submission failed: ' + e.message, 'error'); }
+});
+</script>
+{% endblock %}
