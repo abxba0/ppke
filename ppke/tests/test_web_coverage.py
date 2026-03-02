@@ -417,6 +417,38 @@ class TestApiImportUrl:
         assert resp.status_code == 400
 
 
+# ── api_import_zotero ──
+
+
+class TestApiImportZotero:
+    def test_import_bibtex(self, client, tmp_vault):
+        """Zotero BibTeX import parses and starts ingestion."""
+        bib_content = b'@article{k1, author={Alice}, title={Test Paper}, year={2023}}'
+        with patch("ppke.web.app.create_job", return_value="job-zot-1"), \
+             patch("ppke.web.app.run_task"):
+            resp = client.post(
+                "/api/import-zotero",
+                files={"file": ("refs.bib", bib_content, "application/x-bibtex")},
+                data={"domain": "science"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["job_id"] == "job-zot-1"
+        assert data["source_type"] == "zotero"
+        assert data["entries"] == 1
+
+    def test_import_empty_file(self, client, tmp_vault):
+        """Empty Zotero file returns 400."""
+        with patch("ppke.web.app.create_job", return_value="job-zot-2"), \
+             patch("ppke.web.app.run_task"):
+            resp = client.post(
+                "/api/import-zotero",
+                files={"file": ("empty.bib", b"% comment only\n", "application/x-bibtex")},
+                data={"domain": "philosophy"},
+            )
+        assert resp.status_code == 400
+
+
 # ── api_generate_summary ──
 
 

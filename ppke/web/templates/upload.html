@@ -33,6 +33,10 @@
                     class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
                 Record
             </button>
+            <button id="tab-zotero" onclick="switchTab('zotero')" role="tab" aria-selected="false"
+                    class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                Zotero Import
+            </button>
         </div>
 
         <!-- ─── TAB: File Upload ─── -->
@@ -49,7 +53,7 @@
                     <p class="text-sm text-gray-600 dark:text-gray-400 font-medium">Drop your file here or click to browse</p>
                     <p class="text-xs text-gray-400 dark:text-gray-500 mt-2" id="file-name">No file selected</p>
                     <input type="file" id="file-input" name="files" class="hidden"
-                           accept=".md,.txt,.pdf,.docx,.epub,.html,.htm,.jpg,.jpeg,.png,.tiff,.tif,.bmp,.webp,.pptx,.mp3,.mp4,.m4a,.wav,.webm,.ogg,.tex,.csv,.xlsx,.xls,.zip">
+                           accept=".md,.txt,.pdf,.docx,.epub,.html,.htm,.jpg,.jpeg,.png,.tiff,.tif,.bmp,.webp,.pptx,.mp3,.mp4,.m4a,.wav,.webm,.ogg,.tex,.csv,.xlsx,.xls,.zip,.bib,.rdf">
                 </div>
 
                 <!-- Supported formats -->
@@ -140,7 +144,7 @@
                     <p class="text-sm text-gray-600 dark:text-gray-400 font-medium">Drop multiple files or a ZIP archive here</p>
                     <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">All files in a ZIP will be ingested automatically</p>
                     <input type="file" id="batch-input" name="files" class="hidden" multiple
-                           accept=".md,.txt,.pdf,.docx,.epub,.html,.htm,.jpg,.jpeg,.png,.tiff,.tif,.bmp,.webp,.pptx,.mp3,.mp4,.m4a,.wav,.webm,.ogg,.tex,.csv,.xlsx,.xls,.zip">
+                           accept=".md,.txt,.pdf,.docx,.epub,.html,.htm,.jpg,.jpeg,.png,.tiff,.tif,.bmp,.webp,.pptx,.mp3,.mp4,.m4a,.wav,.webm,.ogg,.tex,.csv,.xlsx,.xls,.zip,.bib,.rdf">
                 </div>
 
                 <!-- File queue preview -->
@@ -283,6 +287,46 @@
             </div>
         </div>
 
+        <!-- ─── TAB: Zotero Import ─── -->
+        <div id="panel-zotero" role="tabpanel" class="hidden">
+            <form id="zotero-form" enctype="multipart/form-data">
+                <div class="mb-5">
+                    <div id="zotero-drop-zone"
+                         class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/10 transition-colors mb-4"
+                         onclick="document.getElementById('zotero-input').click()">
+                        <svg class="mx-auto h-10 w-10 text-gray-400 dark:text-gray-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                        </svg>
+                        <p class="text-sm text-gray-600 dark:text-gray-400 font-medium">Drop your Zotero export file here</p>
+                        <p class="text-xs text-gray-400 dark:text-gray-500 mt-2" id="zotero-file-name">No file selected</p>
+                        <input type="file" id="zotero-input" name="file" class="hidden" accept=".bib,.rdf,.json">
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 mb-4">
+                        <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">SUPPORTED ZOTERO FORMATS</p>
+                        <div class="flex flex-wrap gap-1.5">
+                            <span class="inline-flex px-2 py-0.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-xs text-gray-600 dark:text-gray-300">.bib (BibTeX)</span>
+                            <span class="inline-flex px-2 py-0.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-xs text-gray-600 dark:text-gray-300">.json (CSL JSON)</span>
+                            <span class="inline-flex px-2 py-0.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-xs text-gray-600 dark:text-gray-300">.rdf (Zotero RDF)</span>
+                        </div>
+                        <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">Export from Zotero: File → Export Library → choose format.</p>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Domain Template</label>
+                    <select name="domain" class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent mb-6">
+                        <option value="philosophy">Philosophy — Argument mapping, concept tracking</option>
+                        <option value="science">Science — Methodology, evidence, findings</option>
+                        <option value="legal">Legal — Case law, statutory interpretation</option>
+                    </select>
+                </div>
+                <button type="submit" id="zotero-btn"
+                        class="w-full px-6 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm shadow-sm disabled:opacity-50">
+                    Import Zotero Library
+                </button>
+            </form>
+        </div>
+
         <!-- Shared progress section -->
         <div id="progress-section" class="hidden mt-6">
             <div class="flex items-center space-x-3 mb-3">
@@ -360,7 +404,7 @@
 })();
 
 // ── Tab switching ──
-const ALL_TABS = ['file', 'url', 'batch', 'rss', 'record'];
+const ALL_TABS = ['file', 'url', 'batch', 'rss', 'record', 'zotero'];
 function switchTab(tab) {
     ALL_TABS.forEach(t => {
         const btn = document.getElementById('tab-' + t);
@@ -670,6 +714,49 @@ async function submitRecording() {
     }
 }
 
+// ── Zotero import tab ──
+const zoteroDrop = document.getElementById('zotero-drop-zone');
+const zoteroInput = document.getElementById('zotero-input');
+
+['dragenter', 'dragover'].forEach(ev => zoteroDrop.addEventListener(ev, e => {
+    e.preventDefault();
+    zoteroDrop.classList.add('border-brand-500', 'bg-brand-50', 'dark:bg-brand-900/10');
+}));
+['dragleave', 'drop'].forEach(ev => zoteroDrop.addEventListener(ev, e => {
+    e.preventDefault();
+    zoteroDrop.classList.remove('border-brand-500', 'bg-brand-50', 'dark:bg-brand-900/10');
+}));
+zoteroDrop.addEventListener('drop', e => { zoteroInput.files = e.dataTransfer.files; updateZoteroFileName(); });
+zoteroInput.addEventListener('change', updateZoteroFileName);
+
+function updateZoteroFileName() {
+    document.getElementById('zotero-file-name').textContent =
+        zoteroInput.files[0]?.name || 'No file selected';
+}
+
+document.getElementById('zotero-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    if (!zoteroInput.files[0]) { showToast('Please select a Zotero export file.', 'warning'); return; }
+    const formData = new FormData(this);
+    const btn = document.getElementById('zotero-btn');
+    btn.disabled = true; btn.textContent = 'Importing...';
+    document.getElementById('progress-section').classList.remove('hidden');
+    try {
+        const resp = await fetch('/api/import-zotero', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (resp.ok && data.job_id) {
+            showToast(`Importing ${data.entries} Zotero entries...`, 'info');
+            pollJob(data.job_id);
+        } else {
+            throw new Error(data.detail || 'Zotero import failed');
+        }
+    } catch (err) {
+        showToast('Zotero import failed: ' + err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Import Zotero Library';
+        document.getElementById('progress-section').classList.add('hidden');
+    }
+});
+
 // ── Shared polling (single job) ──
 async function pollJob(jobId) {
     const interval = setInterval(async () => {
@@ -695,6 +782,8 @@ async function pollJob(jobId) {
                 document.getElementById('upload-btn').textContent = 'Upload & Ingest';
                 document.getElementById('url-btn').disabled = false;
                 document.getElementById('url-btn').textContent = 'Import & Ingest';
+                document.getElementById('zotero-btn').disabled = false;
+                document.getElementById('zotero-btn').textContent = 'Import Zotero Library';
                 showToast('Ingestion failed: ' + (data.error || 'Unknown'), 'error');
             }
         } catch (_) {}

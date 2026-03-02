@@ -347,6 +347,22 @@ def _convert_excel(path: Path) -> str:
     return f"# {title}\n\n" + "\n\n".join(sheets_md)
 
 
+@register(".bib")
+def _convert_bibtex(path: Path) -> str:
+    """Convert BibTeX bibliography file to Markdown."""
+    from ppke.converter.zotero import convert_zotero_file
+
+    return convert_zotero_file(path)
+
+
+@register(".rdf")
+def _convert_rdf(path: Path) -> str:
+    """Convert Zotero RDF export to Markdown."""
+    from ppke.converter.zotero import convert_zotero_file
+
+    return convert_zotero_file(path)
+
+
 @register(".zip")
 def _convert_zip(path: Path) -> str:
     """Extract a ZIP archive and convert each supported file inside it.

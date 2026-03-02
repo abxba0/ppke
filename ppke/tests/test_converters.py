@@ -187,6 +187,177 @@ class TestZipConverter:
 
 
 # ═══════════════════════════════════════════════════════════════════
+# converter/zotero.py
+# ═══════════════════════════════════════════════════════════════════
+
+
+class TestZoteroConverter:
+    def test_bibtex_basic(self, tmp_path):
+        from ppke.converter.zotero import parse_zotero_file, entries_to_markdown
+        f = tmp_path / "refs.bib"
+        f.write_text("""@article{smith2020,
+  author = {John Smith and Jane Doe},
+  title = {A Study on Knowledge Engines},
+  journal = {Journal of AI},
+  year = {2020},
+  volume = {15},
+  pages = {100--120},
+  doi = {10.1234/jai.2020.001}
+}
+
+@book{jones2019,
+  author = {Bob Jones},
+  title = {Introduction to NLP},
+  publisher = {Academic Press},
+  year = {2019}
+}
+""")
+        entries = parse_zotero_file(f)
+        assert len(entries) == 2
+        assert entries[0]["title"] == "A Study on Knowledge Engines"
+        assert entries[0]["author"] == "John Smith and Jane Doe"
+        assert entries[0]["year"] == "2020"
+        assert entries[1]["title"] == "Introduction to NLP"
+        md = entries_to_markdown(entries)
+        assert "A Study on Knowledge Engines" in md
+        assert "Introduction to NLP" in md
+        assert "2 entries" in md
+
+    def test_bibtex_via_registry(self, tmp_path):
+        from ppke.converter.registry import convert_to_markdown, SUPPORTED_EXTENSIONS
+        assert ".bib" in SUPPORTED_EXTENSIONS
+        f = tmp_path / "test.bib"
+        f.write_text('@article{k1, author={Alice}, title={Test Title}, year={2021}}')
+        result = convert_to_markdown(f)
+        assert "Test Title" in result
+        assert "Alice" in result
+
+    def test_csl_json(self, tmp_path):
+        import json
+        from ppke.converter.zotero import parse_zotero_file
+        f = tmp_path / "refs.json"
+        data = [
+            {
+                "id": "smith2020",
+                "type": "article-journal",
+                "title": "Machine Learning Review",
+                "author": [{"family": "Smith", "given": "John"}],
+                "issued": {"date-parts": [[2020]]},
+                "container-title": "AI Journal",
+                "DOI": "10.5678/ai.2020"
+            },
+            {
+                "id": "doe2019",
+                "type": "book",
+                "title": "Data Science Handbook",
+                "author": [{"family": "Doe", "given": "Jane"}],
+                "issued": {"date-parts": [[2019]]},
+                "publisher": "Tech Press"
+            }
+        ]
+        f.write_text(json.dumps(data))
+        entries = parse_zotero_file(f)
+        assert len(entries) == 2
+        assert entries[0]["title"] == "Machine Learning Review"
+        assert entries[0]["author"] == "John Smith"
+        assert entries[0]["year"] == "2020"
+
+    def test_rdf_basic(self, tmp_path):
+        from ppke.converter.zotero import parse_zotero_file
+        f = tmp_path / "library.rdf"
+        f.write_text("""<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:dc="http://purl.org/dc/elements/1.1/"
+         xmlns:dcterms="http://purl.org/dc/terms/"
+         xmlns:bib="http://purl.org/net/biblio#"
+         xmlns:foaf="http://xmlns.com/foaf/0.1/">
+  <bib:Article>
+    <dc:title>RDF Test Article</dc:title>
+    <dc:date>2021</dc:date>
+    <bib:authors>
+      <rdf:Seq>
+        <rdf:li>
+          <foaf:Person>
+            <foaf:surname>Brown</foaf:surname>
+            <foaf:givenName>Charlie</foaf:givenName>
+          </foaf:Person>
+        </rdf:li>
+      </rdf:Seq>
+    </bib:authors>
+  </bib:Article>
+</rdf:RDF>""")
+        entries = parse_zotero_file(f)
+        assert len(entries) == 1
+        assert entries[0]["title"] == "RDF Test Article"
+        assert "Charlie Brown" in entries[0]["author"]
+
+    def test_rdf_via_registry(self, tmp_path):
+        from ppke.converter.registry import convert_to_markdown, SUPPORTED_EXTENSIONS
+        assert ".rdf" in SUPPORTED_EXTENSIONS
+        f = tmp_path / "lib.rdf"
+        f.write_text("""<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:dc="http://purl.org/dc/elements/1.1/"
+         xmlns:bib="http://purl.org/net/biblio#">
+  <bib:Book>
+    <dc:title>RDF Book Test</dc:title>
+    <dc:date>2022</dc:date>
+  </bib:Book>
+</rdf:RDF>""")
+        result = convert_to_markdown(f)
+        assert "RDF Book Test" in result
+
+    def test_deduplication(self):
+        from ppke.converter.zotero import deduplicate_entries
+        entries = [
+            {"title": "Same Title", "author": "Same Author"},
+            {"title": "Same Title", "author": "Same Author"},
+            {"title": "Different Title", "author": "Other Author"},
+        ]
+        unique = deduplicate_entries(entries)
+        assert len(unique) == 2
+
+    def test_empty_bibtex(self, tmp_path):
+        from ppke.converter.zotero import parse_zotero_file, entries_to_markdown
+        f = tmp_path / "empty.bib"
+        f.write_text("% This is a comment\n")
+        entries = parse_zotero_file(f)
+        assert len(entries) == 0
+        md = entries_to_markdown(entries)
+        assert "No entries found" in md
+
+    def test_detect_format(self, tmp_path):
+        from ppke.converter.zotero import detect_format
+        assert detect_format(tmp_path / "refs.bib") == "bibtex"
+        assert detect_format(tmp_path / "refs.json") == "csl-json"
+        assert detect_format(tmp_path / "refs.rdf") == "rdf"
+        unknown = tmp_path / "refs.xyz"
+        unknown.write_text("random data that is not bib json or xml")
+        with pytest.raises(ValueError, match="Cannot detect"):
+            detect_format(unknown)
+
+    def test_bibtex_with_abstract(self, tmp_path):
+        from ppke.converter.zotero import parse_zotero_file, entries_to_markdown
+        f = tmp_path / "abs.bib"
+        f.write_text("""@article{k1,
+  title = {Paper With Abstract},
+  author = {Test Author},
+  year = {2023},
+  abstract = {This is the abstract of the paper.}
+}
+""")
+        entries = parse_zotero_file(f)
+        assert entries[0]["abstract"] == "This is the abstract of the paper."
+        md = entries_to_markdown(entries)
+        assert "Abstract" in md
+
+    def test_supported_extensions_include_bib_rdf(self):
+        from ppke.converter.registry import SUPPORTED_EXTENSIONS
+        assert ".bib" in SUPPORTED_EXTENSIONS
+        assert ".rdf" in SUPPORTED_EXTENSIONS
+
+
+# ═══════════════════════════════════════════════════════════════════
 # converter/ocr.py
 # ═══════════════════════════════════════════════════════════════════
 
