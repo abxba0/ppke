@@ -618,3 +618,266 @@ def export_markdown_zip(book_dir: Path) -> bytes:
             zf.writestr(f"{folder_name}/audio_script.json", script_path.read_text())
 
     return buf.getvalue()
+
+
+# ── LaTeX export ──
+
+
+def _latex_escape(s: str) -> str:
+    """Escape special LaTeX characters in a string."""
+    replacements = [
+        ("\\", "\\textbackslash{}"),
+        ("&", "\\&"),
+        ("%", "\\%"),
+        ("$", "\\$"),
+        ("#", "\\#"),
+        ("_", "\\_"),
+        ("{", "\\{"),
+        ("}", "\\}"),
+        ("~", "\\textasciitilde{}"),
+        ("^", "\\textasciicircum{}"),
+    ]
+    for char, escaped in replacements:
+        s = s.replace(char, escaped)
+    return s
+
+
+def _inline_latex(text: str) -> str:
+    """Convert inline Markdown formatting to LaTeX commands."""
+    # Bold: **text** → \textbf{text}
+    text = re.sub(r"\*\*(.+?)\*\*", lambda m: f"\\textbf{{{_latex_escape(m.group(1))}}}", text)
+    # Italic: *text* → \textit{text}
+    text = re.sub(r"\*(.+?)\*", lambda m: f"\\textit{{{_latex_escape(m.group(1))}}}", text)
+    # Code: `text` → \texttt{text}
+    text = re.sub(r"`(.+?)`", lambda m: f"\\texttt{{{_latex_escape(m.group(1))}}}", text)
+    return text
+
+
+def _md_to_latex(md_text: str) -> str:
+    """Convert Markdown text to LaTeX, handling common formatting."""
+    lines = md_text.split("\n")
+    latex_lines: list[str] = []
+    in_code = False
+    in_list = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Code fences
+        if stripped.startswith("```"):
+            if in_code:
+                latex_lines.append("\\end{verbatim}")
+                in_code = False
+            else:
+                if in_list:
+                    latex_lines.append("\\end{itemize}")
+                    in_list = False
+                latex_lines.append("\\begin{verbatim}")
+                in_code = True
+            continue
+        if in_code:
+            latex_lines.append(line)
+            continue
+
+        # Close list if leaving list context
+        if in_list and not stripped.startswith(("- ", "* ", "• ")):
+            latex_lines.append("\\end{itemize}")
+            in_list = False
+
+        # Horizontal rule
+        if stripped in ("---", "***", "___"):
+            latex_lines.append("\\medskip\\hrule\\medskip")
+            continue
+
+        # Headings (top-level # becomes \section, deeper levels are subsections)
+        if stripped.startswith("#### "):
+            latex_lines.append(f"\\paragraph{{{_latex_escape(stripped[5:])}}}")
+            continue
+        if stripped.startswith("### "):
+            latex_lines.append(f"\\subsubsection{{{_latex_escape(stripped[4:])}}}")
+            continue
+        if stripped.startswith("## "):
+            latex_lines.append(f"\\subsection{{{_latex_escape(stripped[3:])}}}")
+            continue
+        if stripped.startswith("# "):
+            latex_lines.append(f"\\section{{{_latex_escape(stripped[2:])}}}")
+            continue
+
+        # Bullet lists
+        if stripped.startswith(("- ", "* ", "• ")):
+            if not in_list:
+                latex_lines.append("\\begin{itemize}")
+                in_list = True
+            content = _inline_latex(stripped[2:])
+            latex_lines.append(f"  \\item {content}")
+            continue
+
+        # Empty line
+        if not stripped:
+            latex_lines.append("")
+            continue
+
+        # Regular paragraph
+        latex_lines.append(_inline_latex(stripped) + "\n")
+
+    if in_list:
+        latex_lines.append("\\end{itemize}")
+    if in_code:
+        latex_lines.append("\\end{verbatim}")
+
+    return "\n".join(latex_lines)
+
+
+def export_latex(book_dir: Path) -> bytes:
+    """Generate a LaTeX (.tex) document from a book's analysis files.
+
+    Produces a self-contained LaTeX document suitable for compilation
+    with pdflatex or xelatex.  Sections correspond to the standard PPKE
+    analysis files (structure, logical map, concept index, etc.).
+
+    Parameters
+    ----------
+    book_dir : Path
+        Book directory containing ``meta.yml`` and analysis Markdown files.
+
+    Returns
+    -------
+    bytes
+        UTF-8 encoded LaTeX source.
+    """
+    meta = _load_meta(book_dir)
+    title = _latex_escape(meta.get("title", book_dir.name))
+    author = _latex_escape(meta.get("author", "Unknown"))
+    year = str(meta.get("year", ""))
+
+    sections: list[str] = []
+
+    summary_md = _load_md_file(book_dir, "summary.md")
+    if summary_md:
+        sections.append(_md_to_latex(summary_md))
+
+    for filename, section_title in _MD_FILES:
+        md_text = _load_md_file(book_dir, filename)
+        if md_text:
+            sections.append(
+                f"\\section{{{_latex_escape(section_title)}}}\n\n{_md_to_latex(md_text)}"
+            )
+
+    study_md = _load_md_file(book_dir, "study_guide.md")
+    if study_md:
+        sections.append(f"\\section{{Study Guide}}\n\n{_md_to_latex(study_md)}")
+
+    body = "\n\n".join(sections)
+    date_field = year if year else "\\today"
+
+    doc = (
+        "\\documentclass[12pt,a4paper]{article}\n"
+        "\\usepackage[utf8]{inputenc}\n"
+        "\\usepackage[T1]{fontenc}\n"
+        "\\usepackage{lmodern}\n"
+        "\\usepackage{microtype}\n"
+        "\\usepackage{hyperref}\n"
+        "\\usepackage{parskip}\n"
+        "\n"
+        f"\\title{{{title}}}\n"
+        f"\\author{{{author}}}\n"
+        f"\\date{{{date_field}}}\n"
+        "\n"
+        "\\begin{document}\n"
+        "\n"
+        "\\maketitle\n"
+        "\\tableofcontents\n"
+        "\\newpage\n"
+        "\n"
+        f"{body}\n"
+        "\n"
+        "\\end{document}\n"
+    )
+    return doc.encode("utf-8")
+
+
+# ── BibTeX export ──
+
+
+def _make_cite_key(meta: dict[str, Any]) -> str:
+    """Generate a BibTeX cite key from author last name and year."""
+    author = meta.get("author", "Unknown")
+    year = str(meta.get("year", ""))
+    last_name = re.split(r"[,\s]+", author.strip())[0]
+    last_name = re.sub(r"[^a-zA-Z0-9]", "", last_name) or "Unknown"
+    return f"{last_name}{year}" if year else last_name
+
+
+def _bibtex_escape(s: str) -> str:
+    """Escape BibTeX special characters in a field value.
+
+    Protects unmatched braces.  Backslashes are left as-is since they
+    typically introduce LaTeX commands in BibTeX values.
+    """
+    s = s.replace("{", "\\{")
+    s = s.replace("}", "\\}")
+    return s
+
+
+def meta_to_bibtex_entry(meta: dict[str, Any], cite_key: str | None = None) -> str:
+    """Convert a book metadata dict to a BibTeX ``@book`` entry string.
+
+    Parameters
+    ----------
+    meta : dict
+        Book metadata (from ``meta.yml``).
+    cite_key : str | None
+        Override the auto-generated cite key.
+
+    Returns
+    -------
+    str
+        A BibTeX ``@book`` entry.
+    """
+    key = cite_key or _make_cite_key(meta)
+    fields: list[str] = []
+
+    if meta.get("title"):
+        fields.append(f"  title     = {{{_bibtex_escape(meta['title'])}}}")
+    if meta.get("author"):
+        fields.append(f"  author    = {{{_bibtex_escape(meta['author'])}}}")
+    if meta.get("year"):
+        fields.append(f"  year      = {{{meta['year']}}}")
+    if meta.get("publisher"):
+        fields.append(f"  publisher = {{{_bibtex_escape(meta['publisher'])}}}")
+    if meta.get("isbn"):
+        fields.append(f"  isbn      = {{{_bibtex_escape(str(meta['isbn']))}}}")
+    if meta.get("doi"):
+        fields.append(f"  doi       = {{{_bibtex_escape(meta['doi'])}}}")
+    if meta.get("url"):
+        fields.append(f"  url       = {{{_bibtex_escape(meta['url'])}}}")
+    if meta.get("language"):
+        fields.append(f"  language  = {{{_bibtex_escape(meta['language'])}}}")
+    if meta.get("domain"):
+        fields.append(f"  note      = {{domain: {_bibtex_escape(meta['domain'])}}}")
+
+    body = ",\n".join(fields)
+    return f"@book{{{key},\n{body}\n}}"
+
+
+def export_bibtex(book_dir: Path) -> bytes:
+    """Generate a BibTeX (.bib) entry for a single book.
+
+    Reads ``meta.yml`` and produces a ``@book`` BibTeX entry that is
+    round-trip compatible with the existing BibTeX importer
+    (``ppke.converter.zotero``).
+
+    Parameters
+    ----------
+    book_dir : Path
+        Book directory containing ``meta.yml``.
+
+    Returns
+    -------
+    bytes
+        UTF-8 encoded BibTeX source.
+    """
+    meta = _load_meta(book_dir)
+    entry = meta_to_bibtex_entry(meta)
+    header = f"% BibTeX export generated by PPKE\n% Book: {book_dir.name}\n\n"
+    return (header + entry + "\n").encode("utf-8")

@@ -154,6 +154,66 @@ def generate_bibliography(vault_path: Path, style: str = "apa",
     return "\n".join(lines)
 
 
+def export_bibliography_bibtex(
+    vault_path: Path,
+    book_folders: list[str] | None = None,
+) -> str:
+    """Export all books in the vault as a BibTeX bibliography file.
+
+    Parameters
+    ----------
+    vault_path : Path
+        Root vault directory.
+    book_folders : list[str] | None
+        Specific book folders to include. If None, includes all.
+
+    Returns
+    -------
+    str
+        BibTeX source string containing one ``@book`` entry per book.
+    """
+    from ppke.export.exporters import meta_to_bibtex_entry
+
+    lines = [
+        "% BibTeX bibliography exported by PPKE",
+        f"% Vault: {vault_path.name}",
+        "",
+    ]
+
+    book_dirs = sorted(vault_path.iterdir()) if vault_path.exists() else []
+    entry_count = 0
+    seen_keys: set[str] = set()
+
+    for d in book_dirs:
+        if not d.is_dir() or not d.name.startswith("Book_"):
+            continue
+        if book_folders and d.name not in book_folders:
+            continue
+        meta = _load_meta(d)
+        if not meta:
+            continue
+
+        # Ensure unique cite keys by appending a numeric suffix when needed
+        from ppke.export.exporters import _make_cite_key
+        base_key = _make_cite_key(meta)
+        cite_key = base_key
+        suffix = 2
+        while cite_key in seen_keys:
+            cite_key = f"{base_key}_{suffix}"
+            suffix += 1
+        seen_keys.add(cite_key)
+
+        lines.append(meta_to_bibtex_entry(meta, cite_key=cite_key))
+        lines.append("")
+        entry_count += 1
+
+    if entry_count == 0:
+        lines.append("% No books found in the library.")
+
+    lines.append(f"% {entry_count} entries")
+    return "\n".join(lines)
+
+
 # ── Literature Review ──
 
 
