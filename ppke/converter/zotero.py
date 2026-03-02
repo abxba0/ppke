@@ -228,6 +228,14 @@ def _clean_latex(text: str) -> str:
 # ------------------------------------------------------------------
 
 
+def _extract_keywords(item: dict[str, Any]) -> str:
+    """Extract keywords from a CSL JSON item, handling both list and string values."""
+    raw = item.get("keyword", item.get("keywords", ""))
+    if isinstance(raw, list):
+        return "; ".join(raw)
+    return str(raw) if raw else ""
+
+
 def _parse_csl_json(text: str) -> list[dict[str, str]]:
     """Parse CSL JSON (array of items) into entry dicts."""
     try:
@@ -286,7 +294,7 @@ def _parse_csl_json(text: str) -> list[dict[str, str]]:
                 doi=item.get("DOI", ""),
                 url=item.get("URL", ""),
                 isbn=item.get("ISBN", ""),
-                keywords="; ".join(item.get("keyword", item.get("keywords", "")) if isinstance(item.get("keyword", item.get("keywords", "")), list) else [item.get("keyword", item.get("keywords", ""))]),
+                keywords=_extract_keywords(item),
                 note=item.get("note", ""),
             )
         )

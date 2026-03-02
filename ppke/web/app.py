@@ -1276,7 +1276,11 @@ async def api_import_zotero(
     upload_dir = vault / ".uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    safe_filename = re.sub(r"[^\w\.\-]", "_", file.filename or "zotero_import")
+    safe_filename = re.sub(r"[^\w\.\-]", "_", Path(file.filename or "zotero_import").name)
+    # Prevent path traversal via dot sequences
+    safe_filename = safe_filename.lstrip(".")
+    if not safe_filename:
+        safe_filename = "zotero_import"
     temp_path = upload_dir / safe_filename
     content = await file.read()
     temp_path.write_bytes(content)
