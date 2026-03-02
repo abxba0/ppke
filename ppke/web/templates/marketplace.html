@@ -257,7 +257,13 @@ async function refreshPlugins() {
         const resp = await fetch('/api/marketplace/plugins?' + params.toString());
         const data = await resp.json();
         renderPluginGrid(data.plugins);
-    } catch(e) { /* graceful fail */ }
+    } catch(e) {
+        showToast('Failed to load plugins', 'error');
+    }
+}
+
+function formatPluginName(name) {
+    return name.replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); });
 }
 
 function renderPluginGrid(plugins) {
@@ -281,7 +287,7 @@ function renderPluginGrid(plugins) {
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm ${bgClass}">${p.name.substring(0,2).toUpperCase()}</div>
                     <div>
-                        <h3 class="font-semibold text-gray-900 dark:text-white text-sm">${p.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</h3>
+                        <h3 class="font-semibold text-gray-900 dark:text-white text-sm">${formatPluginName(p.name)}</h3>
                         <span class="text-xs ${tierClass} font-medium">${p.tier.charAt(0).toUpperCase() + p.tier.slice(1)}</span>
                     </div>
                 </div>
@@ -305,7 +311,10 @@ function renderPluginGrid(plugins) {
 }
 
 let _debounceTimer;
-searchInput.addEventListener('input', () => { clearTimeout(_debounceTimer); _debounceTimer = setTimeout(refreshPlugins, 300); });
+searchInput.addEventListener('input', function() {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(refreshPlugins, 300);
+});
 categorySelect.addEventListener('change', refreshPlugins);
 sortSelect.addEventListener('change', refreshPlugins);
 
@@ -316,7 +325,7 @@ async function showPluginDetail(name) {
         if (!resp.ok) { showToast('Plugin not found', 'error'); return; }
         const p = await resp.json();
         _currentPlugin = p;
-        document.getElementById('detail-name').textContent = p.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        document.getElementById('detail-name').textContent = formatPluginName(p.name);
         document.getElementById('detail-meta').textContent = `by ${p.author} · ${p.tier} · ${p.category}`;
         document.getElementById('detail-description').textContent = p.description;
         document.getElementById('detail-downloads').textContent = p.downloads;

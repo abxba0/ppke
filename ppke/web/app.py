@@ -2947,6 +2947,12 @@ async def api_marketplace_submit(request: Request):
 
     from ppke.templates.marketplace import submit_plugin
 
+    raw_tags = body.get("tags", [])
+    if isinstance(raw_tags, str):
+        tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+    else:
+        tags = raw_tags
+
     try:
         plugin = submit_plugin(
             name=body["name"],
@@ -2954,7 +2960,7 @@ async def api_marketplace_submit(request: Request):
             author=body["author"],
             description=body["description"],
             category=body.get("category", "other"),
-            tags=[t.strip() for t in body.get("tags", "").split(",") if t.strip()] if isinstance(body.get("tags"), str) else body.get("tags", []),
+            tags=tags,
             source_url=body.get("source_url"),
         )
         return plugin
