@@ -548,7 +548,7 @@ The following features are referenced in documentation or UI but are **not yet f
 |---------|--------------|----------------|
 | OAuth login (Google/GitHub) | Routes return HTTP 501 | `ppke/web/app.py` lines 325–342 (`/auth/oauth/{provider}`) |
 | Zotero import | No code exists | — |
-| LaTeX/BibTeX export | Import only (`.tex` → Markdown via pandoc) | `ppke/converter/registry.py`; no `ppke/export/latex.py` |
+| LaTeX/BibTeX export | Import only (`.tex` → Markdown via pandoc) | `ppke/converter/registry.py` (import); no export module exists |
 | Deep Obsidian/PKM sync | One-time ZIP export | `ppke/graph/analytics.py` (`obsidian_vault_zip`), `/api/graph/obsidian-export` |
 | Plugin marketplace | Template system only | `ppke/templates/` |
 | Hybrid search (full-text + vector) | Deferred | See `FUTURE_PLANS.md` Phase 3 |
