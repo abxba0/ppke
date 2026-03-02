@@ -272,8 +272,98 @@ class TestAuthRoutes:
         assert resp.status_code == 501
 
     def test_oauth_callback_not_configured(self, client):
-        resp = client.get("/auth/oauth/google/callback?code=test")
+        resp = client.get("/auth/oauth/google/callback?code=test&state=x")
         assert resp.status_code == 501
+
+    @patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "gid", "GOOGLE_CLIENT_SECRET": "gsec"})
+    def test_oauth_google_redirects(self, client):
+        resp = client.get("/auth/oauth/google", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "accounts.google.com" in resp.headers["location"]
+        assert "gid" in resp.headers["location"]
+
+    @patch.dict(os.environ, {"GITHUB_CLIENT_ID": "ghid", "GITHUB_CLIENT_SECRET": "ghsec"})
+    def test_oauth_github_redirects(self, client):
+        resp = client.get("/auth/oauth/github", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "github.com/login/oauth/authorize" in resp.headers["location"]
+        assert "ghid" in resp.headers["location"]
+
+    @patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "gid", "GOOGLE_CLIENT_SECRET": "gsec"})
+    def test_oauth_callback_invalid_state(self, client):
+        resp = client.get("/auth/oauth/google/callback?code=abc&state=bad")
+        assert resp.status_code == 400
+
+    @patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "gid", "GOOGLE_CLIENT_SECRET": "gsec"})
+    @patch("ppke.web.app._oauth_exchange_code")
+    @patch("ppke.web.app._oauth_get_userinfo")
+    @patch("ppke.web.app._get_db")
+    @patch("ppke.web.app.auth_db")
+    def test_oauth_google_callback_new_user(
+        self, mock_auth_db, mock_get_db, mock_userinfo, mock_exchange, client
+    ):
+        mock_exchange.return_value = {"access_token": "tok123"}
+        mock_userinfo.return_value = {"id": "g123", "email": "oauth@test.com", "name": "OAuth User"}
+        mock_auth_db.get_user_by_oauth.return_value = None
+        mock_auth_db.get_user_by_email.return_value = None
+        mock_auth_db.create_user.return_value = {
+            "id": "new-user-id", "email": "oauth@test.com", "name": "OAuth User", "role": "user",
+        }
+
+        # First start the flow to get a state cookie
+        start_resp = client.get("/auth/oauth/google", follow_redirects=False)
+        state_cookie = start_resp.cookies.get("ppke_oauth_state")
+        assert state_cookie
+
+        resp = client.get(
+            f"/auth/oauth/google/callback?code=authcode&state={state_cookie}",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/"
+        mock_auth_db.create_user.assert_called_once()
+
+    @patch.dict(os.environ, {"GITHUB_CLIENT_ID": "ghid", "GITHUB_CLIENT_SECRET": "ghsec"})
+    @patch("ppke.web.app._oauth_exchange_code")
+    @patch("ppke.web.app._oauth_get_userinfo")
+    @patch("ppke.web.app._get_db")
+    @patch("ppke.web.app.auth_db")
+    def test_oauth_github_callback_existing_user(
+        self, mock_auth_db, mock_get_db, mock_userinfo, mock_exchange, client
+    ):
+        mock_exchange.return_value = {"access_token": "tok456"}
+        mock_userinfo.return_value = {"id": "gh789", "email": "existing@test.com", "login": "ghuser"}
+        mock_auth_db.get_user_by_oauth.return_value = {
+            "id": "existing-id", "email": "existing@test.com", "name": "Existing", "role": "user",
+        }
+
+        start_resp = client.get("/auth/oauth/github", follow_redirects=False)
+        state_cookie = start_resp.cookies.get("ppke_oauth_state")
+
+        resp = client.get(
+            f"/auth/oauth/github/callback?code=authcode&state={state_cookie}",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 303
+        mock_auth_db.create_user.assert_not_called()
+
+    @patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "gid", "GOOGLE_CLIENT_SECRET": "gsec"})
+    @patch("ppke.web.app._oauth_exchange_code")
+    @patch("ppke.web.app._get_db")
+    @patch("ppke.web.app.auth_db")
+    def test_oauth_callback_no_access_token(
+        self, mock_auth_db, mock_get_db, mock_exchange, client
+    ):
+        mock_exchange.return_value = {"error": "invalid_grant"}
+
+        start_resp = client.get("/auth/oauth/google", follow_redirects=False)
+        state_cookie = start_resp.cookies.get("ppke_oauth_state")
+
+        resp = client.get(
+            f"/auth/oauth/google/callback?code=bad&state={state_cookie}",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 502
 
     def test_logout(self, client):
         resp = client.get("/auth/logout", follow_redirects=False)

@@ -546,7 +546,7 @@ The following features are referenced in documentation or UI but are **not yet f
 
 | Feature | Current State | Code Reference |
 |---------|--------------|----------------|
-| OAuth login (Google/GitHub) | Routes return HTTP 501 | `ppke/web/app.py` lines 325–342 (`/auth/oauth/{provider}`) |
+| OAuth login (Google/GitHub) | Functional when credentials configured via env vars | `ppke/web/app.py` (`/auth/oauth/{provider}`) |
 | Zotero import | No code exists | — |
 | LaTeX/BibTeX export | Import only (`.tex` → Markdown via pandoc) | `ppke/converter/registry.py` (import); no export module exists |
 | Deep Obsidian/PKM sync | One-time ZIP export | `ppke/graph/analytics.py` (`obsidian_vault_zip`), `/api/graph/obsidian-export` |

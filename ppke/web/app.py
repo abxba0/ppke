@@ -24,12 +24,16 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import secrets
 import time
+import urllib.request
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile, Depends
 from typing import List as TypingList
@@ -322,25 +326,194 @@ async def auth_logout(request: Request):
     return response
 
 
+_OAUTH_CONFIGS = {
+    "google": {
+        "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "userinfo_url": "https://www.googleapis.com/oauth2/v2/userinfo",
+        "scope": "openid email profile",
+        "client_id_env": "GOOGLE_CLIENT_ID",
+        "client_secret_env": "GOOGLE_CLIENT_SECRET",
+    },
+    "github": {
+        "auth_url": "https://github.com/login/oauth/authorize",
+        "token_url": "https://github.com/login/oauth/access_token",
+        "userinfo_url": "https://api.github.com/user",
+        "scope": "read:user user:email",
+        "client_id_env": "GITHUB_CLIENT_ID",
+        "client_secret_env": "GITHUB_CLIENT_SECRET",
+    },
+}
+
+
+def _get_oauth_credentials(provider: str) -> tuple[str, str] | None:
+    """Return (client_id, client_secret) from env vars, or None if not configured."""
+    cfg = _OAUTH_CONFIGS[provider]
+    client_id = os.environ.get(cfg["client_id_env"], "").strip()
+    client_secret = os.environ.get(cfg["client_secret_env"], "").strip()
+    if client_id and client_secret:
+        return client_id, client_secret
+    return None
+
+
+def _oauth_exchange_code(provider: str, code: str, redirect_uri: str) -> dict:
+    """Exchange an authorization code for an access token using stdlib urllib."""
+    cfg = _OAUTH_CONFIGS[provider]
+    creds = _get_oauth_credentials(provider)
+    if not creds:
+        raise HTTPException(501, f"OAuth {provider} not configured")
+    client_id, client_secret = creds
+
+    data = urlencode({
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": code,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code",
+    }).encode()
+
+    req = urllib.request.Request(cfg["token_url"], data=data, method="POST")
+    req.add_header("Accept", "application/json")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read())
+
+
+def _oauth_get_userinfo(provider: str, access_token: str) -> dict:
+    """Fetch user profile from the OAuth provider using stdlib urllib."""
+    cfg = _OAUTH_CONFIGS[provider]
+    req = urllib.request.Request(cfg["userinfo_url"])
+    req.add_header("Authorization", f"Bearer {access_token}")
+    req.add_header("Accept", "application/json")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        user_info = json.loads(resp.read())
+
+    # For GitHub, email may not be in the profile response — fetch from /user/emails
+    if provider == "github" and not user_info.get("email"):
+        emails_req = urllib.request.Request("https://api.github.com/user/emails")
+        emails_req.add_header("Authorization", f"Bearer {access_token}")
+        emails_req.add_header("Accept", "application/json")
+        with urllib.request.urlopen(emails_req, timeout=10) as resp:
+            emails = json.loads(resp.read())
+        primary = next((e["email"] for e in emails if e.get("primary")), None)
+        if primary:
+            user_info["email"] = primary
+
+    return user_info
+
+
 @app.get("/auth/oauth/{provider}")
-async def auth_oauth_start(provider: str):
-    """Placeholder for OAuth flow — requires GOOGLE_CLIENT_ID / GITHUB_CLIENT_ID env vars."""
-    if provider not in ("google", "github"):
+async def auth_oauth_start(provider: str, request: Request):
+    """Start OAuth flow — redirect to provider's authorization page."""
+    if provider not in _OAUTH_CONFIGS:
         raise HTTPException(400, "Unsupported OAuth provider")
-    # In production, redirect to OAuth provider's authorization URL
-    # For now, return a message about setup requirements
-    raise HTTPException(
-        501,
-        f"OAuth with {provider} requires configuration. "
-        f"Set {provider.upper()}_CLIENT_ID and {provider.upper()}_CLIENT_SECRET in ~/.ppke/.env"
+
+    creds = _get_oauth_credentials(provider)
+    if not creds:
+        raise HTTPException(
+            501,
+            f"OAuth with {provider} requires configuration. "
+            f"Set {provider.upper()}_CLIENT_ID and {provider.upper()}_CLIENT_SECRET in ~/.ppke/.env",
+        )
+    client_id, _ = creds
+    cfg = _OAUTH_CONFIGS[provider]
+
+    state = secrets.token_urlsafe(32)
+    redirect_uri = str(request.base_url).rstrip("/") + f"/auth/oauth/{provider}/callback"
+
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "scope": cfg["scope"],
+        "state": state,
+        "response_type": "code",
+    }
+    auth_url = cfg["auth_url"] + "?" + urlencode(params)
+
+    response = RedirectResponse(auth_url, status_code=302)
+    is_secure = str(request.base_url).startswith("https")
+    response.set_cookie(
+        "ppke_oauth_state", state, httponly=True, samesite="lax", max_age=600,
+        secure=is_secure,
     )
+    return response
 
 
 @app.get("/auth/oauth/{provider}/callback")
-async def auth_oauth_callback(provider: str, code: str = Query(...)):
+async def auth_oauth_callback(
+    provider: str,
+    request: Request,
+    code: str = Query(...),
+    state: str = Query(""),
+):
     """Handle OAuth callback — exchange code for token and create/login user."""
-    # This is a placeholder for the full OAuth flow
-    raise HTTPException(501, "OAuth callback not yet configured for this deployment")
+    if provider not in _OAUTH_CONFIGS:
+        raise HTTPException(400, "Unsupported OAuth provider")
+
+    creds = _get_oauth_credentials(provider)
+    if not creds:
+        raise HTTPException(501, f"OAuth {provider} not configured")
+
+    # CSRF: verify state matches cookie
+    expected_state = request.cookies.get("ppke_oauth_state", "")
+    if not state or not expected_state or state != expected_state:
+        raise HTTPException(400, "Invalid OAuth state — possible CSRF. Please try again.")
+
+    redirect_uri = str(request.base_url).rstrip("/") + f"/auth/oauth/{provider}/callback"
+
+    try:
+        token_data = _oauth_exchange_code(provider, code, redirect_uri)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("OAuth token exchange failed for %s: %s", provider, exc)
+        raise HTTPException(502, "Failed to exchange authorization code") from exc
+
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise HTTPException(502, "OAuth provider did not return an access token")
+
+    try:
+        user_info = _oauth_get_userinfo(provider, access_token)
+    except Exception as exc:
+        logger.error("OAuth userinfo fetch failed for %s: %s", provider, exc)
+        raise HTTPException(502, "Failed to fetch user profile from OAuth provider") from exc
+
+    # Normalize user fields across providers
+    if provider == "google":
+        oauth_id = str(user_info.get("id", ""))
+        email = user_info.get("email", "")
+        name = user_info.get("name", email.split("@")[0])
+    else:  # github
+        oauth_id = str(user_info.get("id", ""))
+        email = user_info.get("email", "")
+        name = user_info.get("name") or user_info.get("login", email.split("@")[0])
+
+    if not email or not oauth_id:
+        raise HTTPException(400, "Could not retrieve email from OAuth provider")
+
+    conn = _get_db()
+
+    # Try to find existing OAuth user
+    user = auth_db.get_user_by_oauth(conn, provider, oauth_id)
+    if not user:
+        # Check if a user with this email already exists (link accounts)
+        user = auth_db.get_user_by_email(conn, email)
+    if not user:
+        # Create new user (no password for OAuth-only accounts)
+        user = auth_db.create_user(
+            conn, email, name, password_hash="", oauth_provider=provider, oauth_id=oauth_id,
+        )
+        auth_db.log_activity(conn, user["id"], f"created account via {provider} OAuth")
+    else:
+        auth_db.log_activity(conn, user["id"], f"signed in via {provider} OAuth")
+
+    jwt_token = create_token(user["id"], user["email"])
+    response = RedirectResponse("/", status_code=303)
+    response.set_cookie(
+        "ppke_token", jwt_token, httponly=True, samesite="lax", max_age=72 * 3600,
+    )
+    response.delete_cookie("ppke_oauth_state")
+    return response
 
 
 @app.get("/api/auth/me")
