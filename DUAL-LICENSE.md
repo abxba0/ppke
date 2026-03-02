@@ -184,7 +184,7 @@ Attribution must be included in **at least one** of the following locations:
 
 Alternatively, if a specific repository owner name is designated, the attribution shall read:
 
-> This software is developed by [Repository Owner]. All rights reserved.
+> This software is developed by PPKE Project Contributors. All rights reserved.
 
 Attribution must not be removed, obscured, or misrepresented. You may not use the name, logo, or trademarks of the repository owner to endorse or promote products derived from this software without prior written permission.
 
@@ -236,17 +236,17 @@ Termination does not limit the repository owner's right to pursue any other reme
 
 ### 8.1 Governing Law
 
-This agreement shall be governed by and construed in accordance with the laws of **[Your Jurisdiction]**, without regard to its conflict of law provisions.
+This agreement shall be governed by and construed in accordance with the laws of **England and Wales**, without regard to its conflict of law provisions.
 
 ### 8.2 Arbitration
 
-Any dispute, controversy, or claim arising out of or relating to this agreement, or the breach, termination, or validity thereof, shall be resolved by **binding arbitration** in **[Location]**. The arbitration shall be conducted in accordance with the rules of a recognised arbitration body agreed upon by the parties, or failing agreement, as determined by the arbitrator.
+Any dispute, controversy, or claim arising out of or relating to this agreement, or the breach, termination, or validity thereof, shall be resolved by **binding arbitration** in **London, England**. The arbitration shall be conducted in accordance with the rules of a recognised arbitration body agreed upon by the parties, or failing agreement, as determined by the arbitrator.
 
 The decision of the arbitrator shall be final and binding on the parties and may be entered as a judgment in any court of competent jurisdiction.
 
 ### 8.3 Jurisdiction
 
-Notwithstanding the foregoing, the courts of **[Location]** shall have exclusive jurisdiction over any application to enforce an arbitral award, and over any dispute that is not subject to arbitration under this agreement (including, but not limited to, applications for interim or injunctive relief).
+Notwithstanding the foregoing, the courts of **London, England** shall have exclusive jurisdiction over any application to enforce an arbitral award, and over any dispute that is not subject to arbitration under this agreement (including, but not limited to, applications for interim or injunctive relief).
 
 ### 8.4 No Class Actions
 
@@ -270,7 +270,7 @@ The repository owner reserves the right to modify the terms of this dual license
 The following is the required attribution language for inclusion in documentation, credits, or license files when distributing or using this software:
 
 ```
-This software is developed by [Repository Owner]. All rights reserved.
+This software is developed by PPKE Project Contributors. All rights reserved.
 Licensed under the PPKE Dual License (AGPL-3.0 & Commercial Enterprise License).
 See DUAL-LICENSE.md for full terms.
 ```
@@ -289,7 +289,7 @@ See DUAL-LICENSE.md for full terms.
 | Attribution | Required for all distribution and use |
 | Liability | Software provided "as is"; no warranty |
 | Contributor indemnity | Contributors indemnify the repository owner against claims |
-| Dispute resolution | Binding arbitration in [Your Jurisdiction] |
+| Dispute resolution | Binding arbitration in London, England |
 
 ---
 

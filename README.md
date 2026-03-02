@@ -1,89 +1,40 @@
-# PPKE - Personal & Professional Knowledge Engine
+# PPKE — Personal & Professional Knowledge Engine
 
-**Extract deep insights from any domain**: philosophy, legal, scientific, and more.
+**Turn books and documents into a structured, queryable knowledge base.**
 
-PPKE is a CLI + Web platform for structured knowledge extraction from text documents. Using LLMs and a flexible template system, PPKE analyzes books and documents across multiple domains, extracting their logical structure and building a queryable knowledge base with full verbatim fidelity. Access everything via the command line or through a full-featured web interface.
+PPKE is an open-source CLI + Web platform that uses LLMs to extract, organize, and analyze knowledge from text documents. Upload a book, paper, or legal contract — PPKE parses it into chapters and paragraphs, extracts domain-specific insights, builds a concept graph, and lets you ask questions with verbatim evidence. Everything is accessible via the command line or a full-featured web interface.
 
-## 🌟 What's New in v3.0
+> **License:** AGPL-3.0 & Commercial Enterprise License — see [DUAL-LICENSE.md](DUAL-LICENSE.md) for details.
 
-**Full Web Interface & Platform Features**: PPKE v3.0 adds a complete web GUI, multi-user collaboration, document converters, audio/podcast analysis, and production deployment infrastructure.
+## Key Capabilities
 
-### Web GUI (Phase 1)
-- **Full-featured web interface** at `ppke serve` — dark mode, responsive design
-- **Server-Sent Events (SSE)** streaming for real-time query responses
-- **Settings panel** for LLM provider/model configuration in the browser
-- **Notebook view** with interactive book exploration
-
-### Document Intelligence (Phase 2)
-- **23+ format support** — PDF, DOCX, EPUB, HTML, images (OCR), and more
-- **URL & YouTube import** — ingest web pages and video transcripts directly
-- **Hybrid OCR** with multi-script support (Latin, CJK, Arabic, Cyrillic)
-
-### AI Chat & RAG (Phase 3)
-- **Chat history** persistence per book
-- **RAG-enhanced queries** with vector DB retrieval
-- **AI-powered suggestions** and content generation (summaries, study guides, glossaries, flashcards)
-
-### Knowledge Graph Intelligence (Phase 4)
-- **Graph analytics** — clusters, shortest paths, gap analysis, contradiction detection
-- **Interactive graph visualization** in the browser
-- **Export to Obsidian** and Markdown formats
-
-### Audio & Multimedia (Phase 5)
-- **Audio overviews** — generate podcast-style audio summaries of books
-- **Cross-book audio** — comparative podcast episodes for two books
-- **Podcast RSS import** — ingest and transcribe podcast episodes
-- **Voice recording** — record and transcribe directly in the browser
-
-### Export & Content Generation (Phase 6)
-- **PDF, DOCX, PPTX export** of analysis reports
-- **Literature reviews** and **argument maps** generated via LLM
-- **Bibliography management** across books
-
-### Multi-User & Collaboration (Phase 7)
-- **JWT authentication** with registration/login
-- **Workspaces** — create teams, invite members, share books
-- **Annotations** — add notes to specific extractions
-- **Activity logging** and **API key management**
-
-### Infrastructure & Deployment (Phase 8)
-- **Docker** deployment with `docker-compose.yml`
-- **Celery + Redis** for background task processing
-- **PostgreSQL** support for production databases
-- **Prometheus metrics** and **Sentry** error tracking
-- **Cost dashboard** for LLM usage monitoring
-
-### v2.0 Features (Maintained)
-- **Multi-Domain Support** — Analyze texts from any field
-- **Philosophy** (default), **Legal**, **Scientific**, and **Custom** domain templates
+| Capability | Status | Details |
+|------------|--------|---------|
+| **Web GUI** | ✅ Working | Dark mode, responsive, SSE streaming, settings panel |
+| **CLI** | ✅ Working | 15+ commands including `ingest`, `query`, `cross-query`, `tui` |
+| **23+ format import** | ✅ Working | PDF, DOCX, EPUB, HTML, images (OCR), CSV, Excel, LaTeX (import only), ZIP |
+| **URL & YouTube import** | ✅ Working | Web page scraping, YouTube transcript extraction |
+| **AI Chat & RAG** | ✅ Working | Chat history, vector-enhanced queries, follow-up suggestions |
+| **Content generation** | ✅ Working | Summaries, study guides, glossaries, flashcards |
+| **Knowledge graph** | ✅ Working | Interactive D3.js visualization, clusters, path finder, gap/contradiction detection |
+| **Obsidian export** | ✅ Working | ZIP of interlinked `[[wikilink]]` Markdown files (export only — no live sync) |
+| **PDF/DOCX/PPTX export** | ✅ Working | Analysis reports exported as PDF, Word, or PowerPoint |
+| **Audio overviews** | ✅ Working | Podcast-style audio summaries via TTS, cross-book episodes, RSS import |
+| **Multi-user auth (JWT)** | ✅ Working | Registration/login, per-user vaults, workspaces, annotations |
+| **Docker deployment** | ✅ Working | Docker Compose with Redis, PostgreSQL, Celery, Prometheus |
+| **Bibliography** | ✅ Working | APA/MLA/Chicago formatted citations from book metadata |
+| **Literature reviews** | ✅ Working | LLM-generated cross-book synthesis |
+| **Argument maps** | ✅ Working | Claim/assumption/concept graph from extractions |
+| **LaTeX/BibTeX export** | ❌ Not implemented | LaTeX *import* from `.tex` works; no `.tex` or `.bib` export exists |
+| **OAuth login (Google/GitHub)** | ❌ Stub only | Routes return HTTP 501; requires external client credentials |
+| **Zotero import** | ❌ Not implemented | No converter or integration exists |
+| **Deep Obsidian/PKM sync** | ❌ Not implemented | One-time ZIP export only; no live vault synchronization |
+| **Plugin marketplace** | ❌ Not implemented | Template system exists; no marketplace or discovery UI |
+| **Hybrid search** | ❌ Not implemented | Full-text + vector combined retrieval deferred |
+| **Speaker diarization** | ❌ Not implemented | Requires `pyannote.audio`; deferred |
+| **Test coverage** | ⚠️ 74% | See [test-coverage.md](test-coverage.md) for the full breakdown and improvement plan |
 
 ## Features
-
-### CLI Features
-- **Multi-Domain Analysis** - Use different templates for philosophy, legal, scientific, or custom domains
-- **Structural Extraction** - Parses documents into chapters and paragraphs, extracts domain-specific insights via LLM
-- **Two-Tier LLM Architecture** - Uses a configurable fast/cheap `small_model` (e.g. `gpt-4o-mini`, `claude-3-haiku`) for extraction (Skill 1) and the main model for deep analysis (Skills 3–7), reducing cost and latency
-- **Skip Logic** - Automatically skips boilerplate, page numbers, and single-word paragraphs before LLM extraction, saving tokens on non-informative content
-- **Sub-Paragraph Splitting** - Automatically splits long paragraphs into sub-paragraphs (`{03}.p12.1`, `{03}.p12.2`) when they exceed token limits
-- **Parallel Extraction** - Multi-threaded chapter extraction for faster ingestion of large books
-- **Parallel Analysis** - Logical architecture (Skill 3), Concept indexing (Skill 4), and Pattern detection (Skill 5) run concurrently via `ThreadPoolExecutor`, cutting wall-clock time for the analysis phase
-- **Prompt Caching** - Anthropic system prompts are marked with `cache_control: {"type": "ephemeral"}` to activate the Anthropic prompt cache (up to 5-min TTL, significant token savings on repeated calls). DeepSeek applies prefix caching by default.
-- **Resumable Ingestion** - Checkpoints saved after each chapter; resume from where you left off with `--resume` if ingestion fails
-- **Exponential Backoff** - Automatic retry with 2s/4s/8s/16s backoff on rate-limit (429) and server errors (5xx)
-- **Coverage Validation** - Ensures 100% paragraph coverage with automatic re-read on gaps
-- **Interactive Re-Read** - User-triggered re-scan of specific chapters after ingestion
-- **Logical Architecture** - Maps argument chains and inferential connections across chapters
-- **Concept Indexing** - Tracks concept definitions, evolution, and cross-references
-- **Semantic Deduplication** - Master Concept Index groups semantically equivalent concepts across books using LLM matching (not just string matching)
-- **Pattern Detection** - Identifies rhetorical strategies, dialectical tensions, and recurring structures (written to `06_Patterns.md`)
-- **Cross-Book Synthesis** - Compares and contrasts ideas across multiple encoded books
-- **Single-Book Querying** - Ask questions about any ingested book with verbatim evidence
-- **Vault Management** - List books, view statistics, and search across all extractions locally
-- **Quick Reference** - `ppke cheat` prints a formatted cheat sheet of all 15 commands with descriptions and examples
-- **Setup Diagnostics** - `ppke doctor` checks API key, vault directory, incomplete ingestions, and pending checkpoints at a glance
-- **Research Notebook** - Queries and cross-queries are automatically logged to `RESEARCH_NOTEBOOK.md`; browse with `ppke notebook`
-- **Interactive Menu** - `ppke menu` guides you through command selection step by step, shows the equivalent CLI command, and optionally executes it
-- **Terminal Dashboard** - `ppke tui` provides a live browsable view of all books, quick search, and vault stats
 
 ## Quick Start
 
@@ -524,7 +475,7 @@ ppke/
 ├── vectordb/            # Vector database integration
 ├── output/
 │   └── writer.py        # Output file generation
-└── tests/               # Test suite (91% coverage)
+└── tests/               # Test suite (74% coverage — see test-coverage.md)
 ```
 
 ## Output Structure
@@ -586,6 +537,21 @@ pytest ppke/tests/
 
 ## License
 
-Dual-licensed under Apache 2.0 and the PPKE Social Impact License.
-See [DUAL-LICENSE.md](DUAL-LICENSE.md) for details.
+Dual-licensed under **AGPL-3.0** and a **Commercial Enterprise License**.
+See [DUAL-LICENSE.md](DUAL-LICENSE.md) for full terms.
+
+## Not Yet Implemented
+
+The following features are referenced in documentation or UI but are **not yet functional**:
+
+| Feature | Current State | Code Reference |
+|---------|--------------|----------------|
+| OAuth login (Google/GitHub) | Routes return HTTP 501 | `ppke/web/app.py` lines 325–342 (`/auth/oauth/{provider}`) |
+| Zotero import | No code exists | — |
+| LaTeX/BibTeX export | Import only (`.tex` → Markdown via pandoc) | `ppke/converter/registry.py`; no `ppke/export/latex.py` |
+| Deep Obsidian/PKM sync | One-time ZIP export | `ppke/graph/analytics.py` (`obsidian_vault_zip`), `/api/graph/obsidian-export` |
+| Plugin marketplace | Template system only | `ppke/templates/` |
+| Hybrid search (full-text + vector) | Deferred | See `FUTURE_PLANS.md` Phase 3 |
+| Speaker diarization | Deferred | Requires `pyannote.audio` |
+| Test coverage 90%+ | Currently 74% | See [test-coverage.md](test-coverage.md) |
 
