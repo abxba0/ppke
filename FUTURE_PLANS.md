@@ -157,7 +157,7 @@ Reach full NotebookLM feature parity and beyond.
 - [x] **YouTube transcript import** — Already implemented in Phase 2 (`ppke/converter/youtube.py`)
 - [x] **Podcast RSS import** — New `ppke/audio/rss.py`: `parse_feed()` + `download_and_transcribe()`; `POST /api/import-rss` endpoint; "Podcast RSS" tab in upload.html with feed preview + batch episode download
 - [x] **Browser recording** — MediaRecorder API in upload.html "Record" tab; records WebM audio → `POST /api/audio/upload-recording` → Whisper transcription → ingestion as book
-- [ ] **Speaker diarization** — Deferred *(requires heavy `pyannote.audio` dependency)*
+- [x] **Speaker diarization** — `ppke/audio/diarization.py` with `pyannote.audio`; API endpoints for run/view/edit
 
 ### 5.2 Audio Output
 - [x] **Voice selection UI** — 7 named presets in `VOICE_PRESETS` (4 Edge TTS: Natural/Professional/British/Australian; 3 OpenAI: Classic/Warm/Dynamic); dropdown in audio modal; `GET /api/audio/presets`

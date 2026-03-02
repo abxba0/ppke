@@ -1794,6 +1794,134 @@ async def api_serve_audio(request: Request, folder: str):
     return StreamingResponse(iterfile(), media_type="audio/mpeg")
 
 
+# ── Speaker diarization endpoints ────────────────────────────────────
+
+
+@app.post("/api/audio/diarize")
+async def api_diarize_audio(
+    request: Request,
+    audio: UploadFile = File(...),
+    num_speakers: int | None = Form(None),
+    min_speakers: int | None = Form(None),
+    max_speakers: int | None = Form(None),
+    folder: str | None = Form(None),
+):
+    """Run speaker diarization on an uploaded audio file.
+
+    Optionally provide *folder* to associate results with an existing book.
+    Returns a job ID; poll ``/api/jobs/{job_id}`` for status.
+    """
+    import tempfile
+
+    suffix = Path(audio.filename or "audio.wav").suffix or ".wav"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        content = await audio.read()
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    job_id = create_job(extra={"stage": "Running speaker diarization..."})
+
+    safe = _safe_folder(folder) if folder else None
+
+    def _worker():
+        _start = time.time()
+        try:
+            from ppke.audio.diarization import diarize, save_diarization
+
+            update_job(job_id, progress=10, stage="Loading diarization pipeline...")
+            segments = diarize(
+                tmp_path,
+                num_speakers=num_speakers,
+                min_speakers=min_speakers,
+                max_speakers=max_speakers,
+            )
+            update_job(job_id, progress=80, stage="Saving results...")
+
+            # Persist to book folder when provided
+            if safe:
+                user_sync = None  # background thread — no request context
+                vault = _get_config().get("vault_path", "vault")
+                book_dir = Path(vault) / safe
+                if book_dir.is_dir():
+                    save_diarization(segments, book_dir / "diarization.json")
+
+            update_job(
+                job_id,
+                status="completed",
+                progress=100,
+                stage="Done",
+                result={
+                    "segments": segments,
+                    "num_speakers": len({s["speaker"] for s in segments}),
+                    "num_segments": len(segments),
+                },
+            )
+            record_ingestion("diarization", "completed", time.time() - _start)
+        except Exception as exc:
+            logger.exception("Diarization failed: %s", exc)
+            update_job(job_id, status="failed", stage=str(exc), error=str(exc))
+            capture_exception(exc, job_id=job_id)
+            record_ingestion("diarization", "failed", time.time() - _start)
+        finally:
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+    run_task(_worker, job_id=job_id)
+    return {"job_id": job_id, "status": "running"}
+
+
+@app.get("/api/audio/{folder}/diarization")
+async def api_get_diarization(request: Request, folder: str):
+    """Return saved diarization results for a book folder."""
+    user = await _try_get_user(request)
+    folder = _safe_folder(folder)
+    diar_path = _user_vault_path(user) / folder / "diarization.json"
+    if not diar_path.exists():
+        raise HTTPException(404, "No diarization results found — run diarization first")
+
+    from ppke.audio.diarization import load_diarization, format_diarized_transcript
+
+    segments = load_diarization(diar_path)
+    transcript = format_diarized_transcript(segments, title=folder.replace("_", " ").title())
+    return {
+        "segments": segments,
+        "transcript": transcript,
+        "num_speakers": len({s["speaker"] for s in segments}),
+        "num_segments": len(segments),
+    }
+
+
+@app.put("/api/audio/{folder}/diarization")
+async def api_update_diarization(request: Request, folder: str):
+    """Update (edit) diarization results for a book folder.
+
+    Expects a JSON body with ``{"segments": [...]}``.
+    """
+    user = await _try_get_user(request)
+    folder = _safe_folder(folder)
+    book_dir = _user_vault_path(user) / folder
+    if not book_dir.is_dir():
+        raise HTTPException(404, "Book folder not found")
+
+    body = await request.json()
+    segments = body.get("segments")
+    if not isinstance(segments, list):
+        raise HTTPException(400, "Request body must contain a 'segments' list")
+
+    from ppke.audio.diarization import save_diarization, format_diarized_transcript
+
+    save_diarization(segments, book_dir / "diarization.json")
+    transcript = format_diarized_transcript(segments, title=folder.replace("_", " ").title())
+    return {
+        "segments": segments,
+        "transcript": transcript,
+        "num_speakers": len({s["speaker"] for s in segments}),
+        "num_segments": len(segments),
+    }
+
+
 @app.get("/api/config")
 async def api_config(request: Request):
     user = await _try_get_user(request)

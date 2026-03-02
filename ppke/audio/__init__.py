@@ -1,1 +1,1 @@
-"""PPKE Audio — transcription input and audio overview generation."""
+"""PPKE Audio — transcription, speaker diarization, and audio overview generation."""
