@@ -430,8 +430,10 @@ async def auth_oauth_start(provider: str, request: Request):
     auth_url = cfg["auth_url"] + "?" + urlencode(params)
 
     response = RedirectResponse(auth_url, status_code=302)
+    is_secure = str(request.base_url).startswith("https")
     response.set_cookie(
         "ppke_oauth_state", state, httponly=True, samesite="lax", max_age=600,
+        secure=is_secure,
     )
     return response
 
