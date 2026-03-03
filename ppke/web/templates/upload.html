@@ -37,6 +37,10 @@
                     class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
                 Zotero Import
             </button>
+            <button id="tab-video" onclick="switchTab('video')" role="tab" aria-selected="false"
+                    class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                Video Import
+            </button>
         </div>
 
         <!-- ─── TAB: File Upload ─── -->
@@ -327,6 +331,64 @@
             </form>
         </div>
 
+        <!-- ─── TAB: Video Import ─── -->
+        <div id="panel-video" role="tabpanel" class="hidden">
+            <form id="video-form" enctype="multipart/form-data">
+                <div id="video-drop-zone"
+                     class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/10 transition-colors mb-4"
+                     onclick="document.getElementById('video-input').click()">
+                    <svg class="mx-auto h-10 w-10 text-gray-400 dark:text-gray-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                              d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                    </svg>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 font-medium">Drop your lecture video here</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">MP4, MKV, AVI, MOV, WebM, M4V, FLV, WMV</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-2" id="video-file-name">No file selected</p>
+                    <input type="file" id="video-input" name="file" class="hidden"
+                           accept=".mp4,.mkv,.avi,.mov,.webm,.m4v,.flv,.wmv">
+                </div>
+
+                <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 mb-4">
+                    <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">WHAT HAPPENS</p>
+                    <ul class="text-xs text-gray-500 dark:text-gray-400 space-y-1 list-disc list-inside">
+                        <li>Audio extracted &amp; transcribed via Whisper</li>
+                        <li>Keyframes / slides detected automatically</li>
+                        <li>LLM generates structured summary with key points</li>
+                        <li>Full transcript + summary saved as Markdown notebook</li>
+                    </ul>
+                </div>
+
+                <div class="space-y-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
+                        <input type="text" name="title" required
+                               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                               placeholder="e.g. Lecture 5: Modal Logic">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Domain Template</label>
+                        <select name="domain" class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent">
+                            <option value="philosophy">Philosophy — Argument mapping, concept tracking</option>
+                            <option value="science">Science — Methodology, evidence, findings</option>
+                            <option value="legal">Legal — Case law, statutory interpretation</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                            <input type="checkbox" name="generate_summary" value="1" checked
+                                   class="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500">
+                            Generate video summary
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" id="video-btn"
+                        class="w-full px-6 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm shadow-sm disabled:opacity-50">
+                    Import Video &amp; Transcribe
+                </button>
+            </form>
+        </div>
+
         <!-- Shared progress section -->
         <div id="progress-section" class="hidden mt-6">
             <div class="flex items-center space-x-3 mb-3">
@@ -404,7 +466,7 @@
 })();
 
 // ── Tab switching ──
-const ALL_TABS = ['file', 'url', 'batch', 'rss', 'record', 'zotero'];
+const ALL_TABS = ['file', 'url', 'batch', 'rss', 'record', 'zotero', 'video'];
 function switchTab(tab) {
     ALL_TABS.forEach(t => {
         const btn = document.getElementById('tab-' + t);
@@ -757,6 +819,52 @@ document.getElementById('zotero-form').addEventListener('submit', async function
     }
 });
 
+// ── Video Import tab ──
+const videoInput = document.getElementById('video-input');
+const videoDropZone = document.getElementById('video-drop-zone');
+
+['dragenter', 'dragover'].forEach(ev => videoDropZone.addEventListener(ev, e => {
+    e.preventDefault();
+    videoDropZone.classList.add('border-brand-500', 'bg-brand-50', 'dark:bg-brand-900/10');
+}));
+['dragleave', 'drop'].forEach(ev => videoDropZone.addEventListener(ev, e => {
+    e.preventDefault();
+    videoDropZone.classList.remove('border-brand-500', 'bg-brand-50', 'dark:bg-brand-900/10');
+}));
+videoDropZone.addEventListener('drop', e => {
+    const f = e.dataTransfer.files[0];
+    if (f) { videoInput.files = e.dataTransfer.files; document.getElementById('video-file-name').textContent = f.name; }
+});
+videoInput.addEventListener('change', () => {
+    document.getElementById('video-file-name').textContent =
+        videoInput.files[0]?.name || 'No file selected';
+});
+
+document.getElementById('video-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    if (!videoInput.files[0]) { showToast('Please select a video file.', 'warning'); return; }
+    const formData = new FormData(this);
+    const btn = document.getElementById('video-btn');
+    btn.disabled = true; btn.textContent = 'Importing...';
+    document.getElementById('progress-section').classList.remove('hidden');
+    document.getElementById('progress-stage').textContent = 'Uploading video...';
+    document.getElementById('progress-bar').style.width = '10%';
+    try {
+        const resp = await fetch('/api/import-video', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (resp.ok && data.job_id) {
+            showToast('Video import started — transcribing audio...', 'info');
+            pollJob(data.job_id);
+        } else {
+            throw new Error(data.detail || 'Video import failed');
+        }
+    } catch (err) {
+        showToast('Video import failed: ' + err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Import Video & Transcribe';
+        document.getElementById('progress-section').classList.add('hidden');
+    }
+});
+
 // ── Shared polling (single job) ──
 async function pollJob(jobId) {
     const interval = setInterval(async () => {
@@ -784,6 +892,8 @@ async function pollJob(jobId) {
                 document.getElementById('url-btn').textContent = 'Import & Ingest';
                 document.getElementById('zotero-btn').disabled = false;
                 document.getElementById('zotero-btn').textContent = 'Import Zotero Library';
+                document.getElementById('video-btn').disabled = false;
+                document.getElementById('video-btn').textContent = 'Import Video & Transcribe';
                 showToast('Ingestion failed: ' + (data.error || 'Unknown'), 'error');
             }
         } catch (_) {}

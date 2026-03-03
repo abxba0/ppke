@@ -32,6 +32,7 @@ def ocr_image(
     *,
     lang: str | None = None,
     use_vision_fallback: bool = True,
+    preprocess: bool = True,
     api_key: str | None = None,
     provider: str = "anthropic",
 ) -> str:
@@ -49,6 +50,10 @@ def ocr_image(
     use_vision_fallback:
         When ``True`` (default), pages with mean confidence below
         ``_CONFIDENCE_THRESHOLD`` are re-processed with a Vision LLM.
+    preprocess:
+        When ``True`` (default), apply image preprocessing (deskew, denoise,
+        contrast enhancement) via OpenCV before OCR.  Degrades gracefully
+        when OpenCV is not installed.
     api_key:
         API key for the Vision LLM provider. Falls back to environment vars.
     provider:
@@ -64,6 +69,15 @@ def ocr_image(
         )
 
     img = Image.open(image_path)
+
+    # Image preprocessing (deskew, denoise, contrast enhancement)
+    if preprocess:
+        try:
+            from ppke.converter.preprocess import preprocess_for_ocr
+
+            img = preprocess_for_ocr(img, deskew=True, denoise=True, contrast=True)
+        except Exception as exc:
+            logger.debug("Image preprocessing skipped: %s", exc)
 
     # Auto-detect language if not specified
     if lang is None:
@@ -106,6 +120,7 @@ def ocr_pdf_pages(
     *,
     lang: str | None = None,
     use_vision_fallback: bool = True,
+    preprocess: bool = True,
     api_key: str | None = None,
     provider: str = "anthropic",
 ) -> dict[int, str]:
@@ -136,6 +151,15 @@ def ocr_pdf_pages(
             continue
 
         img = images[0]
+
+        # Image preprocessing (deskew, denoise, contrast)
+        if preprocess:
+            try:
+                from ppke.converter.preprocess import preprocess_for_ocr
+
+                img = preprocess_for_ocr(img, deskew=True, denoise=True, contrast=True)
+            except Exception as exc:
+                logger.debug("Image preprocessing skipped for page %d: %s", page_num + 1, exc)
 
         # Auto-detect language from first page (reuse for subsequent pages)
         if detected_lang is None:

@@ -2549,6 +2549,317 @@ def template_list():
     click.echo(f"\nTotal: {len(templates)} templates ({len(official)} official, {len(custom)} custom)")
 
 
+# ── Authentication commands ──
+
+_TOKEN_PATH = Path.home() / ".ppke" / ".token"
+_DEFAULT_SERVER = "http://127.0.0.1:8000"
+
+
+def _save_token(token: str, email: str = "", name: str = ""):
+    """Persist JWT token to ~/.ppke/.token for reuse across CLI sessions."""
+    import json as _json
+    _TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _TOKEN_PATH.write_text(_json.dumps({"token": token, "email": email, "name": name}))
+    _TOKEN_PATH.chmod(0o600)
+
+
+def _load_token() -> dict | None:
+    """Load saved token from ~/.ppke/.token."""
+    import json as _json
+    if not _TOKEN_PATH.exists():
+        return None
+    try:
+        return _json.loads(_TOKEN_PATH.read_text())
+    except Exception:
+        return None
+
+
+def _clear_token():
+    """Remove saved token."""
+    if _TOKEN_PATH.exists():
+        _TOKEN_PATH.unlink()
+
+
+@main.command("login")
+@click.option("--email", prompt=False, default=None, help="Email address")
+@click.option("--password", prompt=False, default=None, hide_input=True, help="Password")
+@click.option("--server", default=_DEFAULT_SERVER, help="PPKE server URL")
+@click.option("--github", "oauth_provider", flag_value="github", help="Login with GitHub OAuth")
+@click.option("--google", "oauth_provider", flag_value="google", help="Login with Google OAuth")
+def login(email: str | None, password: str | None, server: str, oauth_provider: str | None):
+    """Sign in to PPKE (same account works in CLI, TUI, and Web).
+
+    Login with email/password or use --github / --google for OAuth.
+
+    Examples:
+        ppke login
+        ppke login --email user@example.com
+        ppke login --github
+        ppke login --google
+        ppke login --server http://my-server:8000
+    """
+    import json as _json
+    import urllib.request
+    import urllib.error
+
+    server = server.rstrip("/")
+
+    if oauth_provider:
+        # OAuth flow: get auth URL from server, open browser, listen for callback
+        click.echo(f"Starting {oauth_provider.title()} OAuth login...")
+        try:
+            req = urllib.request.Request(f"{server}/api/auth/oauth/{oauth_provider}/cli")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = _json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            try:
+                err = _json.loads(exc.read())
+                click.echo(f"Error: {err.get('detail', str(exc))}", err=True)
+            except Exception:
+                click.echo(f"Error: {exc}", err=True)
+            sys.exit(1)
+        except Exception as exc:
+            click.echo(
+                f"Error: Cannot reach server at {server}. "
+                f"Make sure 'ppke serve' is running.\n  ({exc})",
+                err=True,
+            )
+            sys.exit(1)
+
+        auth_url = data["auth_url"]
+
+        # Start a tiny local HTTP server to receive the callback token
+        import http.server
+        import threading
+
+        received = {"token": None, "email": "", "name": ""}
+
+        class CallbackHandler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                length = int(self.headers.get("Content-Length", 0))
+                body = _json.loads(self.rfile.read(length)) if length else {}
+                received["token"] = body.get("token")
+                received["email"] = body.get("email", "")
+                received["name"] = body.get("name", "")
+                self.send_response(200)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(b"OK")
+
+            def do_OPTIONS(self):  # noqa: N802 — CORS preflight
+                self.send_response(200)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass  # Suppress HTTP logs
+
+        try:
+            httpd = http.server.HTTPServer(("127.0.0.1", 19283), CallbackHandler)
+        except OSError:
+            httpd = None  # Port busy — user will need to copy token manually
+
+        click.echo(f"\nOpening browser for {oauth_provider.title()} login...")
+        click.echo(f"If the browser doesn't open, visit:\n  {auth_url}\n")
+
+        import webbrowser
+        webbrowser.open(auth_url)
+
+        if httpd:
+            httpd.timeout = 120
+            click.echo("Waiting for authentication (up to 2 minutes)...")
+            # Handle requests until we get the token or timeout
+            import time as _time
+            deadline = _time.time() + 120
+            while not received["token"] and _time.time() < deadline:
+                httpd.handle_request()
+            httpd.server_close()
+
+        if received["token"]:
+            _save_token(received["token"], received["email"], received["name"])
+            click.echo(
+                _render(_Panel(
+                    f"[bold green]✓ Logged in as {received['name'] or received['email']}[/bold green]\n"
+                    f"Email: {received['email']}\nToken saved to ~/.ppke/.token",
+                    border_style="green",
+                ))
+            )
+        else:
+            click.echo(
+                "Timed out waiting for browser callback.\n"
+                "If you completed login in the browser, copy the token shown there and run:\n"
+                "  ppke login --email <email> --password <password>\n"
+                "Or set it manually in ~/.ppke/.token",
+                err=True,
+            )
+            sys.exit(1)
+        return
+
+    # Email/password flow
+    if not email:
+        email = click.prompt("Email")
+    if not password:
+        password = click.prompt("Password", hide_input=True)
+
+    try:
+        payload = _json.dumps({"email": email, "password": password}).encode()
+        req = urllib.request.Request(
+            f"{server}/api/auth/login",
+            data=payload,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = _json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        try:
+            err = _json.loads(exc.read())
+            click.echo(f"Login failed: {err.get('detail', str(exc))}", err=True)
+        except Exception:
+            click.echo(f"Login failed: {exc}", err=True)
+        sys.exit(1)
+    except Exception as exc:
+        click.echo(
+            f"Error: Cannot reach server at {server}. "
+            f"Make sure 'ppke serve' is running.\n  ({exc})",
+            err=True,
+        )
+        sys.exit(1)
+
+    _save_token(data["token"], data["user"]["email"], data["user"]["name"])
+    click.echo(
+        _render(_Panel(
+            f"[bold green]✓ Logged in as {data['user']['name']}[/bold green]\n"
+            f"Email: {data['user']['email']}\nToken saved to ~/.ppke/.token",
+            border_style="green",
+        ))
+    )
+
+
+@main.command("register")
+@click.option("--name", prompt="Name", help="Display name")
+@click.option("--email", prompt="Email", help="Email address")
+@click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="Password (min 8 chars)")
+@click.option("--server", default=_DEFAULT_SERVER, help="PPKE server URL")
+def register(name: str, email: str, password: str, server: str):
+    """Create a new PPKE account (same account works in CLI, TUI, and Web).
+
+    Examples:
+        ppke register
+        ppke register --name "Alice" --email alice@example.com
+    """
+    import json as _json
+    import urllib.request
+    import urllib.error
+
+    server = server.rstrip("/")
+
+    try:
+        payload = _json.dumps({"name": name, "email": email, "password": password}).encode()
+        req = urllib.request.Request(
+            f"{server}/api/auth/register",
+            data=payload,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = _json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        try:
+            err = _json.loads(exc.read())
+            click.echo(f"Registration failed: {err.get('detail', str(exc))}", err=True)
+        except Exception:
+            click.echo(f"Registration failed: {exc}", err=True)
+        sys.exit(1)
+    except Exception as exc:
+        click.echo(
+            f"Error: Cannot reach server at {server}. "
+            f"Make sure 'ppke serve' is running.\n  ({exc})",
+            err=True,
+        )
+        sys.exit(1)
+
+    _save_token(data["token"], data["user"]["email"], data["user"]["name"])
+    click.echo(
+        _render(_Panel(
+            f"[bold green]✓ Account created — logged in as {data['user']['name']}[/bold green]\n"
+            f"Email: {data['user']['email']}\nToken saved to ~/.ppke/.token",
+            border_style="green",
+        ))
+    )
+
+
+@main.command("logout")
+def logout():
+    """Sign out and remove saved credentials.
+
+    Example:
+        ppke logout
+    """
+    _clear_token()
+    click.echo("Logged out. Token removed from ~/.ppke/.token")
+
+
+@main.command("whoami")
+@click.option("--server", default=_DEFAULT_SERVER, help="PPKE server URL")
+def whoami(server: str):
+    """Show the currently logged-in user.
+
+    Examples:
+        ppke whoami
+        ppke whoami --server http://my-server:8000
+    """
+    import json as _json
+    import urllib.request
+    import urllib.error
+
+    saved = _load_token()
+    if not saved or not saved.get("token"):
+        click.echo("Not logged in. Run 'ppke login' first.", err=True)
+        sys.exit(1)
+
+    server = server.rstrip("/")
+    try:
+        req = urllib.request.Request(
+            f"{server}/api/auth/me",
+            headers={"Authorization": f"Bearer {saved['token']}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            user = _json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            click.echo("Session expired. Run 'ppke login' to sign in again.", err=True)
+            _clear_token()
+        else:
+            click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+    except Exception as exc:
+        # Server not running — show cached info
+        click.echo(
+            _render(_Panel(
+                f"[bold]{saved.get('name', 'Unknown')}[/bold]\n"
+                f"Email: {saved.get('email', 'Unknown')}\n"
+                f"[dim](server at {server} not reachable — showing cached info)[/dim]",
+                border_style="yellow",
+            ))
+        )
+        return
+
+    workspaces = user.get("workspaces", [])
+    ws_text = ", ".join(f"{w['name']} ({w['role']})" for w in workspaces) if workspaces else "None"
+    click.echo(
+        _render(_Panel(
+            f"[bold]{user['name']}[/bold]\n"
+            f"Email: {user['email']}\n"
+            f"Role: {user['role']}\n"
+            f"Workspaces: {ws_text}",
+            border_style="cyan",
+        ))
+    )
+
+
 # ── serve command (Web GUI) ──
 
 

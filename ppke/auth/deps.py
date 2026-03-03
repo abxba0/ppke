@@ -3,6 +3,10 @@
 Provides Depends()-compatible functions for extracting the current user
 from JWT tokens (cookie or Authorization header), and role-based access
 control helpers.
+
+Supports two backends (selected via ``AUTH_BACKEND`` env var):
+  - ``local`` (default): SQLite/PostgreSQL + custom JWT
+  - ``supabase``: Supabase Auth + PostgREST
 """
 
 from __future__ import annotations
@@ -14,19 +18,29 @@ from typing import Any
 
 from fastapi import Cookie, Depends, HTTPException, Request
 
-from ppke.auth.database import get_db, get_user_by_id, get_user_role_in_workspace
-from ppke.auth.jwt_auth import decode_token
+from ppke.auth.factory import get_auth_backend, get_data_backend, is_supabase
+from ppke.auth.compat import SupabaseConnShim, patch_auth_db
 
 logger = logging.getLogger(__name__)
 
-# Module-level database connection (lazy singleton)
+# ── Legacy shim — kept so existing `from ppke.auth.deps import _get_db` works
 _db_conn = None
 
 
 def _get_db():
+    """Return a raw DB connection (local) or the SupabaseConnShim (supabase).
+
+    Either way, ``auth_db.func(conn, ...)`` works unchanged because the
+    compat layer detects the shim and routes to the Supabase backend.
+    """
     global _db_conn
     if _db_conn is None:
-        _db_conn = get_db()
+        if is_supabase():
+            patch_auth_db()
+            _db_conn = SupabaseConnShim(get_data_backend())
+        else:
+            from ppke.auth.database import get_db
+            _db_conn = get_db()
     return _db_conn
 
 
@@ -57,20 +71,17 @@ async def get_current_user(request: Request) -> dict[str, Any]:
             raise HTTPException(status_code=303, headers={"Location": "/login"})
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    payload = decode_token(token)
-    if not payload:
+    auth = get_auth_backend()
+    user = auth.get_user_from_token(token)
+    if not user:
         if "text/html" in request.headers.get("accept", ""):
             raise HTTPException(status_code=303, headers={"Location": "/login"})
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
-
-    conn = _get_db()
-    user = get_user_by_id(conn, user_id)
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+    # For Supabase, ensure a profiles row exists
+    if is_supabase():
+        data = get_data_backend()
+        user = data.ensure_profile(user)
 
     return user
 
@@ -81,16 +92,16 @@ async def get_optional_user(request: Request) -> dict[str, Any] | None:
     if not token:
         return None
 
-    payload = decode_token(token)
-    if not payload:
+    auth = get_auth_backend()
+    user = auth.get_user_from_token(token)
+    if not user:
         return None
 
-    user_id = payload.get("sub")
-    if not user_id:
-        return None
+    if is_supabase():
+        data = get_data_backend()
+        user = data.ensure_profile(user)
 
-    conn = _get_db()
-    return get_user_by_id(conn, user_id)
+    return user
 
 
 def require_role(min_role: str):
@@ -109,8 +120,8 @@ def require_role(min_role: str):
             # No workspace context — only check user is authenticated
             return user
 
-        conn = _get_db()
-        user_role = get_user_role_in_workspace(conn, ws_id, user["id"])
+        data = get_data_backend()
+        user_role = data.get_user_role_in_workspace(ws_id, user["id"])
         if user_role is None:
             raise HTTPException(status_code=403, detail="Not a member of this workspace")
 

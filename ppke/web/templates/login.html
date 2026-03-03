@@ -20,6 +20,7 @@
             {% endif %}
 
             <form id="login-form" method="post" action="/auth/login" class="space-y-5">
+                <input type="hidden" name="next" value="{{ next or '' }}">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
                     <input type="email" name="email" required autocomplete="email" autofocus
@@ -60,7 +61,7 @@
 
         <p class="text-center text-sm text-gray-500 dark:text-gray-400 mt-6">
             Don't have an account?
-            <a href="/register" class="text-brand-600 dark:text-brand-400 hover:underline font-medium">Create one</a>
+            <a href="/register{% if next %}?next={{ next }}{% endif %}" class="text-brand-600 dark:text-brand-400 hover:underline font-medium">Create one</a>
         </p>
     </div>
 </div>

@@ -46,6 +46,7 @@ from ppke.config import Config, SUPPORTED_PROVIDERS, PROVIDER_ENV_VARS
 from ppke.auth.deps import get_current_user, get_optional_user, get_user_vault_path, _get_db
 from ppke.auth.jwt_auth import hash_password, verify_password, create_token
 from ppke.auth import database as auth_db
+from ppke.auth.factory import get_auth_backend, get_data_backend, is_supabase
 
 # ── Infrastructure initialization (Phase 8) ──
 from ppke.infra.logging_config import configure_logging, RequestLoggingMiddleware
@@ -261,31 +262,46 @@ def _rag_context_block(
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     user = await _try_get_user(request)
+    next_url = request.query_params.get("next", "")
     if user:
+        if next_url:
+            return RedirectResponse(next_url, status_code=303)
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse("login.html", {"request": request, "error": None, "next": next_url, "oauth_providers": _get_available_oauth_providers()})
 
 
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
     user = await _try_get_user(request)
+    next_url = request.query_params.get("next", "")
     if user:
+        if next_url:
+            return RedirectResponse(next_url, status_code=303)
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("register.html", {"request": request, "error": None})
+    return templates.TemplateResponse("register.html", {"request": request, "error": None, "next": next_url, "oauth_providers": _get_available_oauth_providers()})
 
 
 @app.post("/auth/login")
-async def auth_login(request: Request, email: str = Form(...), password: str = Form(...)):
-    conn = _get_db()
-    user = auth_db.get_user_by_email(conn, email)
-    if not user or not verify_password(password, user["password_hash"]):
+async def auth_login(request: Request, email: str = Form(...), password: str = Form(...), next: str = Form("")):
+    try:
+        auth = get_auth_backend()
+        result = auth.sign_in(email, password)
+    except (ValueError, Exception) as exc:
         return templates.TemplateResponse("login.html", {
-            "request": request, "error": "Invalid email or password"
+            "request": request, "error": str(exc) or "Invalid email or password", "next": next,
+            "oauth_providers": _get_available_oauth_providers(),
         }, status_code=401)
 
-    token = create_token(user["id"], user["email"])
+    user = result["user"]
+    token = result["token"]
+
+    conn = _get_db()
     auth_db.log_activity(conn, user["id"], "signed in")
-    response = RedirectResponse("/", status_code=303)
+
+    # Auto-accept any pending workspace invites
+    accepted = auth_db.auto_accept_pending_invites(conn, user["id"], user["email"])
+    redirect_url = next if next else "/"
+    response = RedirectResponse(redirect_url, status_code=303)
     response.set_cookie(
         "ppke_token", token, httponly=True, samesite="lax", max_age=72 * 3600
     )
@@ -299,30 +315,42 @@ async def auth_register(
     email: str = Form(...),
     password: str = Form(...),
     password_confirm: str = Form(...),
+    next: str = Form(""),
 ):
     if len(password) < 8:
         return templates.TemplateResponse("register.html", {
-            "request": request, "error": "Password must be at least 8 characters"
+            "request": request, "error": "Password must be at least 8 characters", "next": next,
+            "oauth_providers": _get_available_oauth_providers(),
         }, status_code=400)
 
     if password != password_confirm:
         return templates.TemplateResponse("register.html", {
-            "request": request, "error": "Passwords do not match"
+            "request": request, "error": "Passwords do not match", "next": next,
+            "oauth_providers": _get_available_oauth_providers(),
         }, status_code=400)
+
+    try:
+        auth = get_auth_backend()
+        result = auth.sign_up(email, password, name)
+    except (ValueError, Exception) as exc:
+        return templates.TemplateResponse("register.html", {
+            "request": request, "error": str(exc) or "Registration failed", "next": next,
+            "oauth_providers": _get_available_oauth_providers(),
+        }, status_code=400)
+
+    user = result["user"]
+    token = result["token"]
 
     conn = _get_db()
-    existing = auth_db.get_user_by_email(conn, email)
-    if existing:
-        return templates.TemplateResponse("register.html", {
-            "request": request, "error": "An account with this email already exists"
-        }, status_code=400)
-
-    hashed = hash_password(password)
-    user = auth_db.create_user(conn, email, name, hashed)
-    token = create_token(user["id"], email)
     auth_db.log_activity(conn, user["id"], "created account")
 
-    response = RedirectResponse("/", status_code=303)
+    # Auto-accept any pending workspace invites for this email
+    accepted = auth_db.auto_accept_pending_invites(conn, user["id"], email)
+    if accepted:
+        auth_db.log_activity(conn, user["id"], f"auto-joined {len(accepted)} workspace(s) from pending invites")
+
+    redirect_url = next if next else "/"
+    response = RedirectResponse(redirect_url, status_code=303)
     response.set_cookie(
         "ppke_token", token, httponly=True, samesite="lax", max_age=72 * 3600
     )
@@ -361,13 +389,51 @@ _OAUTH_CONFIGS = {
 
 
 def _get_oauth_credentials(provider: str) -> tuple[str, str] | None:
-    """Return (client_id, client_secret) from env vars, or None if not configured."""
+    """Return (client_id, client_secret) from env vars or ~/.ppke/.env, or None if not configured."""
+    from ppke.config import _load_env_file
     cfg = _OAUTH_CONFIGS[provider]
-    client_id = os.environ.get(cfg["client_id_env"], "").strip()
-    client_secret = os.environ.get(cfg["client_secret_env"], "").strip()
+    dot_env = _load_env_file()
+    client_id = (os.environ.get(cfg["client_id_env"], "") or dot_env.get(cfg["client_id_env"], "")).strip()
+    client_secret = (os.environ.get(cfg["client_secret_env"], "") or dot_env.get(cfg["client_secret_env"], "")).strip()
     if client_id and client_secret:
         return client_id, client_secret
     return None
+
+
+def _get_available_oauth_providers() -> list[str]:
+    """Return list of OAuth providers that have credentials configured."""
+    if is_supabase():
+        return list(_OAUTH_CONFIGS.keys())
+    return [p for p in _OAUTH_CONFIGS if _get_oauth_credentials(p) is not None]
+
+
+def _cli_oauth_success_html(name: str, email: str, jwt_token: str) -> str:
+    """Return the HTML success page shown after CLI OAuth callback."""
+    return f"""<!DOCTYPE html>
+<html><head><title>PPKE — Login Successful</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0;
+         display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
+  .card {{ background: #16213e; padding: 2rem 3rem; border-radius: 12px; text-align: center; max-width: 500px; }}
+  h2 {{ color: #4ecca3; }}
+  code {{ background: #0f3460; padding: 4px 8px; border-radius: 4px; word-break: break-all; font-size: 0.85em; }}
+  .token-box {{ background: #0f3460; padding: 12px; border-radius: 8px; margin: 1rem 0; word-break: break-all;
+                font-family: monospace; font-size: 0.8em; max-height: 120px; overflow-y: auto; }}
+  .hint {{ color: #888; font-size: 0.85em; margin-top: 1rem; }}
+</style></head>
+<body><div class="card">
+  <h2>✓ Logged in as {name}</h2>
+  <p>Your CLI token is below. It has been saved automatically if your CLI is waiting.</p>
+  <div class="token-box">{jwt_token}</div>
+  <p class="hint">You can close this tab and return to your terminal.</p>
+</div>
+<script>
+  // Post the token to the CLI's local listener if running
+  fetch('http://127.0.0.1:19283/callback', {{
+    method: 'POST', headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{token: '{jwt_token}', email: '{email}', name: '{name}'}})
+  }}).catch(() => {{}});
+</script></body></html>"""
 
 
 def _oauth_exchange_code(provider: str, code: str, redirect_uri: str) -> dict:
@@ -421,8 +487,33 @@ async def auth_oauth_start(provider: str, request: Request):
     if provider not in _OAUTH_CONFIGS:
         raise HTTPException(400, "Unsupported OAuth provider")
 
+    redirect_uri = str(request.base_url).rstrip("/") + f"/auth/oauth/{provider}/callback"
+
+    # Supabase: delegate OAuth to Supabase Auth (GoTrue)
+    if is_supabase():
+        try:
+            auth = get_auth_backend()
+            result = auth.get_oauth_url(provider, redirect_uri)
+            return RedirectResponse(result["url"], status_code=302)
+        except Exception as exc:
+            logger.error("Supabase OAuth start failed: %s", exc)
+            raise HTTPException(502, f"OAuth start failed: {exc}") from exc
+
+    # Local backend: manual OAuth flow
     creds = _get_oauth_credentials(provider)
     if not creds:
+        # Browser request: redirect back to login with a friendly error message
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept:
+            error_msg = (
+                f"OAuth with {provider} is not configured. "
+                f"Set {provider.upper()}_CLIENT_ID and {provider.upper()}_CLIENT_SECRET in ~/.ppke/.env and restart the server."
+            )
+            return templates.TemplateResponse(
+                "login.html",
+                {"request": request, "error": error_msg, "next": "", "oauth_providers": _get_available_oauth_providers()},
+                status_code=501,
+            )
         raise HTTPException(
             501,
             f"OAuth with {provider} requires configuration. "
@@ -432,7 +523,6 @@ async def auth_oauth_start(provider: str, request: Request):
     cfg = _OAUTH_CONFIGS[provider]
 
     state = secrets.token_urlsafe(32)
-    redirect_uri = str(request.base_url).rstrip("/") + f"/auth/oauth/{provider}/callback"
 
     params = {
         "client_id": client_id,
@@ -463,6 +553,35 @@ async def auth_oauth_callback(
     if provider not in _OAUTH_CONFIGS:
         raise HTTPException(400, "Unsupported OAuth provider")
 
+    # ── Supabase backend: exchange code via GoTrue ──
+    if is_supabase():
+        try:
+            auth = get_auth_backend()
+            result = auth.exchange_oauth_code(code)
+        except Exception as exc:
+            logger.error("Supabase OAuth callback failed: %s", exc)
+            raise HTTPException(502, f"OAuth login failed: {exc}") from exc
+
+        user = result["user"]
+        token = result["token"]
+
+        conn = _get_db()
+        auth_db.log_activity(conn, user["id"], f"signed in via {provider} OAuth")
+
+        # Auto-accept pending invites
+        email = user.get("email", "")
+        if email:
+            accepted = auth_db.auto_accept_pending_invites(conn, user["id"], email)
+            if accepted:
+                auth_db.log_activity(conn, user["id"], f"auto-joined {len(accepted)} workspace(s) from pending invites")
+
+        response = RedirectResponse("/", status_code=303)
+        response.set_cookie(
+            "ppke_token", token, httponly=True, samesite="lax", max_age=72 * 3600,
+        )
+        return response
+
+    # ── Local backend: manual OAuth exchange ──
     creds = _get_oauth_credentials(provider)
     if not creds:
         raise HTTPException(501, f"OAuth {provider} not configured")
@@ -528,6 +647,200 @@ async def auth_oauth_callback(
     )
     response.delete_cookie("ppke_oauth_state")
     return response
+
+
+# ── JSON API auth endpoints (for CLI / programmatic access) ──
+
+
+@app.post("/api/auth/login")
+async def api_auth_login(request: Request):
+    """JSON-based login — returns a JWT token for CLI/programmatic use."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Request body must be JSON with 'email' and 'password'")
+    email = body.get("email", "").strip()
+    password = body.get("password", "")
+    if not email or not password:
+        raise HTTPException(400, "Both 'email' and 'password' are required")
+
+    try:
+        auth = get_auth_backend()
+        result = auth.sign_in(email, password)
+    except ValueError as exc:
+        raise HTTPException(401, str(exc))
+    except Exception as exc:
+        logger.error("API login failed: %s", exc)
+        raise HTTPException(401, "Invalid email or password")
+
+    user = result["user"]
+    token = result["token"]
+    conn = _get_db()
+    auth_db.log_activity(conn, user["id"], "signed in via API")
+    return {"token": token, "user": {"id": user["id"], "email": user["email"], "name": user["name"]}}
+    return {"token": token, "user": {"id": user["id"], "email": user["email"], "name": user["name"]}}
+
+
+@app.post("/api/auth/register")
+async def api_auth_register(request: Request):
+    """JSON-based registration — returns a JWT token for CLI/programmatic use."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Request body must be JSON")
+    email = body.get("email", "").strip()
+    name = body.get("name", "").strip()
+    password = body.get("password", "")
+    if not email or not password:
+        raise HTTPException(400, "'email' and 'password' are required")
+    if len(password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    if not name:
+        name = email.split("@")[0]
+
+    try:
+        auth = get_auth_backend()
+        result = auth.sign_up(email, password, name)
+    except (ValueError, Exception) as exc:
+        raise HTTPException(400, str(exc) or "Registration failed")
+
+    user = result["user"]
+    token = result["token"]
+    conn = _get_db()
+    auth_db.log_activity(conn, user["id"], "created account via API")
+    return {"token": token, "user": {"id": user["id"], "email": user["email"], "name": user["name"]}}
+
+
+@app.get("/api/auth/oauth/{provider}/cli")
+async def api_auth_oauth_cli_start(provider: str, request: Request):
+    """Start OAuth flow for CLI — returns the authorization URL to open in a browser."""
+    if provider not in _OAUTH_CONFIGS:
+        raise HTTPException(400, "Unsupported OAuth provider")
+
+    redirect_uri = str(request.base_url).rstrip("/") + f"/auth/oauth/{provider}/callback/cli"
+
+    # Supabase: use built-in GoTrue OAuth
+    if is_supabase():
+        try:
+            auth = get_auth_backend()
+            result = auth.get_oauth_url(provider, redirect_uri)
+            return {"auth_url": result["url"], "state": "supabase-managed"}
+        except Exception as exc:
+            raise HTTPException(502, f"OAuth start failed: {exc}") from exc
+
+    # Local backend: manual OAuth
+    creds = _get_oauth_credentials(provider)
+    if not creds:
+        raise HTTPException(
+            501,
+            f"OAuth with {provider} requires configuration. "
+            f"Set {provider.upper()}_CLIENT_ID and {provider.upper()}_CLIENT_SECRET in ~/.ppke/.env",
+        )
+    client_id, _ = creds
+    cfg = _OAUTH_CONFIGS[provider]
+
+    state = secrets.token_urlsafe(32)
+
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "scope": cfg["scope"],
+        "state": state,
+        "response_type": "code",
+    }
+    auth_url = cfg["auth_url"] + "?" + urlencode(params)
+    return {"auth_url": auth_url, "state": state}
+
+
+@app.get("/auth/oauth/{provider}/callback/cli", response_class=HTMLResponse)
+async def auth_oauth_callback_cli(
+    provider: str,
+    request: Request,
+    code: str = Query(...),
+    state: str = Query(""),
+):
+    """Handle OAuth callback for CLI — shows the token on a success page."""
+    if provider not in _OAUTH_CONFIGS:
+        raise HTTPException(400, "Unsupported OAuth provider")
+
+    # ── Supabase backend: exchange code via GoTrue ──
+    if is_supabase():
+        try:
+            auth = get_auth_backend()
+            result = auth.exchange_oauth_code(code)
+        except Exception as exc:
+            logger.error("Supabase CLI OAuth callback failed: %s", exc)
+            raise HTTPException(502, f"OAuth login failed: {exc}") from exc
+
+        user = result["user"]
+        jwt_token = result["token"]
+        name = user.get("name", "")
+        email = user.get("email", "")
+
+        conn = _get_db()
+        auth_db.log_activity(conn, user["id"], f"signed in via {provider} OAuth (CLI)")
+
+        # Auto-accept pending invites
+        if email:
+            accepted = auth_db.auto_accept_pending_invites(conn, user["id"], email)
+            if accepted:
+                auth_db.log_activity(conn, user["id"], f"auto-joined {len(accepted)} workspace(s) from pending invites")
+
+        return _cli_oauth_success_html(name, email, jwt_token)
+
+    # ── Local backend: manual OAuth exchange ──
+    creds = _get_oauth_credentials(provider)
+    if not creds:
+        raise HTTPException(501, f"OAuth {provider} not configured")
+
+    redirect_uri = str(request.base_url).rstrip("/") + f"/auth/oauth/{provider}/callback/cli"
+
+    try:
+        token_data = _oauth_exchange_code(provider, code, redirect_uri)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("OAuth token exchange failed for %s: %s", provider, exc)
+        raise HTTPException(502, "Failed to exchange authorization code") from exc
+
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise HTTPException(502, "OAuth provider did not return an access token")
+
+    try:
+        user_info = _oauth_get_userinfo(provider, access_token)
+    except Exception as exc:
+        logger.error("OAuth userinfo fetch failed for %s: %s", provider, exc)
+        raise HTTPException(502, "Failed to fetch user profile from OAuth provider") from exc
+
+    # Normalize user fields
+    if provider == "google":
+        oauth_id = str(user_info.get("id", ""))
+        email = user_info.get("email", "")
+        name = user_info.get("name", email.split("@")[0])
+    else:  # github
+        oauth_id = str(user_info.get("id", ""))
+        email = user_info.get("email", "")
+        name = user_info.get("name") or user_info.get("login", email.split("@")[0])
+
+    if not email or not oauth_id:
+        raise HTTPException(400, "Could not retrieve email from OAuth provider")
+
+    conn = _get_db()
+    user = auth_db.get_user_by_oauth(conn, provider, oauth_id)
+    if not user:
+        user = auth_db.get_user_by_email(conn, email)
+    if not user:
+        user = auth_db.create_user(
+            conn, email, name, password_hash="", oauth_provider=provider, oauth_id=oauth_id,
+        )
+        auth_db.log_activity(conn, user["id"], f"created account via {provider} OAuth (CLI)")
+    else:
+        auth_db.log_activity(conn, user["id"], f"signed in via {provider} OAuth (CLI)")
+
+    jwt_token = create_token(user["id"], user["email"])
+
+    return _cli_oauth_success_html(name, email, jwt_token)
 
 
 @app.get("/api/auth/me")
@@ -2343,6 +2656,309 @@ async def api_graph_markdown_export(request: Request):
     )
 
 
+# ── Graph temporal view endpoints ──
+
+
+@app.get("/api/graph/temporal-range")
+async def api_graph_temporal_range(request: Request):
+    """Return min/max year and all unique years in the knowledge graph."""
+    user = await _try_get_user(request)
+    from ppke.graph.analytics import get_temporal_range
+
+    return get_temporal_range(_user_vault_path(user))
+
+
+@app.get("/api/graph/temporal")
+async def api_graph_temporal(
+    request: Request,
+    min_year: int | None = Query(None),
+    max_year: int | None = Query(None),
+):
+    """Return graph data filtered by year range for temporal view."""
+    user = await _try_get_user(request)
+    from ppke.graph.analytics import filter_graph_by_year
+
+    result = filter_graph_by_year(
+        _user_vault_path(user),
+        min_year=min_year,
+        max_year=max_year,
+    )
+
+    # Convert to D3-friendly format
+    d3_nodes = []
+    for n in result.get("nodes", []):
+        node_type = n.get("type", "concept")
+        d3_nodes.append({
+            "id": n["id"], "label": n.get("label", n["id"]),
+            "type": node_type,
+            "group": {"concept": 1, "book": 2, "paragraph": 3}.get(node_type, 1),
+            "size": n.get("weight", 1),
+            "year": n.get("year"),
+        })
+    d3_links = [
+        {
+            "source": e.get("src") or e.get("source"),
+            "target": e.get("dst") or e.get("target"),
+            "relation": e.get("rel") or e.get("relation", "related_to"),
+            "year": e.get("year"),
+        }
+        for e in result.get("edges", [])
+    ]
+    return {"nodes": d3_nodes, "links": d3_links, "range": result.get("range", {})}
+
+
+# ── PDF table detection endpoint ──
+
+
+@app.post("/api/extract-tables")
+async def api_extract_tables(
+    request: Request,
+    file: UploadFile = File(...),
+):
+    """Extract tables from an uploaded PDF and return them as Markdown."""
+    user = await _try_get_user(request)
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(400, "Only PDF files are supported for table extraction")
+
+    import tempfile
+    content = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        tmp.write(content)
+
+    try:
+        from ppke.converter.table_detect import extract_tables_from_pdf, tables_to_markdown
+
+        tables = extract_tables_from_pdf(tmp_path)
+        md = tables_to_markdown(tables)
+        return {
+            "tables": len(tables),
+            "markdown": md,
+            "details": [
+                {"page": t["page"] + 1, "rows": len(t["rows"]), "markdown": t["markdown"]}
+                for t in tables
+            ],
+        }
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+# ── PDF chapter detection endpoint ──
+
+
+@app.post("/api/detect-chapters")
+async def api_detect_chapters(
+    request: Request,
+    file: UploadFile = File(...),
+):
+    """Detect chapters from a PDF's TOC/bookmarks and return the structure."""
+    user = await _try_get_user(request)
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(400, "Only PDF files are supported for chapter detection")
+
+    import tempfile
+    content = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        tmp.write(content)
+
+    try:
+        from ppke.converter.chapter_detect import extract_toc, split_pdf_by_toc, toc_to_markdown
+
+        toc = extract_toc(tmp_path)
+        chapters = split_pdf_by_toc(tmp_path, max_level=3, include_text=False)
+        toc_md = toc_to_markdown(toc)
+        return {
+            "toc_entries": len(toc),
+            "chapters": len(chapters),
+            "toc": toc,
+            "chapter_ranges": [
+                {"title": c["title"], "level": c["level"],
+                 "start_page": c["start_page"], "end_page": c["end_page"]}
+                for c in chapters
+            ],
+            "toc_markdown": toc_md,
+        }
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+# ── Video import endpoint ──
+
+
+@app.post("/api/import-video")
+async def api_import_video(
+    request: Request,
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    author: str = Form(""),
+    year: str = Form(""),
+    domain: str = Form("philosophy"),
+    generate_summary: bool = Form(False),
+):
+    """Import a lecture video file — extract audio, transcribe, and ingest.
+
+    Optionally generates a structured summary of the video content.
+
+    Returns ``{"job_id": ..., "status": "running"}``.
+    """
+    user = await _try_get_user(request)
+    from ppke.converter.video import VIDEO_EXTENSIONS
+
+    if not file.filename:
+        raise HTTPException(400, "No filename provided")
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in VIDEO_EXTENSIONS and ext not in {".mp4", ".webm"}:
+        raise HTTPException(
+            400,
+            f"Unsupported video format: {ext}. "
+            f"Supported: {', '.join(sorted(VIDEO_EXTENSIONS | {'.mp4', '.webm'}))}"
+        )
+
+    config = _get_config()
+    vault = _user_vault_path(user)
+    upload_dir = vault / ".uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_filename = re.sub(r"[^\w\.\-]", "_", file.filename)
+    temp_path = upload_dir / safe_filename
+
+    content = await file.read()
+    temp_path.write_bytes(content)
+
+    ingest_title = title.strip() or temp_path.stem.replace("_", " ").replace("-", " ").title()
+    ingest_author = author.strip() or "Video Import"
+
+    job_id = create_job(extra={"filename": safe_filename, "source_type": "video"})
+
+    def _run_video_ingest():
+        _start = time.time()
+        md_path: Path | None = None
+        try:
+            update_job(job_id, stage="Extracting audio from video...", progress=5)
+
+            from ppke.converter.video import convert_video
+
+            markdown_text = convert_video(temp_path)
+
+            update_job(job_id, stage="Transcript extracted — starting ingestion...", progress=30)
+
+            # Optionally generate summary
+            if generate_summary:
+                try:
+                    update_job(job_id, stage="Generating video summary...", progress=40)
+                    from ppke.converter.video_summary import generate_video_summary
+
+                    summary = generate_video_summary(
+                        markdown_text, title=ingest_title,
+                    )
+                    if summary.get("markdown"):
+                        markdown_text += "\n\n---\n\n" + summary["markdown"]
+                except Exception as exc:
+                    logger.warning("Video summary generation failed: %s", exc)
+
+            safe_stem = re.sub(r"[^\w\-]", "_", ingest_title)[:60]
+            md_path = upload_dir / f"{safe_stem}_{job_id}.md"
+            md_path.write_text(markdown_text)
+
+            from ppke.parser.markdown import parse_markdown_book
+            from ppke.pipeline.orchestrator import ingest_book
+            from ppke.progress.tracker import ProgressTracker
+            from ppke.vectordb.store import VectorStore
+            from ppke.graph.knowledge_graph import KnowledgeGraph
+
+            book = parse_markdown_book(md_path, ingest_title, ingest_author, year or None)
+            update_job(job_id, stage=f"Parsed: {len(book.chapters)} chapters", progress=50)
+
+            tracker = ProgressTracker()
+            vector_store = VectorStore(vault) if config.enable_vector_search else None
+            knowledge_graph = KnowledgeGraph(vault) if config.enable_knowledge_graph else None
+            config.vault_path = vault
+
+            def progress_cb(stage: str, detail: str):
+                update_job(job_id, stage=f"[{stage}] {detail}")
+
+            book_dir = ingest_book(
+                book, config,
+                domain=domain,
+                progress_callback=progress_cb,
+                tracker=tracker,
+                vector_store=vector_store,
+                knowledge_graph=knowledge_graph,
+            )
+
+            folder_name = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
+            update_job(job_id, status="completed", progress=100,
+                       book_folder=folder_name, stage="Video ingestion complete!")
+            record_ingestion("video", "completed", time.time() - _start)
+
+        except Exception as e:
+            logger.exception("Video ingestion failed for job %s", job_id)
+            update_job(job_id, status="failed", error=str(e), stage=f"Failed: {e}")
+            capture_exception(e, job_id=job_id)
+            record_ingestion("video", "failed", time.time() - _start)
+        finally:
+            temp_path.unlink(missing_ok=True)
+            if md_path is not None:
+                md_path.unlink(missing_ok=True)
+
+    run_task(_run_video_ingest, job_id=job_id)
+
+    return {"job_id": job_id, "status": "running", "source_type": "video"}
+
+
+# ── Video summary endpoint ──
+
+
+@app.post("/api/video-summary/{folder}")
+async def api_video_summary(request: Request, folder: str):
+    """Generate a structured summary from a book's transcript content."""
+    user = await _try_get_user(request)
+    folder = _safe_folder(folder)
+    vault = _user_vault_path(user)
+    book_dir = vault / folder
+    if not book_dir.exists():
+        raise HTTPException(404, f"Book not found: {folder}")
+
+    # Load the book's markdown content
+    md_path = book_dir / "content.md"
+    if not md_path.exists():
+        # Try to find any .md file
+        md_files = list(book_dir.glob("*.md"))
+        if md_files:
+            md_path = md_files[0]
+        else:
+            raise HTTPException(404, "No content found for summary generation")
+
+    transcript = md_path.read_text()
+    meta = _load_book_meta(book_dir)
+    title = meta.get("title", folder)
+
+    from ppke.converter.video_summary import generate_video_summary
+
+    summary = generate_video_summary(transcript, title=title)
+
+    # Cache the summary
+    summary_path = book_dir / "video_summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False))
+
+    return summary
+
+
+@app.get("/api/video-summary/{folder}")
+async def api_get_video_summary(request: Request, folder: str):
+    """Retrieve a cached video summary."""
+    user = await _try_get_user(request)
+    folder = _safe_folder(folder)
+    vault = _user_vault_path(user)
+    book_dir = vault / folder
+    summary_path = book_dir / "video_summary.json"
+    if not summary_path.exists():
+        raise HTTPException(404, "No video summary found — generate one first")
+    return json.loads(summary_path.read_text())
+
+
 # ── Obsidian / PKM sync endpoints ──
 
 _BLOCKED_PREFIXES = ("/etc", "/usr", "/var", "/sys", "/proc", "/dev", "/boot", "/sbin", "/bin")
@@ -2841,7 +3457,12 @@ async def api_workspace_members(ws_id: str, user: dict = Depends(get_current_use
 
 @app.post("/api/workspaces/{ws_id}/invite")
 async def api_invite_member(request: Request, ws_id: str, user: dict = Depends(get_current_user)):
-    """Invite a user to a workspace by email."""
+    """Invite a user to a workspace by email.
+
+    Works for both registered and unregistered users:
+    - Registered users: added immediately as members
+    - Unregistered users: a pending invite is created; auto-accepted on registration
+    """
     conn = _get_db()
     role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
     if role not in ("admin", "editor"):
@@ -2850,16 +3471,174 @@ async def api_invite_member(request: Request, ws_id: str, user: dict = Depends(g
     body = await request.json()
     email = body.get("email", "").strip().lower()
     invite_role = body.get("role", "viewer")
+    if not email:
+        raise HTTPException(400, "Email is required")
     if invite_role not in ("viewer", "editor", "admin"):
-        raise HTTPException(400, "Invalid role")
+        raise HTTPException(400, "Invalid role — must be viewer, editor, or admin")
 
+    try:
+        invite = auth_db.create_invite(conn, ws_id, email, invite_role, user["id"])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    ws = auth_db.get_workspace_by_id(conn, ws_id)
+    ws_name = ws["name"] if ws else "workspace"
+    base_url = str(request.base_url).rstrip("/")
+    invite_url = f"{base_url}/invite/{invite['token']}"
+
+    # If the user exists, auto-accept immediately
     target_user = auth_db.get_user_by_email(conn, email)
-    if not target_user:
-        raise HTTPException(404, "User not found — they must register first")
+    if target_user:
+        auth_db.accept_invite(conn, invite["id"], target_user["id"])
+        auth_db.log_activity(conn, user["id"], f"added {email} as {invite_role}", "workspace", ws_id)
+        # Still email them so they know they were added
+        try:
+            from ppke.infra.email import send_invite_email
+            send_invite_email(
+                to_email=email,
+                inviter_name=user.get("name", "A team member"),
+                workspace_name=ws_name,
+                role=invite_role,
+                invite_url=invite_url,
+            )
+        except Exception:
+            pass
+        return {"status": "ok", "message": f"Added {email} as {invite_role}", "immediate": True}
 
-    auth_db.add_workspace_member(conn, ws_id, target_user["id"], invite_role, invited_by=user["id"])
-    auth_db.log_activity(conn, user["id"], f"invited {email} as {invite_role}", "workspace", ws_id)
-    return {"status": "ok", "message": f"Invited {email} as {invite_role}"}
+    # Pending invite for unregistered user — send email
+    auth_db.log_activity(conn, user["id"], f"invited {email} as {invite_role} (pending)", "workspace", ws_id)
+    email_sent = False
+    try:
+        from ppke.infra.email import send_invite_email
+        email_sent = send_invite_email(
+            to_email=email,
+            inviter_name=user.get("name", "A team member"),
+            workspace_name=ws_name,
+            role=invite_role,
+            invite_url=invite_url,
+        )
+    except Exception:
+        pass
+
+    if email_sent:
+        msg = f"Invitation emailed to {email}. They'll be added as {invite_role} when they accept."
+    else:
+        msg = f"Invite created for {email} — share the link below (email delivery not configured)."
+
+    return {
+        "status": "ok",
+        "message": msg,
+        "email_sent": email_sent,
+        "immediate": False,
+        "invite_id": invite["id"],
+        "invite_url": f"/invite/{invite['token']}",
+    }
+
+
+@app.get("/api/workspaces/{ws_id}/invites")
+async def api_workspace_invites(ws_id: str, user: dict = Depends(get_current_user)):
+    """List pending invites for a workspace."""
+    conn = _get_db()
+    role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
+    if not role:
+        raise HTTPException(403, "Not a member of this workspace")
+    return auth_db.get_workspace_invites(conn, ws_id)
+
+
+@app.delete("/api/workspaces/{ws_id}/invites/{invite_id}")
+async def api_revoke_invite(ws_id: str, invite_id: str, user: dict = Depends(get_current_user)):
+    """Revoke a pending invite (admin/editor only)."""
+    conn = _get_db()
+    role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
+    if role not in ("admin", "editor"):
+        raise HTTPException(403, "Only admins and editors can revoke invites")
+    if not auth_db.revoke_invite(conn, invite_id):
+        raise HTTPException(404, "Invite not found or already accepted")
+    return {"status": "ok"}
+
+
+@app.get("/api/auth/invites")
+async def api_my_invites(user: dict = Depends(get_current_user)):
+    """List pending invites for the current user."""
+    conn = _get_db()
+    return auth_db.get_invites_for_email(conn, user["email"])
+
+
+@app.post("/api/auth/invites/{invite_id}/accept")
+async def api_accept_invite(invite_id: str, user: dict = Depends(get_current_user)):
+    """Accept a pending workspace invite."""
+    conn = _get_db()
+    result = auth_db.accept_invite(conn, invite_id, user["id"])
+    if not result:
+        raise HTTPException(404, "Invite not found, expired, or already handled")
+    auth_db.log_activity(conn, user["id"], "accepted workspace invite", "workspace", result["workspace_id"])
+    return {"status": "ok", "workspace_id": result["workspace_id"]}
+
+
+@app.post("/api/auth/invites/{invite_id}/decline")
+async def api_decline_invite(invite_id: str, user: dict = Depends(get_current_user)):
+    """Decline a pending workspace invite."""
+    conn = _get_db()
+    if not auth_db.decline_invite(conn, invite_id):
+        raise HTTPException(404, "Invite not found or already handled")
+    return {"status": "ok"}
+
+
+@app.get("/invite/{token}", response_class=HTMLResponse)
+async def invite_landing(token: str, request: Request):
+    """Landing page for invite links — prompts login/register then auto-accepts."""
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT wi.*, w.name as workspace_name, u.name as invited_by_name "
+        "FROM workspace_invites wi "
+        "JOIN workspaces w ON wi.workspace_id = w.id "
+        "JOIN users u ON wi.invited_by = u.id "
+        "WHERE wi.token = ?",
+        (token,),
+    ).fetchone()
+    invite = auth_db._row_to_dict(row)
+    if not invite or invite["status"] != "pending":
+        return HTMLResponse(
+            "<html><body style='font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;background:#1a1a2e;color:#e0e0e0'>"
+            "<div style='text-align:center'><h2>Invite not found or expired</h2>"
+            "<a href='/login' style='color:#4ecca3'>Go to Login</a></div></body></html>"
+        )
+
+    # If user is logged in, accept immediately
+    user = await _try_get_user(request)
+    if user:
+        result = auth_db.accept_invite_by_token(conn, token, user["id"])
+        if result:
+            return RedirectResponse(f"/workspaces", status_code=303)
+
+    # Not logged in — show invite info and link to register/login
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html><head><title>Workspace Invite — PPKE</title>
+<style>
+body {{ font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0;
+       display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
+.card {{ background: #16213e; padding: 2.5rem; border-radius: 16px; text-align: center; max-width: 440px; width: 90%; }}
+h2 {{ color: #4ecca3; margin-bottom: 0.5rem; }}
+.ws-name {{ font-size: 1.3em; color: #fff; font-weight: 700; margin: 0.5rem 0; }}
+.role {{ display: inline-block; background: #0f3460; color: #4ecca3; padding: 4px 12px; border-radius: 20px;
+         font-size: 0.85em; font-weight: 600; margin: 0.5rem 0; }}
+.invited-by {{ color: #888; font-size: 0.9em; margin-bottom: 1.5rem; }}
+.btns {{ display: flex; gap: 12px; justify-content: center; margin-top: 1.5rem; }}
+.btn {{ padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 0.95em; }}
+.btn-primary {{ background: #4ecca3; color: #1a1a2e; }}
+.btn-secondary {{ background: #0f3460; color: #e0e0e0; }}
+</style></head>
+<body><div class="card">
+  <h2>You're invited!</h2>
+  <div class="ws-name">{invite['workspace_name']}</div>
+  <div class="role">{invite['role']}</div>
+  <div class="invited-by">Invited by {invite['invited_by_name']}</div>
+  <p>Sign in or create an account to join this workspace.</p>
+  <div class="btns">
+    <a href="/login?next=/invite/{token}" class="btn btn-primary">Sign In</a>
+    <a href="/register?next=/invite/{token}" class="btn btn-secondary">Create Account</a>
+  </div>
+</div></body></html>""")
 
 
 @app.post("/api/workspaces/{ws_id}/members/{member_id}/role")
