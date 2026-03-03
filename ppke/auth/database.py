@@ -261,6 +261,20 @@ _SQLITE_SCHEMA = """
         created_at  TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS workspace_invites (
+        id          TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        email       TEXT NOT NULL,
+        role        TEXT NOT NULL DEFAULT 'viewer',
+        invited_by  TEXT NOT NULL REFERENCES users(id),
+        status      TEXT NOT NULL DEFAULT 'pending',
+        token       TEXT UNIQUE NOT NULL,
+        created_at  TEXT NOT NULL,
+        expires_at  TEXT NOT NULL,
+        accepted_at TEXT DEFAULT NULL,
+        UNIQUE(workspace_id, email)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_wm_workspace ON workspace_members(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_wm_user ON workspace_members(user_id);
     CREATE INDEX IF NOT EXISTS idx_annotations_book ON annotations(book_folder);
@@ -270,6 +284,9 @@ _SQLITE_SCHEMA = """
     CREATE INDEX IF NOT EXISTS idx_usage_user ON usage_records(user_id);
     CREATE INDEX IF NOT EXISTS idx_usage_book ON usage_records(book_folder);
     CREATE INDEX IF NOT EXISTS idx_shared_books_ws ON shared_books(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_invites_email ON workspace_invites(email);
+    CREATE INDEX IF NOT EXISTS idx_invites_token ON workspace_invites(token);
+    CREATE INDEX IF NOT EXISTS idx_invites_ws ON workspace_invites(workspace_id);
 """
 
 _PG_SCHEMA = """
@@ -359,6 +376,20 @@ _PG_SCHEMA = """
         created_at  TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS workspace_invites (
+        id          TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        email       TEXT NOT NULL,
+        role        TEXT NOT NULL DEFAULT 'viewer',
+        invited_by  TEXT NOT NULL REFERENCES users(id),
+        status      TEXT NOT NULL DEFAULT 'pending',
+        token       TEXT UNIQUE NOT NULL,
+        created_at  TEXT NOT NULL,
+        expires_at  TEXT NOT NULL,
+        accepted_at TEXT DEFAULT NULL,
+        UNIQUE(workspace_id, email)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_wm_workspace ON workspace_members(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_wm_user ON workspace_members(user_id);
     CREATE INDEX IF NOT EXISTS idx_annotations_book ON annotations(book_folder);
@@ -368,6 +399,9 @@ _PG_SCHEMA = """
     CREATE INDEX IF NOT EXISTS idx_usage_user ON usage_records(user_id);
     CREATE INDEX IF NOT EXISTS idx_usage_book ON usage_records(book_folder);
     CREATE INDEX IF NOT EXISTS idx_shared_books_ws ON shared_books(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_invites_email ON workspace_invites(email);
+    CREATE INDEX IF NOT EXISTS idx_invites_token ON workspace_invites(token);
+    CREATE INDEX IF NOT EXISTS idx_invites_ws ON workspace_invites(workspace_id);
 """
 
 
@@ -806,3 +840,159 @@ def get_cost_daily(conn: Any, user_id: str, days: int = 30) -> list[dict]:
         (user_id, cutoff),
     ).fetchall()
     return _rows_to_dicts(rows)
+
+
+# ── Workspace Invites ──
+
+
+def create_invite(
+    conn: Any,
+    workspace_id: str,
+    email: str,
+    role: str,
+    invited_by: str,
+    expires_days: int = 7,
+) -> dict:
+    """Create a workspace invite for an email address.
+
+    Works for both existing and not-yet-registered users.
+    If the user already exists and is already a member, raises ValueError.
+    """
+    import secrets
+    from datetime import timedelta
+
+    email = email.lower().strip()
+    now = _utcnow()
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=expires_days)).isoformat()
+    token = secrets.token_urlsafe(32)
+    invite_id = str(uuid.uuid4())
+
+    # Check if user is already a member
+    existing_user = get_user_by_email(conn, email)
+    if existing_user:
+        existing_role = get_user_role_in_workspace(conn, workspace_id, existing_user["id"])
+        if existing_role:
+            raise ValueError(f"{email} is already a member of this workspace")
+
+    # Check for existing pending invite (update it instead)
+    existing_invite = conn.execute(
+        "SELECT id FROM workspace_invites WHERE workspace_id = ? AND email = ? AND status = 'pending'",
+        (workspace_id, email),
+    ).fetchone()
+    if existing_invite:
+        row = _row_to_dict(existing_invite)
+        conn.execute(
+            "UPDATE workspace_invites SET role = ?, invited_by = ?, token = ?, expires_at = ? WHERE id = ?",
+            (role, invited_by, token, expires_at, row["id"]),
+        )
+        conn.commit()
+        return {"id": row["id"], "workspace_id": workspace_id, "email": email,
+                "role": role, "token": token, "status": "pending", "expires_at": expires_at}
+
+    conn.execute(
+        "INSERT INTO workspace_invites (id, workspace_id, email, role, invited_by, status, token, created_at, expires_at) "
+        "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
+        (invite_id, workspace_id, email, role, invited_by, token, now, expires_at),
+    )
+    conn.commit()
+    return {"id": invite_id, "workspace_id": workspace_id, "email": email,
+            "role": role, "token": token, "status": "pending", "expires_at": expires_at}
+
+
+def get_workspace_invites(conn: Any, workspace_id: str) -> list[dict]:
+    """List all pending invites for a workspace."""
+    rows = conn.execute(
+        "SELECT wi.*, u.name as invited_by_name FROM workspace_invites wi "
+        "JOIN users u ON wi.invited_by = u.id "
+        "WHERE wi.workspace_id = ? AND wi.status = 'pending' "
+        "ORDER BY wi.created_at DESC",
+        (workspace_id,),
+    ).fetchall()
+    return _rows_to_dicts(rows)
+
+
+def get_invites_for_email(conn: Any, email: str) -> list[dict]:
+    """List all pending invites for an email address (for the accept/decline UI)."""
+    email = email.lower().strip()
+    rows = conn.execute(
+        "SELECT wi.*, w.name as workspace_name, u.name as invited_by_name "
+        "FROM workspace_invites wi "
+        "JOIN workspaces w ON wi.workspace_id = w.id "
+        "JOIN users u ON wi.invited_by = u.id "
+        "WHERE wi.email = ? AND wi.status = 'pending' "
+        "ORDER BY wi.created_at DESC",
+        (email,),
+    ).fetchall()
+    return _rows_to_dicts(rows)
+
+
+def accept_invite(conn: Any, invite_id: str, user_id: str) -> dict | None:
+    """Accept a pending invite — adds user as workspace member."""
+    row = conn.execute(
+        "SELECT * FROM workspace_invites WHERE id = ? AND status = 'pending'",
+        (invite_id,),
+    ).fetchone()
+    invite = _row_to_dict(row)
+    if not invite:
+        return None
+
+    # Check not expired
+    if invite["expires_at"] < _utcnow():
+        conn.execute("UPDATE workspace_invites SET status = 'expired' WHERE id = ?", (invite_id,))
+        conn.commit()
+        return None
+
+    # Add as member
+    add_workspace_member(conn, invite["workspace_id"], user_id, invite["role"], invited_by=invite["invited_by"])
+
+    # Mark invite accepted
+    conn.execute(
+        "UPDATE workspace_invites SET status = 'accepted', accepted_at = ? WHERE id = ?",
+        (_utcnow(), invite_id),
+    )
+    conn.commit()
+    return invite
+
+
+def accept_invite_by_token(conn: Any, token: str, user_id: str) -> dict | None:
+    """Accept invite using the invite token (from email link)."""
+    row = conn.execute(
+        "SELECT * FROM workspace_invites WHERE token = ? AND status = 'pending'",
+        (token,),
+    ).fetchone()
+    invite = _row_to_dict(row)
+    if not invite:
+        return None
+    return accept_invite(conn, invite["id"], user_id)
+
+
+def decline_invite(conn: Any, invite_id: str) -> bool:
+    """Decline a pending invite."""
+    cur = conn.execute(
+        "UPDATE workspace_invites SET status = 'declined' WHERE id = ? AND status = 'pending'",
+        (invite_id,),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def revoke_invite(conn: Any, invite_id: str) -> bool:
+    """Revoke (cancel) a pending invite (admin action)."""
+    cur = conn.execute(
+        "UPDATE workspace_invites SET status = 'revoked' WHERE id = ? AND status = 'pending'",
+        (invite_id,),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def auto_accept_pending_invites(conn: Any, user_id: str, email: str) -> list[dict]:
+    """Auto-accept all pending non-expired invites for a newly registered user."""
+    invites = get_invites_for_email(conn, email)
+    accepted = []
+    for inv in invites:
+        if inv["expires_at"] >= _utcnow():
+            result = accept_invite(conn, inv["id"], user_id)
+            if result:
+                accepted.append(result)
+    return accepted

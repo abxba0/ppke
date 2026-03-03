@@ -339,3 +339,128 @@ def markdown_export_zip(vault_path: Path) -> bytes:
     """Download interlinked Markdown files (one per concept)."""
     # Reuse the Obsidian format — it's already interlinked Markdown
     return obsidian_vault_zip(vault_path)
+
+
+# ── Temporal view ──────────────────────────────────────────────────
+
+
+def get_temporal_range(vault_path: Path) -> dict[str, Any]:
+    """Return the min/max year across all book nodes in the graph.
+
+    Also returns a list of all unique years found, sorted ascending.
+    """
+    data = _load_graph_json(vault_path)
+    if not data:
+        return {"min_year": None, "max_year": None, "years": []}
+
+    years: set[int] = set()
+
+    # Collect years from book nodes
+    for n in data.get("nodes", []):
+        y = n.get("year")
+        if y is not None:
+            try:
+                years.add(int(y))
+            except (ValueError, TypeError):
+                pass
+
+    # Collect years from edges
+    for e in data.get("edges", []):
+        y = e.get("year")
+        if y is not None:
+            try:
+                years.add(int(y))
+            except (ValueError, TypeError):
+                pass
+
+    if not years:
+        return {"min_year": None, "max_year": None, "years": []}
+
+    sorted_years = sorted(years)
+    return {
+        "min_year": sorted_years[0],
+        "max_year": sorted_years[-1],
+        "years": sorted_years,
+    }
+
+
+def filter_graph_by_year(
+    vault_path: Path,
+    *,
+    min_year: int | None = None,
+    max_year: int | None = None,
+) -> dict[str, Any]:
+    """Return a filtered graph containing only nodes/edges within a year range.
+
+    Nodes are included if:
+      - They have a ``year`` attribute within ``[min_year, max_year]``, OR
+      - They are concept nodes connected to at least one edge within the range.
+
+    Edges are included if they have a ``year`` attribute within the range,
+    or if they connect two included nodes and have no year attribute.
+
+    Parameters
+    ----------
+    min_year:
+        Earliest year to include (inclusive). ``None`` = no lower bound.
+    max_year:
+        Latest year to include (inclusive). ``None`` = no upper bound.
+
+    Returns dict with ``nodes``, ``edges``, and ``range`` keys.
+    """
+    data = _load_graph_json(vault_path)
+    if not data:
+        return {"nodes": [], "edges": [], "range": {"min_year": min_year, "max_year": max_year}}
+
+    all_nodes = {n["id"]: n for n in data.get("nodes", [])}
+    all_edges = data.get("edges", [])
+
+    def _year_in_range(y: Any) -> bool:
+        if y is None:
+            return True  # edges/nodes without year are included by default
+        try:
+            yi = int(y)
+        except (ValueError, TypeError):
+            return True
+        if min_year is not None and yi < min_year:
+            return False
+        if max_year is not None and yi > max_year:
+            return False
+        return True
+
+    def _node_year_in_range(n: dict) -> bool:
+        y = n.get("year")
+        if y is None:
+            return True  # concepts without explicit year pass through
+        return _year_in_range(y)
+
+    # First pass: filter edges
+    filtered_edges: list[dict] = []
+    edge_node_ids: set[str] = set()
+    for e in all_edges:
+        ey = e.get("year")
+        if _year_in_range(ey):
+            src = _edge_src(e)
+            dst = _edge_dst(e)
+            filtered_edges.append(e)
+            edge_node_ids.add(src)
+            edge_node_ids.add(dst)
+
+    # Second pass: include nodes that are in-range or connected by a surviving edge
+    filtered_nodes: list[dict] = []
+    for n in data.get("nodes", []):
+        nid = n["id"]
+        ntype = n.get("type", "concept")
+        if ntype == "book":
+            # Book nodes must match year range
+            if _node_year_in_range(n):
+                filtered_nodes.append(n)
+        elif nid in edge_node_ids:
+            # Concept/paragraph nodes survive if any edge references them
+            filtered_nodes.append(n)
+
+    return {
+        "nodes": filtered_nodes,
+        "edges": filtered_edges,
+        "range": {"min_year": min_year, "max_year": max_year},
+    }

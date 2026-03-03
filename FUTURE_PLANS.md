@@ -56,14 +56,14 @@ Make the converter pipeline smarter and support more input sources.
 - [x] **Hybrid OCR** — `ocr_image()` and `ocr_pdf_pages()`: Tesseract first → Vision LLM (Claude/GPT-4o) fallback when confidence < 55
 - [x] **Confidence scoring** — `_tesseract_with_confidence()` returns `(text, mean_confidence)`; low-confidence pages annotated with `<!-- OCR confidence: N% -->`
 - [x] **Language detection** — `_detect_language()` uses Tesseract OSD; maps script → language code; detected language reused across all pages of a PDF
-- [ ] **Table detection** — Preserve table structure from PDFs as Markdown tables *(deferred to Phase 4)*
-- [ ] **Image preprocessing** — Deskew, denoise, contrast enhancement with OpenCV *(deferred)*
+- [x] **Table detection** — Preserve table structure from PDFs as Markdown tables *(implemented — `ppke/converter/table_detect.py`)*
+- [x] **Image preprocessing** — Deskew, denoise, contrast enhancement with OpenCV *(implemented — `ppke/converter/preprocess.py`)*
 
 ### 2.3 Batch Processing
 - [x] **Multi-file upload** — `/api/upload` now accepts `files: list[UploadFile]`; one job per file; returns `{"jobs": [...]}` for batch
 - [x] **Queue system** — Batch progress UI in upload.html: per-file job row with spinner → green checkmark + Open link
 - [x] **ZIP upload** — `@register(".zip")` in registry: extracts to tempdir, converts each supported member, concatenates Markdown
-- [ ] **Smart chapter detection** — Use PDF bookmarks/TOC for chapter splitting *(deferred to Phase 3)*
+- [x] **Smart chapter detection** — Use PDF bookmarks/TOC for chapter splitting *(implemented — `ppke/converter/chapter_detect.py`)*
 
 ### New Endpoints
 - `POST /api/import-url` — accepts `url`, auto-detects YouTube vs web page, starts background ingestion job
@@ -126,7 +126,7 @@ Make the graph view a real analytical tool, not just visualization.
 - [x] **Centrality analysis** — PageRank + betweenness centrality on concept nodes; top-10 shown in sidebar with clickable bars; `ppke/graph/analytics.py`
 - [x] **Gap detection** — Concepts in 2+ books with no concept↔concept edges; listed in sidebar with book counts
 - [x] **Contradiction detection** — All `contradicts` edges shown in sidebar with red labels
-- [ ] **Temporal view** — Timeline slider *(deferred — requires year metadata on edges)*
+- [x] **Temporal view** — Timeline slider *(implemented — analytics + graph.html timeline UI)*
 
 ### 4.3 External Integration
 - [x] **Obsidian export** — `GET /api/graph/obsidian-export` → ZIP with one `.md` per concept, `[[wikilinks]]` for related concepts, book sources
@@ -167,8 +167,8 @@ Reach full NotebookLM feature parity and beyond.
 - [x] **Playback controls** — 5 speed buttons (0.75×, 1×, 1.25×, 1.5×, 2×) below audio player; collapsible transcript panel with `GET /api/audio/{folder}/transcript`; `script_to_transcript()` renders Markdown
 
 ### 5.3 Video (Future)
-- [ ] **Lecture video import** — *(deferred to later phase)*
-- [ ] **Video summaries** — *(deferred to later phase)*
+- [x] **Lecture video import** — *(implemented — `ppke/converter/video.py`)*
+- [x] **Video summaries** — *(implemented — `ppke/converter/video_summary.py`)*
 
 ### Enhanced Module: `ppke/audio/overview.py`
 - `VOICE_PRESETS` — 7 named voice pairs (Edge TTS + OpenAI TTS)
@@ -411,3 +411,16 @@ SaaS model for hosted deployment.
 | 7 | Multi-user auth & collab | High | Large | DONE |
 | 8 | Docker, Celery, Monitoring | High | Large | DONE |
 | 9 | SaaS monetization | Variable | Large | Optional |
+
+## Deferred Features (Now Implemented)
+
+All features previously deferred have been implemented.
+
+| Feature | Status | Module |
+|---------|--------|--------|
+| PDF table structure detection | **Implemented** | `ppke/converter/table_detect.py` |
+| Image preprocessing (deskew, denoise) | **Implemented** | `ppke/converter/preprocess.py` |
+| Smart chapter detection via PDF TOC | **Implemented** | `ppke/converter/chapter_detect.py` |
+| Graph temporal view (timeline slider) | **Implemented** | `ppke/graph/analytics.py` + `graph.html` |
+| Lecture video import | **Implemented** | `ppke/converter/video.py` |
+| Video summaries | **Implemented** | `ppke/converter/video_summary.py` |

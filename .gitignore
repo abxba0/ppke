@@ -10,4 +10,5 @@ build/
 *.env
 .coverage
 htmlcov/
+.claude
 book1.md

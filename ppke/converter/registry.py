@@ -57,6 +57,34 @@ def _convert_pdf(path: Path) -> str:
         )
 
     doc = fitz.open(str(path))
+
+    # Smart chapter detection — use PDF TOC/bookmarks when available
+    try:
+        from ppke.converter.chapter_detect import convert_pdf_with_chapters
+
+        toc_result = convert_pdf_with_chapters(path)
+        if toc_result:
+            logger.info("Used TOC-based chapter detection for %s", path.name)
+            doc.close()
+
+            # Still attempt table detection
+            try:
+                from ppke.converter.table_detect import extract_tables_from_pdf, tables_to_markdown
+
+                tables = extract_tables_from_pdf(path)
+                if tables:
+                    table_md = tables_to_markdown(tables)
+                    toc_result += f"\n\n## Detected Tables\n\n{table_md}"
+                    logger.info("Detected %d table(s) in %s", len(tables), path.name)
+            except Exception as exc:
+                logger.debug("Table detection skipped for %s: %s", path.name, exc)
+
+            return toc_result
+    except ImportError:
+        pass
+    except Exception as exc:
+        logger.debug("TOC-based chapter detection failed, falling back to page-by-page: %s", exc)
+
     pages: list[str] = []
     ocr_pages: list[int] = []
 
@@ -83,6 +111,18 @@ def _convert_pdf(path: Path) -> str:
                 "Install with: pip install 'ppke[ocr]'",
                 len(ocr_pages),
             )
+
+    # Table structure detection — append detected tables as Markdown
+    try:
+        from ppke.converter.table_detect import extract_tables_from_pdf, tables_to_markdown
+
+        tables = extract_tables_from_pdf(path)
+        if tables:
+            table_md = tables_to_markdown(tables)
+            pages.append(f"## Detected Tables\n\n{table_md}")
+            logger.info("Detected %d table(s) in %s", len(tables), path.name)
+    except Exception as exc:
+        logger.debug("Table detection skipped for %s: %s", path.name, exc)
 
     title = path.stem.replace("_", " ").replace("-", " ").title()
     return f"# {title}\n\n" + "\n\n".join(pages)
@@ -226,6 +266,17 @@ for _ext in (".mp3", ".mp4", ".m4a", ".wav", ".webm", ".mpeg", ".mpga", ".ogg"):
         from ppke.audio.transcriber import transcribe
 
         return transcribe(path)
+
+
+# Video formats — lecture import (extract audio, transcribe, detect slides)
+for _ext in (".mkv", ".avi", ".mov", ".m4v", ".flv", ".wmv"):
+
+    @register(_ext)
+    def _convert_video(path: Path) -> str:
+        """Import lecture video: extract audio, transcribe, detect slide changes."""
+        from ppke.converter.video import convert_video
+
+        return convert_video(path)
 
 
 @register(".tex")

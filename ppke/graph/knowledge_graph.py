@@ -176,6 +176,7 @@ class KnowledgeGraph:
         book_title: str,
         author: str,
         extractions: list[dict[str, Any]],
+        year: str | int | None = None,
     ) -> int:
         """Ingest extraction results into the graph.
 
@@ -185,20 +186,36 @@ class KnowledgeGraph:
         - Concept nodes for claims (distilled as concept labels)
         - book→concept edges for defines / claims / assumes
 
+        Parameters
+        ----------
+        year:
+            Publication year (e.g. ``2024`` or ``"2024"``).  Stored on the
+            book node and propagated to edges so the graph supports temporal
+            filtering (timeline view).
+
         Returns:
             Total number of graph edges added.
         """
         book_node = f"book:{book_folder}"
-        self._add_node(
-            book_node,
-            type="book",
-            label=f"{book_title} ({author})",
-            title=book_title,
-            author=author,
-            books={book_folder},
-        )
+        node_attrs: dict[str, Any] = {
+            "type": "book",
+            "label": f"{book_title} ({author})",
+            "title": book_title,
+            "author": author,
+            "books": {book_folder},
+        }
+        # Store year as int when possible for easy range filtering
+        if year is not None:
+            try:
+                node_attrs["year"] = int(str(year).strip()[:4])
+            except (ValueError, TypeError):
+                pass
+        self._add_node(book_node, **node_attrs)
 
         edges_added = 0
+        # Resolve year for edge metadata
+        _year = node_attrs.get("year")
+
         for ext in extractions:
             pid = ext.get("paragraph_id", "")
             para_node = f"para:{book_folder}::{pid}"
@@ -211,7 +228,8 @@ class KnowledgeGraph:
                 books={book_folder},
                 topic=ext.get("topic_sentence", "")[:120],
             )
-            self._add_edge(book_node, para_node, rel="contains")
+            self._add_edge(book_node, para_node, rel="contains",
+                           **({"year": _year} if _year else {}))
             edges_added += 1
 
             # Defined concepts → concept nodes
@@ -225,8 +243,10 @@ class KnowledgeGraph:
                     label=concept,
                     books={book_folder},
                 )
-                self._add_edge(para_node, cid, rel=REL_DEFINES, book=book_folder, pid=pid)
-                self._add_edge(book_node, cid, rel=REL_DEFINES, book=book_folder)
+                self._add_edge(para_node, cid, rel=REL_DEFINES, book=book_folder, pid=pid,
+                               **({"year": _year} if _year else {}))
+                self._add_edge(book_node, cid, rel=REL_DEFINES, book=book_folder,
+                               **({"year": _year} if _year else {}))
                 edges_added += 2
 
             # Explicit claims — extract key noun phrases as concept proxies
@@ -242,7 +262,8 @@ class KnowledgeGraph:
                     label=claim_label,
                     books={book_folder},
                 )
-                self._add_edge(para_node, cid, rel=REL_CLAIMS, book=book_folder, pid=pid)
+                self._add_edge(para_node, cid, rel=REL_CLAIMS, book=book_folder, pid=pid,
+                               **({"year": _year} if _year else {}))
                 edges_added += 1
 
             # Implicit assumptions
@@ -257,7 +278,8 @@ class KnowledgeGraph:
                     label=assumption_label,
                     books={book_folder},
                 )
-                self._add_edge(para_node, cid, rel=REL_ASSUMES, book=book_folder, pid=pid)
+                self._add_edge(para_node, cid, rel=REL_ASSUMES, book=book_folder, pid=pid,
+                               **({"year": _year} if _year else {}))
                 edges_added += 1
 
         return edges_added
@@ -480,6 +502,7 @@ class KnowledgeGraph:
                 book_title=meta.get("title", book_dir.name),
                 author=meta.get("author", "Unknown"),
                 extractions=extractions,
+                year=meta.get("year"),
             )
             results[book_dir.name] = edges
 

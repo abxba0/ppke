@@ -115,6 +115,36 @@
                 <p class="text-xs text-gray-400 italic">Loading…</p>
             </div>
         </div>
+
+        <!-- Temporal View (Timeline Slider) -->
+        <div class="sidebar-section">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Timeline</h3>
+            <div id="timeline-container" class="hidden">
+                <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                    <span id="timeline-min-label">—</span>
+                    <span id="timeline-max-label">—</span>
+                </div>
+                <div class="flex gap-1 items-center">
+                    <input type="range" id="timeline-min" min="0" max="100" value="0"
+                           class="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-brand-600"
+                           oninput="onTimelineChange()">
+                </div>
+                <div class="flex gap-1 items-center mt-1">
+                    <input type="range" id="timeline-max" min="0" max="100" value="100"
+                           class="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-brand-600"
+                           oninput="onTimelineChange()">
+                </div>
+                <div class="flex justify-between mt-1">
+                    <span id="timeline-from" class="text-xs font-medium text-brand-600 dark:text-brand-400">—</span>
+                    <span class="text-xs text-gray-400">→</span>
+                    <span id="timeline-to" class="text-xs font-medium text-brand-600 dark:text-brand-400">—</span>
+                </div>
+                <button onclick="resetTimeline()" class="w-full mt-2 px-3 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+                    Reset Timeline
+                </button>
+            </div>
+            <p id="timeline-unavailable" class="text-xs text-gray-400 italic">No year data available</p>
+        </div>
     </div>
 
     <!-- ─── Main graph area ─── -->
@@ -587,7 +617,74 @@ function escapeHtml(s) {
     const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
 }
 
+// ── Temporal view (timeline slider) ──
+let _timelineYears = [];
+let _timelineFilterActive = false;
+
+async function loadTimeline() {
+    try {
+        const res = await fetch('/api/graph/temporal-range');
+        const data = await res.json();
+        if (data.error || !data.years || data.years.length === 0) {
+            document.getElementById('timeline-unavailable').classList.remove('hidden');
+            document.getElementById('timeline-container').classList.add('hidden');
+            return;
+        }
+        _timelineYears = data.years.sort();
+        const minY = _timelineYears[0];
+        const maxY = _timelineYears[_timelineYears.length - 1];
+        const sliderMin = document.getElementById('timeline-min');
+        const sliderMax = document.getElementById('timeline-max');
+        sliderMin.min = minY; sliderMin.max = maxY; sliderMin.value = minY;
+        sliderMax.min = minY; sliderMax.max = maxY; sliderMax.value = maxY;
+        document.getElementById('timeline-min-label').textContent = minY;
+        document.getElementById('timeline-max-label').textContent = maxY;
+        document.getElementById('timeline-from').textContent = minY;
+        document.getElementById('timeline-to').textContent = maxY;
+        document.getElementById('timeline-unavailable').classList.add('hidden');
+        document.getElementById('timeline-container').classList.remove('hidden');
+    } catch (e) {
+        console.error('Timeline load error:', e);
+    }
+}
+
+let _timelineDebounce = null;
+function onTimelineChange() {
+    const fromVal = parseInt(document.getElementById('timeline-min').value);
+    const toVal = parseInt(document.getElementById('timeline-max').value);
+    document.getElementById('timeline-from').textContent = fromVal;
+    document.getElementById('timeline-to').textContent = toVal;
+    clearTimeout(_timelineDebounce);
+    _timelineDebounce = setTimeout(() => applyTimelineFilter(fromVal, toVal), 300);
+}
+
+async function applyTimelineFilter(minYear, maxYear) {
+    if (minYear > maxYear) return;
+    try {
+        const res = await fetch(`/api/graph/temporal?min_year=${minYear}&max_year=${maxYear}`);
+        const data = await res.json();
+        if (data.error) return;
+        _timelineFilterActive = true;
+        renderGraph(data);
+    } catch (e) {
+        console.error('Timeline filter error:', e);
+    }
+}
+
+function resetTimeline() {
+    if (_timelineYears.length === 0) return;
+    const minY = _timelineYears[0];
+    const maxY = _timelineYears[_timelineYears.length - 1];
+    document.getElementById('timeline-min').value = minY;
+    document.getElementById('timeline-max').value = maxY;
+    document.getElementById('timeline-from').textContent = minY;
+    document.getElementById('timeline-to').textContent = maxY;
+    _timelineFilterActive = false;
+    loadGraph('');
+}
+
 // ── Init ──
 loadGraph('');
+loadTimeline();
 </script>
 {% endblock %}

@@ -10,29 +10,29 @@ PPKE is an open-source CLI + Web platform that uses LLMs to extract, organize, a
 
 | Capability | Status | Details |
 |------------|--------|---------|
-| **Web GUI** | ✅ Working | Dark mode, responsive, SSE streaming, settings panel |
-| **CLI** | ✅ Working | 15+ commands including `ingest`, `query`, `cross-query`, `tui` |
-| **23+ format import** | ✅ Working | PDF, DOCX, EPUB, HTML, images (OCR), CSV, Excel, LaTeX (import only), ZIP |
-| **URL & YouTube import** | ✅ Working | Web page scraping, YouTube transcript extraction |
-| **AI Chat & RAG** | ✅ Working | Chat history, vector-enhanced queries, follow-up suggestions |
-| **Content generation** | ✅ Working | Summaries, study guides, glossaries, flashcards |
-| **Knowledge graph** | ✅ Working | Interactive D3.js visualization, clusters, path finder, gap/contradiction detection |
-| **Obsidian export** | ✅ Working | ZIP of interlinked `[[wikilink]]` Markdown files (export only — no live sync) |
-| **PDF/DOCX/PPTX export** | ✅ Working | Analysis reports exported as PDF, Word, or PowerPoint |
-| **Audio overviews** | ✅ Working | Podcast-style audio summaries via TTS, cross-book episodes, RSS import |
-| **Multi-user auth (JWT)** | ✅ Working | Registration/login, per-user vaults, workspaces, annotations |
-| **Docker deployment** | ✅ Working | Docker Compose with Redis, PostgreSQL, Celery, Prometheus |
-| **Bibliography** | ✅ Working | APA/MLA/Chicago formatted citations from book metadata |
-| **Literature reviews** | ✅ Working | LLM-generated cross-book synthesis |
-| **Argument maps** | ✅ Working | Claim/assumption/concept graph from extractions |
-| **LaTeX/BibTeX export** | ❌ Not implemented | LaTeX *import* from `.tex` works; no `.tex` or `.bib` export exists |
-| **OAuth login (Google/GitHub)** | ❌ Stub only | Routes return HTTP 501; requires external client credentials |
-| **Zotero import** | ❌ Not implemented | No converter or integration exists |
-| **Deep Obsidian/PKM sync** | ❌ Not implemented | One-time ZIP export only; no live vault synchronization |
-| **Plugin marketplace** | ❌ Not implemented | Template system exists; no marketplace or discovery UI |
-| **Hybrid search** | ❌ Not implemented | Full-text + vector combined retrieval deferred |
-| **Speaker diarization** | ✅ Working | Identifies 'who spoke when' via `pyannote.audio`; install with `pip install 'ppke[diarization]'` |
-| **Test coverage** | ✅ ~91% | See [test-coverage.md](test-coverage.md) for the full breakdown |
+| **Web GUI** | Working | Dark mode, responsive, SSE streaming, settings panel |
+| **CLI** | Working | 15+ commands including `ingest`, `query`, `cross-query`, `tui` |
+| **23+ format import** | Working | PDF, DOCX, EPUB, HTML, images (OCR), CSV, Excel, LaTeX (import only), ZIP |
+| **URL & YouTube import** | Working | Web page scraping, YouTube transcript extraction |
+| **AI Chat & RAG** | Working | Chat history, vector-enhanced queries, follow-up suggestions |
+| **Content generation** | Working | Summaries, study guides, glossaries, flashcards |
+| **Knowledge graph** | Working | Interactive D3.js visualization, clusters, path finder, gap/contradiction detection |
+| **Obsidian export** | Working | ZIP of interlinked `[[wikilink]]` Markdown files (export only — no live sync) |
+| **PDF/DOCX/PPTX export** | Working | Analysis reports exported as PDF, Word, or PowerPoint |
+| **Audio overviews** | Working | Podcast-style audio summaries via TTS, cross-book episodes, RSS import |
+| **Multi-user auth (JWT)** | Working | Registration/login, per-user vaults, workspaces, annotations |
+| **Docker deployment** | Working | Docker Compose with Redis, PostgreSQL, Celery, Prometheus |
+| **Bibliography** | Working | APA/MLA/Chicago formatted citations from book metadata |
+| **Literature reviews** | Working | LLM-generated cross-book synthesis |
+| **Argument maps** | Working | Claim/assumption/concept graph from extractions |
+| **LaTeX/BibTeX export** | Working | Full `.tex` and `.bib` export via `export_latex()` / `export_bibtex()` in `ppke/export/exporters.py` |
+| **OAuth login (Google/GitHub)** | Working (credentials required) | Full OAuth flow implemented; returns HTTP 501 only when `GOOGLE_CLIENT_ID` / `GITHUB_CLIENT_ID` env vars are not set |
+| **Zotero import** | Working | Supports `.bib` (BibTeX), `.json` (CSL JSON), `.rdf` (Zotero RDF) via `ppke/converter/zotero.py` |
+| **Deep Obsidian/PKM sync** | Working | `ObsidianSyncEngine` in `ppke/export/obsidian_sync.py`; incremental two-way sync via SHA-256 manifest; `sync_to_vault()`, `sync_from_vault()`, `full_sync()` |
+| **Plugin marketplace** | Working | Catalog, rating, submission, and GitHub install all implemented; `ppke/templates/marketplace.py`; web UI at `/marketplace` |
+| **Hybrid search** | Working | Weighted fusion of full-text (0.4) + vector (0.6); CLI `ppke hybrid-search`, `GET /api/search?mode=hybrid`; requires `ppke[vector]` for vector half |
+| **Speaker diarization** | Working | Identifies 'who spoke when' via `pyannote.audio`; install with `pip install 'ppke[diarization]'` |
+| **Test coverage** | ~91% | See [test-coverage.md](test-coverage.md) for the full breakdown |
 
 ## Features
 
@@ -280,15 +280,15 @@ ppke tui --vault-path ~/my-vault
 
 ```mermaid
 flowchart LR
-    A["🌐 Web GUI\nppke serve"] --> B["PPKE Core\nEngine"]
-    A2["💻 CLI\nppke ingest"] --> B
-    B --> C["🧠 LLM Analysis\n(multi-stage)"]
-    C --> D["🗂️ Knowledge\nVault"]
-    D --> E["💬 Query\nRAG + Chat"]
-    D --> F["🔍 Search\nSemantic + Text"]
-    D --> G["📊 Graph\nAnalytics"]
-    D --> H["🎧 Audio\nOverviews"]
-    D --> I["📄 Export\nPDF/DOCX/PPTX"]
+    A["Web GUI\nppke serve"] --> B["PPKE Core\nEngine"]
+    A2["CLI\nppke ingest"] --> B
+    B --> C["LLM Analysis\n(multi-stage)"]
+    C --> D["Knowledge\nVault"]
+    D --> E["Query\nRAG + Chat"]
+    D --> F["Search\nSemantic + Text"]
+    D --> G["Graph\nAnalytics"]
+    D --> H["Audio\nOverviews"]
+    D --> I["Export\nPDF/DOCX/PPTX"]
 
     style A fill:#e8f4f8
     style A2 fill:#e8f4f8
@@ -300,15 +300,15 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    Browser["🌐 Browser"] --> FastAPI["FastAPI + Jinja2 + HTMX"]
+    Browser["Browser"] --> FastAPI["FastAPI + Jinja2 + HTMX"]
     FastAPI --> Auth["JWT Auth\nMiddleware"]
-    Auth --> Routes["📡 80+ API Routes"]
+    Auth --> Routes["80+ API Routes"]
     Routes --> Pipeline["Ingestion Pipeline"]
-    Routes --> LLM["🧠 LLM Client"]
-    Routes --> Graph["📊 Knowledge Graph"]
-    Routes --> Audio["🎧 Audio Module"]
-    Routes --> Export["📄 Export Engine"]
-    Routes --> Converters["📥 Doc Converters\n23+ formats"]
+    Routes --> LLM["LLM Client"]
+    Routes --> Graph["Knowledge Graph"]
+    Routes --> Audio["Audio Module"]
+    Routes --> Export["Export Engine"]
+    Routes --> Converters["Doc Converters\n23+ formats"]
     Pipeline --> Celery["Celery Workers\n(background jobs)"]
     Celery --> Redis["Redis\n(cache + broker)"]
     Auth --> DB["PostgreSQL / SQLite"]
@@ -322,7 +322,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    MD["📄 Markdown File"] --> P0
+    MD["Markdown File"] --> P0
 
     P0["Stage 0 · Split long paragraphs\n≤ max_paragraph_tokens each"]
     P0 --> P1
@@ -341,7 +341,7 @@ flowchart TD
     DP --> P3
 
     P3["Stage 3 · Coverage Validation\n(pure logic — no LLM)\n100% paragraph check"]
-    P3 -->|INCOMPLETE| ERR["❌ RuntimeError\nRe-run with --resume"]
+    P3 -->|INCOMPLETE| ERR["RuntimeError\nRe-run with --resume"]
     P3 -->|COMPLETE| P456
 
     subgraph P456["Stages 4–6 · Secondary Analysis (main model) — parallel"]
@@ -361,7 +361,7 @@ flowchart TD
     P9["Stage 9–10 · Optional Layers\nVector DB index · Knowledge Graph"]
     P9 --> LOG
 
-    LOG["📊 Token Usage Summary\ncalls · input · output · cache hits"]
+    LOG["Token Usage Summary\ncalls · input · output · cache hits"]
 
     style ERR fill:#ffcccc
     style LOG fill:#e8f4e8
@@ -546,12 +546,12 @@ The following features are referenced in documentation or UI but are **not yet f
 
 | Feature | Current State | Code Reference |
 |---------|--------------|----------------|
-| OAuth login (Google/GitHub) | Functional when credentials configured via env vars | `ppke/web/app.py` (`/auth/oauth/{provider}`) |
-| Zotero import | No code exists | — |
-| LaTeX/BibTeX export | Import only (`.tex` → Markdown via pandoc) | `ppke/converter/registry.py` (import); no export module exists |
-| Deep Obsidian/PKM sync | One-time ZIP export | `ppke/graph/analytics.py` (`obsidian_vault_zip`), `/api/graph/obsidian-export` |
-| Plugin marketplace | Template system only | `ppke/templates/` |
-| Hybrid search (full-text + vector) | Deferred | See `FUTURE_PLANS.md` Phase 3 |
+| OAuth login (Google/GitHub) | Working; set `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` or `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` env vars to enable | `ppke/web/app.py` (`/auth/oauth/{provider}`) |
+| Zotero import | Working; supports `.bib`, `.json` (CSL JSON), `.rdf` | `ppke/converter/zotero.py`, `/api/import/zotero` |
+| LaTeX/BibTeX export | Working; full `.tex` and `.bib` export implemented | `ppke/export/exporters.py` (`export_latex`, `export_bibtex`), `/api/export/latex`, `/api/export/bibtex` |
+| Deep Obsidian/PKM sync | Working; `ObsidianSyncEngine` provides incremental two-way sync via SHA-256 content manifest | `ppke/export/obsidian_sync.py`, `web/app.py` (`/api/obsidian-sync/*`) |
+| Plugin marketplace | Working; catalog, rating, submission, and GitHub install all implemented; no external hosted registry (local JSON catalog) | `ppke/templates/marketplace.py`, `ppke/templates/installer.py`, `web/app.py` (`/marketplace`, `/api/marketplace/*`) |
+| Hybrid search (full-text + vector) | Working; weighted fusion in `ppke/search.py hybrid_search()`; requires `pip install 'ppke[vector]'` for vector half | `ppke/search.py` (`hybrid_search`), `ppke/cli.py` (`hybrid-search`), `web/app.py` (`/api/search?mode=hybrid`) |
 | Speaker diarization | Implemented | `ppke/audio/diarization.py`; requires `pip install 'ppke[diarization]'` + HF token |
 | Test coverage 90%+ | Currently ~91% | See [test-coverage.md](test-coverage.md) |
 

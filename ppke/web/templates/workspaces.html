@@ -14,6 +14,17 @@
         </button>
     </div>
 
+    <!-- Pending Invites for Current User -->
+    <div id="pending-invites-section" class="hidden mb-6">
+        <div class="bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-brand-700 dark:text-brand-300 mb-3 flex items-center">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                Pending Workspace Invitations
+            </h2>
+            <div id="pending-invites-list" class="space-y-2"></div>
+        </div>
+    </div>
+
     <!-- Workspace list -->
     <div class="space-y-4" id="workspace-list">
         {% for ws in workspaces %}
@@ -23,14 +34,21 @@
                     <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ ws.name }}</h2>
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
                         Your role: <span class="font-medium text-brand-600 dark:text-brand-400">{{ ws.member_role }}</span>
-                        {% if ws.owner_id == user.id %} · Owner{% endif %}
+                        {% if ws.owner_id == user.id %} &middot; Owner{% endif %}
                     </p>
                 </div>
                 <div class="flex items-center space-x-2">
-                    {% if ws.member_role == 'admin' %}
-                    <button onclick="openMembersModal('{{ ws.id }}', '{{ ws.name }}')"
-                            class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">
+                    {% if ws.member_role in ['admin', 'editor'] %}
+                    <button onclick="openMembersModal('{{ ws.id }}', '{{ ws.name }}', '{{ ws.member_role }}')"
+                            class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors flex items-center">
+                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"/></svg>
                         Members
+                    </button>
+                    {% elif ws.member_role == 'viewer' %}
+                    <button onclick="openMembersModal('{{ ws.id }}', '{{ ws.name }}', '{{ ws.member_role }}')"
+                            class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors flex items-center">
+                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                        View Members
                     </button>
                     {% endif %}
                     <a href="/?workspace_id={{ ws.id }}"
@@ -74,7 +92,7 @@
 </div>
 
 <!-- Create Workspace Modal -->
-<div id="create-ws-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+<div id="create-ws-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-black/50" onclick="if(event.target===this)this.classList.add('hidden')">
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
         <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4">Create Workspace</h3>
         <form id="create-ws-form" class="space-y-4">
@@ -94,31 +112,70 @@
 </div>
 
 <!-- Members Modal -->
-<div id="members-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6">
-        <div class="flex justify-between items-center mb-4">
+<div id="members-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-black/50" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-xl w-full mx-4 p-6 max-h-[85vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-5">
             <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100" id="members-modal-title">Members</h3>
             <button onclick="document.getElementById('members-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         </div>
-        <!-- Invite form -->
-        <form id="invite-form" class="flex space-x-2 mb-4">
-            <input type="hidden" name="workspace_id" id="invite-ws-id">
-            <input type="email" name="email" placeholder="Invite by email" required
-                   class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
-            <select name="role" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
-                <option value="viewer">Viewer</option>
-                <option value="editor">Editor</option>
-                <option value="admin">Admin</option>
-            </select>
-            <button type="submit" class="px-3 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700">Invite</button>
-        </form>
-        <div id="members-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
+
+        <!-- Invite form (admin/editor only) -->
+        <div id="invite-section">
+            <form id="invite-form" class="mb-5">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Invite by email</label>
+                <div class="flex space-x-2">
+                    <input type="hidden" name="workspace_id" id="invite-ws-id">
+                    <input type="email" name="email" placeholder="colleague@example.com" required
+                           class="flex-1 px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500">
+                    <select name="role" class="px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                        <option value="viewer">Viewer</option>
+                        <option value="editor">Editor</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                    <button type="submit" class="px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 font-medium whitespace-nowrap">
+                        Send Invite
+                    </button>
+                </div>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1.5">
+                    Works even if they haven't registered yet &mdash; they'll auto-join when they sign up.
+                </p>
+            </form>
+            <!-- Shown when email delivery isn't configured -->
+            <div id="invite-link-box" class="hidden mb-4 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-lg">
+                <p class="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1.5">Email not configured &mdash; share this link manually:</p>
+                <div class="flex items-center space-x-2">
+                    <input type="text" id="invite-link-input" readonly
+                           class="flex-1 px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-amber-300 dark:border-amber-700 rounded-lg text-gray-800 dark:text-gray-200 font-mono">
+                    <button onclick="copyInviteLink()" class="px-3 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium whitespace-nowrap">Copy</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pending invites -->
+        <div id="ws-pending-invites" class="hidden mb-5">
+            <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
+                <svg class="w-4 h-4 mr-1.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Pending Invites
+            </h4>
+            <div id="ws-pending-invites-list" class="space-y-2"></div>
+        </div>
+
+        <!-- Current members -->
+        <div>
+            <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Members</h4>
+            <div id="members-list" class="space-y-2"></div>
+        </div>
     </div>
 </div>
 
 <script>
+let _currentWsId = '';
+let _currentWsName = '';
+let _currentUserRole = '';
+const _currentUserId = '{{ user.id }}';
+
 document.getElementById('create-ws-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     const name = this.elements.name.value.trim();
@@ -127,36 +184,92 @@ document.getElementById('create-ws-form').addEventListener('submit', async funct
         const resp = await fetch('/api/workspaces', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({name: name})
+            body: JSON.stringify({name})
         });
         if (resp.ok) {
             showToast('Workspace created!', 'success');
             setTimeout(() => location.reload(), 500);
         } else {
             const data = await resp.json();
-            showToast(data.detail || 'Failed', 'error');
+            showToast(data.detail || 'Failed to create workspace', 'error');
         }
     } catch(err) { showToast(err.message, 'error'); }
 });
 
-async function openMembersModal(wsId, wsName) {
-    document.getElementById('members-modal-title').textContent = wsName + ' — Members';
+async function openMembersModal(wsId, wsName, myRole) {
+    _currentWsId = wsId;
+    _currentWsName = wsName;
+    _currentUserRole = myRole;
+    document.getElementById('members-modal-title').textContent = wsName + ' \u2014 Team';
     document.getElementById('invite-ws-id').value = wsId;
     document.getElementById('members-modal').classList.remove('hidden');
-    // Load members
+    const inviteSection = document.getElementById('invite-section');
+    inviteSection.style.display = (myRole === 'admin' || myRole === 'editor') ? 'block' : 'none';
+    await Promise.all([loadMembers(wsId), loadWsPendingInvites(wsId)]);
+}
+
+async function loadMembers(wsId) {
     try {
         const resp = await fetch('/api/workspaces/' + wsId + '/members');
         const data = await resp.json();
         const list = document.getElementById('members-list');
         list.innerHTML = '';
         data.forEach(m => {
-            list.innerHTML += `<div class="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
-                <div><span class="text-sm font-medium text-gray-900 dark:text-gray-200">${m.name}</span>
-                <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">${m.email}</span></div>
-                <span class="text-xs font-medium px-2 py-0.5 rounded-full ${m.role === 'admin' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' : m.role === 'editor' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'}">${m.role}</span>
-            </div>`;
+            const isMe = m.user_id === _currentUserId;
+            const canManage = _currentUserRole === 'admin' && !isMe;
+            const roleColors = {
+                admin: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
+                editor: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
+                viewer: 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
+            };
+            let actions = '';
+            if (canManage) {
+                actions = '<div class="flex items-center space-x-2">'
+                    + '<select onchange="changeRole(\'' + wsId + '\', \'' + m.user_id + '\', this.value)" '
+                    + 'class="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-gray-200">'
+                    + '<option value="viewer"' + (m.role === 'viewer' ? ' selected' : '') + '>Viewer</option>'
+                    + '<option value="editor"' + (m.role === 'editor' ? ' selected' : '') + '>Editor</option>'
+                    + '<option value="admin"' + (m.role === 'admin' ? ' selected' : '') + '>Admin</option>'
+                    + '</select>'
+                    + '<button onclick="removeMember(\'' + wsId + '\', \'' + m.user_id + '\', \'' + m.name.replace(/'/g, "\\'") + '\')" '
+                    + 'class="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-1" title="Remove member">'
+                    + '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'
+                    + '</button></div>';
+            } else {
+                actions = '<span class="text-xs font-medium px-2.5 py-1 rounded-full ' + (roleColors[m.role] || roleColors.viewer) + '">' + m.role + '</span>';
+            }
+            const initials = (m.name || '?')[0].toUpperCase() + ((m.name || '?').length > 1 ? m.name[1].toUpperCase() : '');
+            list.innerHTML += '<div class="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">'
+                + '<div class="flex items-center space-x-3">'
+                + '<div class="w-8 h-8 rounded-full bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center text-brand-600 dark:text-brand-400 text-xs font-bold flex-shrink-0">' + initials + '</div>'
+                + '<div><span class="text-sm font-medium text-gray-900 dark:text-gray-200">' + m.name + (isMe ? ' (you)' : '') + '</span>'
+                + '<span class="text-xs text-gray-500 dark:text-gray-400 block">' + m.email + '</span></div></div>'
+                + actions + '</div>';
         });
     } catch(err) { showToast('Failed to load members', 'error'); }
+}
+
+async function loadWsPendingInvites(wsId) {
+    const container = document.getElementById('ws-pending-invites');
+    const list = document.getElementById('ws-pending-invites-list');
+    try {
+        const resp = await fetch('/api/workspaces/' + wsId + '/invites');
+        const invites = await resp.json();
+        if (invites.length === 0) { container.classList.add('hidden'); return; }
+        container.classList.remove('hidden');
+        list.innerHTML = '';
+        invites.forEach(inv => {
+            const canRevoke = _currentUserRole === 'admin' || _currentUserRole === 'editor';
+            list.innerHTML += '<div class="flex items-center justify-between p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30">'
+                + '<div><span class="text-sm font-medium text-gray-900 dark:text-gray-200">' + inv.email + '</span>'
+                + '<span class="text-xs text-gray-500 dark:text-gray-400 ml-2">as ' + inv.role + '</span>'
+                + '<span class="text-xs text-gray-400 dark:text-gray-500 block">Invited by ' + inv.invited_by_name + ' \u00b7 Expires ' + inv.expires_at.slice(0, 10) + '</span></div>'
+                + '<div class="flex items-center space-x-2">'
+                + '<span class="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">Pending</span>'
+                + (canRevoke ? '<button onclick="revokeInvite(\'' + wsId + '\', \'' + inv.id + '\')" class="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-1" title="Revoke invite"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>' : '')
+                + '</div></div>';
+        });
+    } catch(err) { container.classList.add('hidden'); }
 }
 
 document.getElementById('invite-form').addEventListener('submit', async function(e) {
@@ -164,21 +277,137 @@ document.getElementById('invite-form').addEventListener('submit', async function
     const wsId = this.elements.workspace_id.value;
     const email = this.elements.email.value.trim();
     const role = this.elements.role.value;
+    if (!email) return;
     try {
         const resp = await fetch('/api/workspaces/' + wsId + '/invite', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({email, role})
         });
+        const data = await resp.json();
         if (resp.ok) {
-            showToast('Invitation sent!', 'success');
-            openMembersModal(wsId, document.getElementById('members-modal-title').textContent.replace(' — Members', ''));
+            showToast(data.message || 'Invite sent!', 'success');
             this.elements.email.value = '';
+            // Show copy-link box when email wasn't sent
+            const linkBox = document.getElementById('invite-link-box');
+            if (data.invite_url && data.email_sent === false) {
+                const fullUrl = location.origin + data.invite_url;
+                document.getElementById('invite-link-input').value = fullUrl;
+                linkBox.classList.remove('hidden');
+            } else {
+                linkBox.classList.add('hidden');
+            }
+            await Promise.all([loadMembers(wsId), loadWsPendingInvites(wsId)]);
+        } else {
+            showToast(data.detail || 'Failed to send invite', 'error');
+        }
+    } catch(err) { showToast(err.message, 'error'); }
+});
+
+async function changeRole(wsId, userId, newRole) {
+    try {
+        const resp = await fetch('/api/workspaces/' + wsId + '/members/' + userId + '/role', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({role: newRole})
+        });
+        if (resp.ok) {
+            showToast('Role updated to ' + newRole, 'success');
+        } else {
+            const data = await resp.json();
+            showToast(data.detail || 'Failed to change role', 'error');
+            loadMembers(wsId);
+        }
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
+async function removeMember(wsId, userId, name) {
+    if (!confirm('Remove ' + name + ' from this workspace?')) return;
+    try {
+        const resp = await fetch('/api/workspaces/' + wsId + '/members/' + userId, { method: 'DELETE' });
+        if (resp.ok) {
+            showToast(name + ' removed', 'success');
+            loadMembers(wsId);
+        } else {
+            const data = await resp.json();
+            showToast(data.detail || 'Failed to remove member', 'error');
+        }
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
+async function revokeInvite(wsId, inviteId) {
+    if (!confirm('Revoke this invitation?')) return;
+    try {
+        const resp = await fetch('/api/workspaces/' + wsId + '/invites/' + inviteId, { method: 'DELETE' });
+        if (resp.ok) {
+            showToast('Invite revoked', 'success');
+            loadWsPendingInvites(wsId);
+        } else {
+            const data = await resp.json();
+            showToast(data.detail || 'Failed to revoke', 'error');
+        }
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
+async function acceptInvite(inviteId) {
+    try {
+        const resp = await fetch('/api/auth/invites/' + inviteId + '/accept', { method: 'POST' });
+        if (resp.ok) {
+            showToast('Joined workspace!', 'success');
+            setTimeout(() => location.reload(), 500);
         } else {
             const data = await resp.json();
             showToast(data.detail || 'Failed', 'error');
         }
     } catch(err) { showToast(err.message, 'error'); }
-});
+}
+
+async function declineInvite(inviteId) {
+    try {
+        const resp = await fetch('/api/auth/invites/' + inviteId + '/decline', { method: 'POST' });
+        if (resp.ok) {
+            showToast('Invite declined', 'success');
+            loadMyInvites();
+        } else {
+            const data = await resp.json();
+            showToast(data.detail || 'Failed', 'error');
+        }
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
+async function loadMyInvites() {
+    try {
+        const resp = await fetch('/api/auth/invites');
+        const invites = await resp.json();
+        const section = document.getElementById('pending-invites-section');
+        const list = document.getElementById('pending-invites-list');
+        if (invites.length === 0) { section.classList.add('hidden'); return; }
+        section.classList.remove('hidden');
+        list.innerHTML = '';
+        invites.forEach(inv => {
+            list.innerHTML += '<div class="flex items-center justify-between p-3 rounded-lg bg-white/80 dark:bg-gray-800/60">'
+                + '<div><span class="text-sm font-semibold text-gray-900 dark:text-gray-200">' + inv.workspace_name + '</span>'
+                + '<span class="text-xs text-gray-500 dark:text-gray-400 block mt-0.5">Invited by ' + inv.invited_by_name + ' as <span class="font-medium">' + inv.role + '</span>'
+                + ' \u00b7 Expires ' + inv.expires_at.slice(0, 10) + '</span></div>'
+                + '<div class="flex items-center space-x-2">'
+                + '<button onclick="acceptInvite(\'' + inv.id + '\')" class="px-3 py-1.5 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-medium">Accept</button>'
+                + '<button onclick="declineInvite(\'' + inv.id + '\')" class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Decline</button>'
+                + '</div></div>';
+        });
+    } catch(err) { /* silent */ }
+}
+
+loadMyInvites();
+
+function copyInviteLink() {
+    const input = document.getElementById('invite-link-input');
+    navigator.clipboard.writeText(input.value).then(() => {
+        showToast('Invite link copied!', 'success');
+    }).catch(() => {
+        input.select();
+        document.execCommand('copy');
+        showToast('Invite link copied!', 'success');
+    });
+}
 </script>
 {% endblock %}

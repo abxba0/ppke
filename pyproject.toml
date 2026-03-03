@@ -59,6 +59,19 @@ audio = [
 diarization = [
     "pyannote.audio>=3.1",
 ]
+# PDF table structure detection
+tables = [
+    "pdfplumber>=0.10.0",   # PDF table extraction
+]
+# Image preprocessing for OCR (deskew, denoise, contrast)
+preprocess = [
+    "opencv-python-headless>=4.8.0",  # OpenCV image processing
+]
+# Video import — lecture video transcription + slide detection
+video = [
+    # Requires ffmpeg on PATH (system package)
+    # Audio transcription uses the existing audio/openai dependency
+]
 # Phase 2: document intelligence — URL scraping, YouTube import, spreadsheets
 ingest = [
     "trafilatura>=1.6.0",   # URL / article content extraction
@@ -76,6 +89,8 @@ export = [
 auth = [
     "PyJWT>=2.8.0",        # JWT token handling
     "bcrypt>=4.0.0",       # Password hashing
+    "resend>=2.0.0",       # Transactional email (Resend API)
+    "supabase>=2.0.0",     # Supabase client (optional auth/DB backend)
 ]
 # Phase 8: deployment & infrastructure
 infra = [
@@ -113,6 +128,8 @@ all = [
     "python-pptx>=0.6.21",
     "PyJWT>=2.8.0",
     "bcrypt>=4.0.0",
+    "resend>=2.0.0",
+    "supabase>=2.0.0",
     "celery[redis]>=5.3.0",
     "redis>=5.0.0",
     "psycopg2-binary>=2.9.0",
@@ -120,6 +137,8 @@ all = [
     "sentry-sdk[fastapi]>=1.40.0",
     "boto3>=1.34.0",
     "google-cloud-storage>=2.14.0",
+    "pdfplumber>=0.10.0",
+    "opencv-python-headless>=4.8.0",
 ]
 
 [tool.pytest.ini_options]
