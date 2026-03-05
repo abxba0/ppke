@@ -988,6 +988,7 @@ async def settings_page(request: Request):
             "provider": config.llm.provider,
             "model": config.llm.model,
             "default_domain": config.default_domain or "philosophy",
+            "processing_mode": config.processing_mode or "linear",
             "has_api_key": bool(config.llm.active_api_key),
             "vector_search": config.enable_vector_search,
             "knowledge_graph": config.enable_knowledge_graph,
@@ -1355,6 +1356,7 @@ async def api_upload(
     author: str = Form(...),
     year: str = Form(""),
     domain: str = Form("philosophy"),
+    mode: str = Form("linear"),
 ):
     """Upload and ingest one or more documents.
 
@@ -1399,6 +1401,7 @@ async def api_upload(
             tp=temp_path,
             mp=md_path,
             ftitle=file_title,
+            ingest_mode=mode,
         ):
             _start = time.time()
             try:
@@ -1428,6 +1431,7 @@ async def api_upload(
                     tracker=tracker,
                     vector_store=vector_store,
                     knowledge_graph=knowledge_graph,
+                    mode=ingest_mode,
                 )
 
                 folder_name = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
@@ -1461,6 +1465,7 @@ async def api_import_url(
     author: str = Form(""),
     year: str = Form(""),
     domain: str = Form("philosophy"),
+    mode: str = Form("linear"),
 ):
     """Import a web page or YouTube video URL and ingest it.
 
@@ -1549,6 +1554,7 @@ async def api_import_url(
                 tracker=tracker,
                 vector_store=vector_store,
                 knowledge_graph=knowledge_graph,
+                mode=mode,
             )
 
             folder_name = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
@@ -1578,6 +1584,7 @@ async def api_import_github_pr(
     author: str = Form(""),
     domain: str = Form("gh_pr"),
     token: str = Form(""),
+    mode: str = Form("linear"),
 ):
     """Import a GitHub Pull Request URL and ingest it.
 
@@ -1661,6 +1668,7 @@ async def api_import_github_pr(
                 tracker=tracker,
                 vector_store=vector_store,
                 knowledge_graph=knowledge_graph,
+                mode=mode,
             )
 
             folder_name = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
@@ -1819,6 +1827,7 @@ async def api_import_zotero(
     request: Request,
     file: UploadFile = File(...),
     domain: str = Form("philosophy"),
+    mode: str = Form("linear"),
 ):
     """Import a Zotero export file (.bib, .json, or .rdf).
 
@@ -1897,6 +1906,7 @@ async def api_import_zotero(
                 tracker=tracker,
                 vector_store=vector_store,
                 knowledge_graph=knowledge_graph,
+                mode=mode,
             )
 
             folder_name = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
@@ -2500,6 +2510,7 @@ async def api_update_settings(
     model: str = Form(...),
     api_key: str = Form(""),
     default_domain: str = Form("philosophy"),
+    processing_mode: str = Form("linear"),
     vector_search: bool = Form(False),
     knowledge_graph: bool = Form(False),
 ):
@@ -2510,6 +2521,7 @@ async def api_update_settings(
     config.llm.provider = provider
     config.llm.model = model
     config.default_domain = default_domain
+    config.processing_mode = processing_mode
     config.enable_vector_search = vector_search
     config.enable_knowledge_graph = knowledge_graph
     config.save()

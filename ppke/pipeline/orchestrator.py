@@ -10,6 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
 
+import yaml
+
 from ppke.config import Config
 from ppke.llm.client import LLMClient
 from ppke.llm.prompts import AUTHOR_MODEL_SYSTEM, AUTHOR_MODEL_USER
@@ -426,6 +428,7 @@ def ingest_book(
     tracker: ProgressTracker | None = None,
     vector_store: VectorStore | None = None,
     knowledge_graph: KnowledgeGraph | None = None,
+    mode: str = "linear",
 ) -> Path:
     """Run the full ingestion pipeline for a book using the specified domain template.
 
@@ -455,6 +458,7 @@ def ingest_book(
         tracker: Optional ProgressTracker for task/progress tracking.
         vector_store: Optional VectorStore for semantic search indexing.
         knowledge_graph: Optional KnowledgeGraph for graph-based reasoning.
+        mode: Processing mode — ``"linear"`` (default) or ``"swarm"`` (multi-agent).
 
     Returns:
         Path to the book's output directory.
@@ -731,15 +735,35 @@ def ingest_book(
     _s2_sys, _s2_usr = _stage_prompts(_s2_id)
     _s3_sys, _s3_usr = _stage_prompts(_s3_id)
 
-    _progress(
-        "analysis",
-        f"Running [{_s1_id}, {_s2_id}, {_s3_id}] analysis stages in parallel "
-        f"(domain: {domain})",
-    )
     logical_map: dict[str, Any] = {}
     concept_data: dict[str, Any] = {}
     pattern_data: dict[str, Any] = {}
+    swarm_results: dict[str, Any] | None = None
 
+    if mode == "swarm":
+        # ── Swarm mode: run multi-agent analysis ──
+        _progress("analysis", f"Running swarm (multi-agent) analysis (domain: {domain})")
+        from ppke.pipeline.swarm import SwarmOrchestrator
+        swarm = SwarmOrchestrator(max_workers=config.llm.max_workers)
+        swarm_results = swarm.run(
+            client=client,
+            extractions=all_extractions,
+            book_title=book.title,
+            book_author=book.author,
+            progress_callback=progress_callback,
+        )
+        # Also run the standard analysis stages so output files are complete
+        _progress(
+            "analysis",
+            f"Running [{_s1_id}, {_s2_id}, {_s3_id}] analysis stages in parallel "
+            f"(domain: {domain})",
+        )
+    else:
+        _progress(
+            "analysis",
+            f"Running [{_s1_id}, {_s2_id}, {_s3_id}] analysis stages in parallel "
+            f"(domain: {domain})",
+        )
     with ThreadPoolExecutor(max_workers=3) as analysis_executor:
         future_logical = analysis_executor.submit(
             build_logical_map, client, all_extractions, book.title, book.author,
@@ -794,6 +818,24 @@ def ingest_book(
         human_operator=human_operator,
         pattern_data=pattern_data,
     )
+
+    # Write swarm analysis results if applicable
+    if swarm_results is not None:
+        swarm_output_path = book_dir / "swarm_analysis.json"
+        swarm_output_path.write_text(json.dumps(swarm_results, indent=2, default=str))
+        _progress("output", f"Swarm analysis written to {swarm_output_path.name}")
+
+    # Record processing mode in meta.yml
+    meta_path = book_dir / "meta.yml"
+    if meta_path.exists():
+        try:
+            meta = yaml.safe_load(meta_path.read_text()) or {}
+            meta["processing_mode"] = mode
+            if swarm_results and "_swarm_meta" in swarm_results:
+                meta["swarm_meta"] = swarm_results["_swarm_meta"]
+            meta_path.write_text(yaml.dump(meta, default_flow_style=False, sort_keys=False))
+        except Exception as _e:
+            logger.warning("Failed to update meta.yml with processing mode: %s", _e)
 
     # Write/update global vault files
     _progress("output", "Updating global vault files")

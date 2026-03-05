@@ -26,6 +26,10 @@
                 <span class="text-sm font-medium text-gray-900 dark:text-gray-200">{{ config.default_domain }}</span>
             </div>
             <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Processing Mode</span>
+                <span class="text-sm font-medium text-gray-900 dark:text-gray-200">{{ config.processing_mode or 'linear' }}</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
                 <span class="text-sm text-gray-600 dark:text-gray-400">API Key</span>
                 <span class="text-sm font-medium {% if config.has_api_key %}text-green-600 dark:text-green-400{% else %}text-red-600 dark:text-red-400{% endif %}">
                     {% if config.has_api_key %}Configured{% else %}Not set{% endif %}
@@ -71,6 +75,13 @@
                     <option value="philosophy" {% if config.default_domain == 'philosophy' %}selected{% endif %}>Philosophy</option>
                     <option value="science" {% if config.default_domain == 'science' %}selected{% endif %}>Science</option>
                     <option value="legal" {% if config.default_domain == 'legal' %}selected{% endif %}>Legal</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Default Processing Mode</label>
+                <select name="processing_mode" class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                    <option value="linear" {% if (config.processing_mode or 'linear') == 'linear' %}selected{% endif %}>Linear — Fast, sequential pipeline</option>
+                    <option value="swarm" {% if config.processing_mode == 'swarm' %}selected{% endif %}>Swarm — Deep, multi-agent concurrent analysis</option>
                 </select>
             </div>
             <div class="flex items-center space-x-6">

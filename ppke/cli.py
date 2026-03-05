@@ -18,6 +18,7 @@ from rich.text import Text as _Text
 from ppke import __version__
 from ppke.config import (
     Config,
+    PROCESSING_MODES,
     PROVIDER_DEFAULTS,
     PROVIDER_ENV_VARS,
     SUPPORTED_PROVIDERS,
@@ -374,6 +375,7 @@ def list_domains():
 @click.option("--operator", default="", help="Human operator name for versioning")
 @click.option("--double-pass", is_flag=True, help="Enable double-pass extraction")
 @click.option("--resume", is_flag=True, help="Resume from last checkpoint if a previous run failed")
+@click.option("--mode", "processing_mode", type=click.Choice(PROCESSING_MODES), default=None, help="Processing mode: linear (fast) or swarm (multi-agent)")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging")
 def ingest(
     filepath: Path,
@@ -388,17 +390,20 @@ def ingest(
     operator: str,
     double_pass: bool,
     resume: bool,
+    processing_mode: str | None,
     verbose: bool,
 ):
     """Ingest a markdown book into the knowledge base.
 
     Runs the full pipeline: parse -> extract -> validate -> analyze -> write.
     Use --resume to continue from where a previous ingestion failed.
+    Use --mode to select the processing pipeline (linear or swarm).
 
     Examples:
         ppke ingest book.md --title "Being and Time" --author "Heidegger" --year 1927
         ppke ingest book.md --title "Being and Time" --author "Heidegger" --domain science
         ppke ingest book.md --title "Being and Time" --author "Heidegger" --resume
+        ppke ingest book.md --title "Being and Time" --author "Heidegger" --mode swarm
     """
     _setup_logging(verbose)
 
@@ -407,6 +412,8 @@ def ingest(
         config.double_pass = True
     # Resolve domain: CLI flag > config default_domain > "philosophy"
     domain = domain or config.default_domain or "philosophy"
+    # Resolve processing mode: CLI flag > config processing_mode > "linear"
+    mode = processing_mode or config.processing_mode or "linear"
     _require_api_key(config)
 
     # Parse the book
@@ -419,7 +426,7 @@ def ingest(
     )
 
     # Run pipeline
-    click.echo("Starting ingestion pipeline...")
+    click.echo(f"Starting ingestion pipeline (mode: {mode})...")
 
     def progress_callback(stage: str, detail: str):
         stage_t = _Text(f"[{stage}]", style="bold cyan")
@@ -458,6 +465,7 @@ def ingest(
                 tracker=tracker,
                 vector_store=vector_store,
                 knowledge_graph=knowledge_graph,
+                mode=mode,
             )
     except Exception as e:
         if tracker.get_book(book.folder_name):
@@ -493,6 +501,7 @@ def ingest(
 )
 @click.option("--batch-size", type=click.IntRange(min=1), default=None, help="Paragraphs per LLM batch (min 1)")
 @click.option("--operator", default="", help="Human operator name for versioning")
+@click.option("--mode", "processing_mode", type=click.Choice(PROCESSING_MODES), default=None, help="Processing mode: linear (fast) or swarm (multi-agent)")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging")
 def ingest_pr(
     pr_url: str,
@@ -507,6 +516,7 @@ def ingest_pr(
     vault_path: Path | None,
     batch_size: int | None,
     operator: str,
+    processing_mode: str | None,
     verbose: bool,
 ):
     """Ingest a GitHub Pull Request into the knowledge base.
@@ -533,6 +543,8 @@ def ingest_pr(
 
     config = _load_config_with_overrides(provider, model, vault_path, batch_size)
     domain = domain or config.default_domain or "gh_pr"
+    # Resolve processing mode: CLI flag > config processing_mode > "linear"
+    mode = processing_mode or config.processing_mode or "linear"
     _require_api_key(config)
 
     click.echo(f"Fetching PR from GitHub: {pr_url}")
@@ -605,6 +617,7 @@ def ingest_pr(
             tracker=tracker,
             vector_store=vector_store,
             knowledge_graph=knowledge_graph,
+            mode=mode,
         )
 
         click.echo(_render(_Text(f"\nDone! PR analysis written to: {book_dir}", style="bold green")))
@@ -1004,6 +1017,7 @@ def re_read(
     help="Output vault path",
 )
 @click.option("--batch-size", type=click.IntRange(min=1), default=None, help="Paragraphs per LLM batch (min 1)")
+@click.option("--processing-mode", type=click.Choice(PROCESSING_MODES), default=None, help="Default processing mode: linear or swarm")
 @click.option("--show", is_flag=True, help="Show current config")
 def config(
     provider: str | None,
@@ -1011,6 +1025,7 @@ def config(
     small_model: str | None,
     vault_path: Path | None,
     batch_size: int | None,
+    processing_mode: str | None,
     show: bool,
 ):
     """View or update PPKE configuration.
@@ -1020,10 +1035,11 @@ def config(
         ppke config --provider anthropic --model claude-sonnet-4-20250514
         ppke config --small-model claude-3-haiku-20240307
         ppke config --vault-path ~/my-vault/KnowledgeBase
+        ppke config --processing-mode swarm
     """
     cfg = Config.load()
 
-    if show or (not provider and not model and not small_model and not vault_path and not batch_size):
+    if show or (not provider and not model and not small_model and not vault_path and not batch_size and not processing_mode):
         tbl = _Table(show_header=False, box=None, padding=(0, 1))
         tbl.add_column("Setting", style="bold")
         tbl.add_column("Value")
@@ -1037,6 +1053,7 @@ def config(
         tbl.add_row("Selective:", str(cfg.selective_depth))
         tbl.add_row("Double pass:", str(cfg.double_pass))
         tbl.add_row("Default domain:", cfg.default_domain)
+        tbl.add_row("Processing mode:", cfg.processing_mode)
         tbl.add_row("Vector search:", "enabled" if cfg.enable_vector_search else "disabled")
         tbl.add_row("Knowledge graph:", "enabled" if cfg.enable_knowledge_graph else "disabled")
         tbl.add_row("Async ingest:", "enabled" if cfg.async_ingest else "disabled (sync)")
@@ -1055,6 +1072,8 @@ def config(
         cfg.vault_path = vault_path
     if batch_size:
         cfg.llm.paragraphs_per_batch = batch_size
+    if processing_mode:
+        cfg.processing_mode = processing_mode
 
     cfg.save()
     click.echo("Configuration saved.")
@@ -2104,6 +2123,7 @@ def hybrid_search_cmd(
 @click.option("--operator", default="", help="Human operator name for versioning")
 @click.option("--double-pass", is_flag=True, help="Enable double-pass extraction")
 @click.option("--resume", is_flag=True, help="Resume from last checkpoint")
+@click.option("--mode", "processing_mode", type=click.Choice(PROCESSING_MODES), default=None, help="Processing mode: linear (fast) or swarm (multi-agent)")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging")
 def async_ingest(
     filepath: Path,
@@ -2118,6 +2138,7 @@ def async_ingest(
     operator: str,
     double_pass: bool,
     resume: bool,
+    processing_mode: str | None,
     verbose: bool,
 ):
     """Ingest a book using the async (asyncio-based) pipeline.
@@ -2129,6 +2150,7 @@ def async_ingest(
     Examples:
         ppke async-ingest book.md --title "Being and Time" --author "Heidegger"
         ppke async-ingest book.md --title "Republic" --author "Plato" --resume
+        ppke async-ingest book.md --title "Republic" --author "Plato" --mode swarm
     """
     _setup_logging(verbose)
 
@@ -2137,6 +2159,8 @@ def async_ingest(
         config.double_pass = True
     # Resolve domain: CLI flag > config default_domain > "philosophy"
     domain = domain or config.default_domain or "philosophy"
+    # Resolve processing mode: CLI flag > config processing_mode > "linear"
+    mode = processing_mode or config.processing_mode or "linear"
     _require_api_key(config)
 
     click.echo(f"Parsing {filepath}...")
@@ -2147,7 +2171,7 @@ def async_ingest(
         f"Parsed: {len(book.chapters)} chapters, {book.total_paragraphs} paragraphs"
     )
 
-    click.echo("Starting async ingestion pipeline...")
+    click.echo(f"Starting async ingestion pipeline (mode: {mode})...")
 
     def progress_callback(stage: str, detail: str):
         stage_t = _Text(f"[{stage}]", style="bold cyan")
