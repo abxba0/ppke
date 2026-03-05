@@ -444,8 +444,9 @@ def ingest_book(
     7. Pattern / findings detection with template prompts
     8. Author model generation
     9. Write all output files (per-book + global vault files)
-    10. Index into vector store (if available)
-    11. Update knowledge graph (if available)
+    10. Vision-RAG: analyze document visuals (figures, diagrams) if present
+    11. Index into vector store (text extractions + visual elements)
+    12. Update knowledge graph (if available)
 
     Args:
         book: Parsed Book object.
@@ -841,7 +842,38 @@ def ingest_book(
     _progress("output", "Updating global vault files")
     write_global_files(config.vault_path, config)
 
-    # ── Stage 9: Index into vector store (semantic search layer) ──
+    # ── Stage 9: Vision-RAG — analyze document visuals (if any) ──
+    visual_elements: list = []
+    figures_dir = book_dir / "figures"
+    if figures_dir.is_dir():
+        _progress("vision_rag", f"Analyzing visual elements in {figures_dir}")
+        try:
+            from ppke.pipeline.vision_rag import analyze_document_visuals
+
+            visual_elements = analyze_document_visuals(
+                figures_dir,
+                provider=config.llm.provider,
+                api_key=config.llm.api_key,
+            )
+            if visual_elements:
+                # Save visual analysis to disk
+                visuals_out = book_dir / "visual_elements.json"
+                visuals_out.write_text(
+                    json.dumps(
+                        [e.model_dump() for e in visual_elements],
+                        indent=2,
+                        default=str,
+                    )
+                )
+                _progress(
+                    "vision_rag",
+                    f"Analyzed {len(visual_elements)} visual element(s) — "
+                    f"saved to {visuals_out.name}",
+                )
+        except Exception as _ve:
+            logger.warning("Vision-RAG analysis failed (non-critical): %s", _ve)
+
+    # ── Stage 10: Index into vector store (semantic search layer) ──
     if vector_store is not None and vector_store.available:
         _progress("vector_index", f"Indexing '{book.title}' into vector store")
         try:
@@ -859,7 +891,25 @@ def ingest_book(
         except Exception as _e:
             logger.warning("Vector store indexing failed (non-critical): %s", _e)
 
-    # ── Stage 10: Update knowledge graph ──
+        # Index visual elements into the vector store (if any were found)
+        if visual_elements:
+            try:
+                vis_indexed = vector_store.index_visual_elements(
+                    book_folder=book.folder_name,
+                    book_title=book.title,
+                    author=book.author,
+                    visual_elements=visual_elements,
+                )
+                _progress(
+                    "vector_index",
+                    f"Indexed {vis_indexed} visual element(s) into vector store",
+                )
+            except Exception as _ve:
+                logger.warning(
+                    "Visual element vector indexing failed (non-critical): %s", _ve
+                )
+
+    # ── Stage 11: Update knowledge graph ──
     if knowledge_graph is not None:
         _progress("graph", f"Updating knowledge graph for '{book.title}'")
         try:
