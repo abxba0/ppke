@@ -268,6 +268,93 @@ class VectorStore:
 
         return hits
 
+    def index_visual_elements(
+        self,
+        book_folder: str,
+        book_title: str,
+        author: str,
+        visual_elements: list[Any],
+    ) -> int:
+        """Index visual element analyses into the vector store.
+
+        Each :class:`~ppke.pipeline.vision_rag.VisualElement` is converted
+        to a searchable document via its ``to_rag_text()`` method and stored
+        alongside paragraph extractions.
+
+        Args:
+            book_folder: Vault folder name (used as a metadata filter key).
+            book_title: Human-readable title.
+            author: Author name.
+            visual_elements: List of ``VisualElement`` instances (or dicts
+                with ``element_id``, ``to_rag_text``, ``visual_type``, and
+                ``context_summary`` attributes/keys).
+
+        Returns:
+            Number of visual documents indexed (0 if unavailable).
+        """
+        if not self.available:
+            return 0
+
+        documents: list[str] = []
+        metadatas: list[dict] = []
+        ids: list[str] = []
+        seen_ids: set[str] = set()
+
+        for elem in visual_elements:
+            # Support both VisualElement objects and dicts
+            if hasattr(elem, "element_id"):
+                eid = elem.element_id
+                doc_text = elem.to_rag_text()
+                vtype = elem.visual_type
+                summary = elem.context_summary
+            else:
+                eid = elem.get("element_id", "")
+                doc_text = elem.get("rag_text", "")
+                vtype = elem.get("visual_type", "other")
+                summary = elem.get("context_summary", "")
+
+            if not eid or not doc_text.strip():
+                continue
+
+            doc_id = f"{book_folder}::{eid}"
+            if doc_id in seen_ids:
+                continue
+            seen_ids.add(doc_id)
+
+            documents.append(doc_text)
+            metadatas.append(
+                {
+                    "book_folder": book_folder,
+                    "book_title": book_title,
+                    "author": author,
+                    "paragraph_id": eid,
+                    "depth": "visual",
+                    "emotional_tone": "",
+                    "function_in_argument": f"visual_{vtype}",
+                }
+            )
+            ids.append(doc_id)
+
+        if not documents:
+            return 0
+
+        try:
+            for i in range(0, len(documents), _BATCH_SIZE):
+                self._collection.upsert(
+                    documents=documents[i : i + _BATCH_SIZE],
+                    metadatas=metadatas[i : i + _BATCH_SIZE],
+                    ids=ids[i : i + _BATCH_SIZE],
+                )
+        except Exception as exc:
+            logger.error("Vector store visual element upsert failed: %s", exc)
+            return 0
+
+        logger.info(
+            "Indexed %d visual element(s) for '%s' in vector store",
+            len(documents), book_title,
+        )
+        return len(documents)
+
     def count(self) -> int:
         """Return total number of indexed paragraph vectors."""
         if not self.available:
