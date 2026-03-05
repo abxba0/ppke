@@ -41,6 +41,10 @@
                     class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
                 Video Import
             </button>
+            <button id="tab-github-pr" onclick="switchTab('github-pr')" role="tab" aria-selected="false"
+                    class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                GitHub PR
+            </button>
         </div>
 
         <!-- ─── TAB: File Upload ─── -->
@@ -389,6 +393,67 @@
             </form>
         </div>
 
+        <!-- ─── TAB: GitHub PR Import ─── -->
+        <div id="panel-github-pr" role="tabpanel" class="hidden">
+            <form id="github-pr-form">
+                <div class="mb-5">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">GitHub PR URL *</label>
+                    <input type="url" id="pr-url-input" name="url" required
+                           class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                           placeholder="https://github.com/owner/repo/pull/123">
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Paste a GitHub Pull Request URL to analyze.</p>
+                </div>
+
+                <!-- GitHub PR badge (shown dynamically) -->
+                <div id="pr-badge" class="hidden mb-4 flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 font-medium">
+                    <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 16 16" fill="currentColor">
+                        <path fill-rule="evenodd" d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"></path>
+                    </svg>
+                    <span id="pr-badge-text">Valid GitHub PR detected</span>
+                </div>
+
+                <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 mb-4">
+                    <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">WHAT HAPPENS</p>
+                    <ul class="text-xs text-gray-500 dark:text-gray-400 space-y-1 list-disc list-inside">
+                        <li>PR metadata, diff, comments &amp; reviews fetched via GitHub API</li>
+                        <li>Code changes analyzed for patterns, security risks &amp; architecture</li>
+                        <li>Logical map of changes generated</li>
+                        <li>Full analysis saved as interactive notebook</li>
+                    </ul>
+                </div>
+
+                <div class="space-y-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title (auto-detected from PR)</label>
+                        <input type="text" name="title"
+                               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                               placeholder="Leave blank to use PR title">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">GitHub Token (optional)</label>
+                        <input type="password" name="token"
+                               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                               placeholder="ghp_... (for private repos or higher rate limits)">
+                        <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Or set GITHUB_TOKEN environment variable.</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Domain Template</label>
+                        <select name="domain" class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent">
+                            <option value="gh_pr" selected>GitHub PR — Code review, security, patterns</option>
+                            <option value="philosophy">Philosophy — Argument mapping, concept tracking</option>
+                            <option value="science">Science — Methodology, evidence, findings</option>
+                            <option value="legal">Legal — Case law, statutory interpretation</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit" id="pr-btn"
+                        class="w-full px-6 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium text-sm shadow-sm disabled:opacity-50">
+                    Analyze PR
+                </button>
+            </form>
+        </div>
+
         <!-- Shared progress section -->
         <div id="progress-section" class="hidden mt-6">
             <div class="flex items-center space-x-3 mb-3">
@@ -466,7 +531,7 @@
 })();
 
 // ── Tab switching ──
-const ALL_TABS = ['file', 'url', 'batch', 'rss', 'record', 'zotero', 'video'];
+const ALL_TABS = ['file', 'url', 'batch', 'rss', 'record', 'zotero', 'video', 'github-pr'];
 function switchTab(tab) {
     ALL_TABS.forEach(t => {
         const btn = document.getElementById('tab-' + t);
@@ -566,6 +631,45 @@ document.getElementById('url-form').addEventListener('submit', async function(e)
         document.getElementById('progress-section').classList.add('hidden');
     }
 });
+
+// ── GitHub PR import tab ──
+const prUrlInput = document.getElementById('pr-url-input');
+const prBadge = document.getElementById('pr-badge');
+const GH_PR_RE = /github\.com\/[^/]+\/[^/]+\/pull\/\d+/;
+
+if (prUrlInput) {
+    prUrlInput.addEventListener('input', () => {
+        prBadge.classList.toggle('hidden', !GH_PR_RE.test(prUrlInput.value));
+    });
+}
+
+const prForm = document.getElementById('github-pr-form');
+if (prForm) {
+    prForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const url = prUrlInput.value.trim();
+        if (!url) { showToast('Please enter a GitHub PR URL.', 'warning'); return; }
+        if (!GH_PR_RE.test(url)) { showToast('Please enter a valid GitHub PR URL (e.g. https://github.com/owner/repo/pull/123).', 'warning'); return; }
+        const formData = new FormData(this);
+        const btn = document.getElementById('pr-btn');
+        btn.disabled = true; btn.textContent = 'Analyzing PR...';
+        document.getElementById('progress-section').classList.remove('hidden');
+        try {
+            const resp = await fetch('/api/import-github-pr', { method: 'POST', body: formData });
+            const data = await resp.json();
+            if (resp.ok && data.job_id) {
+                showToast('PR fetched — running analysis pipeline...', 'info');
+                pollJob(data.job_id);
+            } else {
+                throw new Error(data.detail || 'PR import failed');
+            }
+        } catch (err) {
+            showToast('PR import failed: ' + err.message, 'error');
+            btn.disabled = false; btn.textContent = 'Analyze PR';
+            document.getElementById('progress-section').classList.add('hidden');
+        }
+    });
+}
 
 // ── Batch upload tab ──
 const batchDrop = document.getElementById('batch-drop-zone');

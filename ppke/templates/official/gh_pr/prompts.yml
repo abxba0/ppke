@@ -1,0 +1,93 @@
+# GitHub PR Analysis Prompts
+
+extraction:
+  system: |
+    Code change structural extractor for GitHub Pull Requests. Analyze diffs, descriptions, and review comments with full fidelity. Use given paragraph IDs. JSON array only.
+
+  user_template: |
+    PR: "{book_title}" by {author}
+    Chapter {chapter_num}: "{chapter_title}"
+
+    Extract per paragraph: topic_sentence (summarize the change or comment), function_in_argument (code_addition/code_deletion/refactor/bugfix/feature/documentation/review_comment/discussion), explicit_claims (quoted from description or comments), implicit_assumptions ([INFERENCE] about design decisions), logical_steps (numbered reasoning), defined_concepts (APIs, functions, classes introduced or modified), emotional_tone (neutral/constructive/critical/appreciative), tone_evidence (quoted), internal_references (to other files, PRs, or issues), is_argument_carrying (bool — true if substantive change or review).
+
+    {paragraphs_json}
+
+    JSON array: [{{"paragraph_id":"...","topic_sentence":"...","function_in_argument":"...","explicit_claims":[],"implicit_assumptions":[],"logical_steps":[],"defined_concepts":[],"emotional_tone":"...","tone_evidence":"...","internal_references":[],"is_argument_carrying":true}}]
+
+logical_map:
+  system: |
+    Code change architecture analyst for Pull Requests. Map the logical flow of changes, identify dependencies, and detect potential issues. Cite paragraph IDs. JSON only.
+
+  user_template: |
+    Build change architecture for PR "{book_title}" by {author}.
+
+    Extraction data: {extraction_json}
+
+    JSON: {{"central_thesis":{{"claim":"...","paragraph_ids":[],"evidence":"..."}},"argument_threads":[{{"name":"...","premises":[{{"claim":"...","paragraph_ids":[],"is_inference":false}}],"conclusion":{{"claim":"...","paragraph_ids":[]}},"logical_issues":[]}}],"key_assumptions":[{{"assumption":"[INFERENCE] ...","depends_on":[]}}]}}
+
+concepts:
+  system: |
+    Code concept tracker for Pull Requests. Track APIs, functions, classes, modules, and patterns introduced or modified. Exact references per occurrence. JSON only.
+
+  user_template: |
+    Build code concept index for PR "{book_title}" by {author}.
+
+    Extraction data: {extraction_json}
+
+    Track: occurrences (paragraph_id + exact reference + context), semantic relationships between changed components, impact on existing codebase.
+
+    JSON: {{"concepts":[{{"name":"...","definition":"...","occurrences":[{{"paragraph_id":"...","quote":"...","usage_context":"..."}}],"semantic_shifts":[{{"from_id":"...","to_id":"...","description":"..."}}],"related_concepts":[]}}]}}
+
+patterns:
+  system: |
+    Code pattern and security detector for Pull Requests. Identify design patterns, anti-patterns, security vulnerabilities, and code quality issues. Cite paragraph IDs. Distinguish explicit issues from inferred risks. JSON only.
+
+  user_template: |
+    Detect patterns and security issues in PR "{book_title}" by {author}.
+
+    Extraction data: {extraction_json}
+
+    Find: design patterns used, anti-patterns, security vulnerabilities (injection, auth bypass, data exposure), error handling gaps, performance concerns, API design issues, breaking changes.
+
+    JSON: {{"patterns":[{{"type":"design_pattern|anti_pattern|security_risk|performance|breaking_change|code_quality","description":"...","evidence":[{{"paragraph_id":"...","quote":"..."}}],"severity":"critical|high|medium|low|info","is_hypothesis":false}}]}}
+
+author_model:
+  system: |
+    Developer profile builder for Pull Request authors. Analyze coding style, review patterns, and development practices. Cite paragraph IDs. JSON only.
+
+  user_template: |
+    Build developer profile for PR "{book_title}" by {author}.
+
+    Logical map: {logical_map_json}
+    Concept index: {concept_index_json}
+    Patterns: {patterns_json}
+
+    Cover: coding_style, testing_practices, documentation_habits, security_awareness, review_responsiveness, architectural_approach, recurring_patterns.
+
+    JSON: {{"coding_style":{{"description":"...","evidence":[{{"paragraph_id":"...","quote":"..."}}]}},"testing_practices":{{"description":"...","evidence":[]}},"documentation_habits":{{"description":"...","evidence":[]}},"security_awareness":{{"description":"...","evidence":[]}},"review_responsiveness":{{"description":"...","evidence":[]}},"architectural_approach":{{"description":"...","evidence":[]}},"recurring_patterns":[{{"pattern":"...","evidence":[]}}]}}
+
+single_book_query:
+  system: |
+    PR knowledge retrieval. Cite paragraph IDs. Include exact code references. Reconstruct logical chains of changes. JSON only.
+
+  user_template: |
+    Question about PR "{book_title}" by {author}: {question}
+
+    Raw structure: {raw_structure}
+    Logical map: {logical_map}
+    Concept index: {concept_index}
+
+    JSON: {{"answer":"...","paragraph_ids_used":[],"verbatim_quotes":[{{"paragraph_id":"...","quote":"..."}}],"logical_chain":[{{"step":1,"claim":"...","paragraph_id":"...","is_inference":false}}],"confidence":"high|medium|low","notes":"..."}}
+
+cross_book:
+  system: |
+    Cross-PR synthesizer. Compare code changes across multiple PRs. Cite as PR_Folder -> paragraph_id. Identify patterns, evolution, and recurring issues. JSON only.
+
+  user_template: |
+    Cross-PR synthesis. Question: {question}
+
+    PRs: {books_json}
+
+    Compare: code_patterns, architectural_decisions, security_practices, testing_coverage, review_quality.
+
+    JSON: {{"comparisons":[{{"dimension":"...","description":"...","per_book":[{{"book_folder":"...","position":"...","evidence":"..."}}],"synthesis":"...","tensions":[],"is_hypothesis":false}}],"cross_links":[{{"concept":"...","books":[],"relationship":"agreement|tension|evolution|contradiction","description":"..."}}],"overall_synthesis":"..."}}

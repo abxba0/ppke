@@ -134,11 +134,12 @@ def main(ctx):
 # ── init command ──
 
 
-_BUILTIN_DOMAINS = ["philosophy", "science", "legal"]
+_BUILTIN_DOMAINS = ["philosophy", "science", "legal", "gh_pr"]
 _DOMAIN_DESCRIPTIONS = {
     "philosophy": "Argument mapping, concept tracking, logical architecture",
     "science": "Methodology analysis, evidence mapping, findings synthesis",
     "legal": "Case law analysis, statutory interpretation, legal reasoning",
+    "gh_pr": "GitHub PR analysis, code review, security scanning, pattern detection",
     "custom": "Install your own template with: ppke template install <source>",
 }
 
@@ -464,6 +465,154 @@ def ingest(
         raise click.ClickException(f"Ingestion failed: {e}") from e
 
     click.echo(_render(_Text(f"\nDone! Output written to: {book_dir}", style="bold green")))
+
+
+# ── ingest-pr command ──
+
+
+@main.command("ingest-pr")
+@click.argument("pr_url")
+@click.option("--title", default=None, help="Override PR title")
+@click.option("--author", default=None, help="Override PR author")
+@click.option("--domain", default="gh_pr", help="Domain template (default: gh_pr)")
+@click.option("--token", default=None, help="GitHub personal access token (or set GITHUB_TOKEN env var)")
+@click.option("--no-comments", is_flag=True, help="Exclude PR conversation comments")
+@click.option("--no-reviews", is_flag=True, help="Exclude code review comments")
+@click.option(
+    "--provider",
+    type=click.Choice(SUPPORTED_PROVIDERS),
+    default=None,
+    help="LLM provider (overrides config)",
+)
+@click.option("--model", default=None, help="Model name (overrides config)")
+@click.option(
+    "--vault-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output vault path (overrides config)",
+)
+@click.option("--batch-size", type=click.IntRange(min=1), default=None, help="Paragraphs per LLM batch (min 1)")
+@click.option("--operator", default="", help="Human operator name for versioning")
+@click.option("-v", "--verbose", is_flag=True, help="Verbose logging")
+def ingest_pr(
+    pr_url: str,
+    title: str | None,
+    author: str | None,
+    domain: str,
+    token: str | None,
+    no_comments: bool,
+    no_reviews: bool,
+    provider: str | None,
+    model: str | None,
+    vault_path: Path | None,
+    batch_size: int | None,
+    operator: str,
+    verbose: bool,
+):
+    """Ingest a GitHub Pull Request into the knowledge base.
+
+    Fetches PR metadata, diff, comments, and reviews from the GitHub API
+    and runs the full analysis pipeline.
+
+    Examples:
+        ppke ingest-pr https://github.com/owner/repo/pull/123
+        ppke ingest-pr https://github.com/owner/repo/pull/123 --domain gh_pr
+        ppke ingest-pr https://github.com/owner/repo/pull/123 --token ghp_xxx
+        ppke ingest-pr https://github.com/owner/repo/pull/123 --no-reviews
+    """
+    _setup_logging(verbose)
+
+    from ppke.converter.github_pr import is_github_pr_url, convert_github_pr, parse_pr_url
+
+    pr_url = pr_url.strip()
+    if not is_github_pr_url(pr_url):
+        raise click.ClickException(
+            f"Not a valid GitHub PR URL: {pr_url}\n"
+            "Expected format: https://github.com/owner/repo/pull/123"
+        )
+
+    config = _load_config_with_overrides(provider, model, vault_path, batch_size)
+    domain = domain or config.default_domain or "gh_pr"
+    _require_api_key(config)
+
+    click.echo(f"Fetching PR from GitHub: {pr_url}")
+
+    try:
+        markdown_text = convert_github_pr(
+            pr_url,
+            token=token,
+            include_comments=not no_comments,
+            include_reviews=not no_reviews,
+        )
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+
+    # Parse PR URL for metadata
+    owner, repo, pr_number = parse_pr_url(pr_url)
+
+    # Derive title and author from markdown if not provided
+    ingest_title = title
+    if not ingest_title:
+        for line in markdown_text.splitlines():
+            if line.startswith("# "):
+                ingest_title = line[2:].strip()
+                break
+        if not ingest_title:
+            ingest_title = f"PR #{pr_number}"
+
+    ingest_author = author or "GitHub PR"
+
+    # Write markdown to a temp file for parsing
+    import tempfile
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", delete=False, prefix=f"pr_{pr_number}_"
+    ) as f:
+        f.write(markdown_text)
+        md_path = Path(f.name)
+
+    try:
+        click.echo(f"Parsed PR: {ingest_title}")
+
+        from ppke.parser.markdown import parse_markdown_book
+
+        book = parse_markdown_book(md_path, ingest_title, ingest_author)
+        click.echo(
+            f"Structured: {len(book.chapters)} chapters, {book.total_paragraphs} paragraphs"
+        )
+
+        click.echo("Starting analysis pipeline...")
+
+        def progress_callback(stage: str, detail: str):
+            stage_t = _Text(f"[{stage}]", style="bold cyan")
+            line = _Text.assemble(stage_t, " ", detail)
+            click.echo("  " + _render(line))
+
+        from ppke.progress.tracker import ProgressTracker
+        from ppke.vectordb.store import VectorStore
+        from ppke.graph.knowledge_graph import KnowledgeGraph
+
+        tracker = ProgressTracker()
+        vector_store = VectorStore(config.vault_path) if config.enable_vector_search else None
+        knowledge_graph = KnowledgeGraph(config.vault_path) if config.enable_knowledge_graph else None
+
+        from ppke.pipeline.orchestrator import ingest_book
+
+        book_dir = ingest_book(
+            book, config,
+            domain=domain,
+            progress_callback=progress_callback,
+            human_operator=operator,
+            tracker=tracker,
+            vector_store=vector_store,
+            knowledge_graph=knowledge_graph,
+        )
+
+        click.echo(_render(_Text(f"\nDone! PR analysis written to: {book_dir}", style="bold green")))
+
+    except Exception as e:
+        raise click.ClickException(f"PR ingestion failed: {e}") from e
+    finally:
+        md_path.unlink(missing_ok=True)
 
 
 # ── parse command ──
