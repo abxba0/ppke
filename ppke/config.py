@@ -152,6 +152,9 @@ class LLMConfig:
         return PROVIDER_SMALL_MODEL_DEFAULTS.get(self.provider, self.model)
 
 
+PROCESSING_MODES = ("linear", "swarm")
+
+
 @dataclass
 class Config:
     """Global PPKE configuration."""
@@ -164,6 +167,7 @@ class Config:
     enable_vector_search: bool = True
     enable_knowledge_graph: bool = True
     async_ingest: bool = False
+    processing_mode: str = "linear"
 
     def save(self, path: Path | None = None) -> None:
         """Serialize configuration to JSON and write to *path*."""
@@ -190,6 +194,7 @@ class Config:
             "enable_vector_search": self.enable_vector_search,
             "enable_knowledge_graph": self.enable_knowledge_graph,
             "async_ingest": self.async_ingest,
+            "processing_mode": self.processing_mode,
         }
         path.write_text(json.dumps(data, indent=2))
 
@@ -222,4 +227,5 @@ class Config:
             enable_vector_search=data.get("enable_vector_search", True),
             enable_knowledge_graph=data.get("enable_knowledge_graph", True),
             async_ingest=data.get("async_ingest", False),
+            processing_mode=data.get("processing_mode", "linear"),
         )
