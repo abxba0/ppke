@@ -142,6 +142,15 @@ class LocalDataBackend:
     def get_shared_books(self, ws_id: str) -> list[dict]:
         return _db.get_shared_books(self._conn, ws_id)
 
+    def get_shared_book_by_id(self, share_id: str, ws_id: str) -> dict | None:
+        return _db.get_shared_book_by_id(self._conn, share_id, ws_id)
+
+    def update_shared_book_permissions(self, share_id: str, ws_id: str, new_permissions: str) -> bool:
+        return _db.update_shared_book_permissions(self._conn, share_id, ws_id, new_permissions)
+
+    def delete_shared_book(self, share_id: str, ws_id: str) -> bool:
+        return _db.delete_shared_book(self._conn, share_id, ws_id)
+
     # -- annotations -----------------------------------------------------
 
     def create_annotation(

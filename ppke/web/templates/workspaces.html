@@ -33,8 +33,9 @@
                 <div>
                     <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ ws.name }}</h2>
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Your role: <span class="font-medium text-brand-600 dark:text-brand-400">{{ ws.member_role }}</span>
-                        {% if ws.owner_id == user.id %} &middot; Owner{% endif %}
+                        Your role: <span class="font-medium text-brand-600 dark:text-brand-400">
+                            {% if ws.member_role == 'owner' %}Owner{% elif ws.member_role == 'admin' %}Admin{% elif ws.member_role == 'editor' %}Editor{% else %}Viewer{% endif %}
+                        </span>
                     </p>
                 </div>
                 <div class="flex items-center space-x-2">
@@ -121,51 +122,73 @@
             </button>
         </div>
 
-        <!-- Invite form (admin/editor only) -->
-        <div id="invite-section">
-            <form id="invite-form" class="mb-5">
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Invite by email</label>
-                <div class="flex space-x-2">
-                    <input type="hidden" name="workspace_id" id="invite-ws-id">
-                    <input type="email" name="email" placeholder="colleague@example.com" required
-                           class="flex-1 px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500">
-                    <select name="role" class="px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
-                        <option value="viewer">Viewer</option>
-                        <option value="editor">Editor</option>
-                        <option value="admin">Admin</option>
-                    </select>
-                    <button type="submit" class="px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 font-medium whitespace-nowrap">
-                        Send Invite
-                    </button>
+        <!-- Tabs -->
+        <div class="flex space-x-1 mb-5 border-b border-gray-200 dark:border-gray-700">
+            <button id="tab-members" onclick="switchTab('members')"
+                    class="px-4 py-2 text-sm font-medium text-brand-600 dark:text-brand-400 border-b-2 border-brand-600 dark:border-brand-400 -mb-px">
+                Members
+            </button>
+            <button id="tab-shared-books" onclick="switchTab('shared-books')"
+                    class="px-4 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border-b-2 border-transparent -mb-px">
+                Shared Books
+            </button>
+        </div>
+
+        <!-- Members Tab -->
+        <div id="panel-members">
+            <!-- Invite form (admin/editor only) -->
+            <div id="invite-section">
+                <form id="invite-form" class="mb-5">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Invite by email</label>
+                    <div class="flex space-x-2">
+                        <input type="hidden" name="workspace_id" id="invite-ws-id">
+                        <input type="email" name="email" placeholder="colleague@example.com" required
+                               class="flex-1 px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-brand-500">
+                        <select name="role" class="px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200">
+                            <option value="viewer">Viewer</option>
+                            <option value="editor">Editor</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        <button type="submit" class="px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 font-medium whitespace-nowrap">
+                            Send Invite
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1.5">
+                        Works even if they haven't registered yet &mdash; they'll auto-join when they sign up.
+                    </p>
+                </form>
+                <!-- Shown when email delivery isn't configured -->
+                <div id="invite-link-box" class="hidden mb-4 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-lg">
+                    <p class="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1.5">Email not configured &mdash; share this link manually:</p>
+                    <div class="flex items-center space-x-2">
+                        <input type="text" id="invite-link-input" readonly
+                               class="flex-1 px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-amber-300 dark:border-amber-700 rounded-lg text-gray-800 dark:text-gray-200 font-mono">
+                        <button onclick="copyInviteLink()" class="px-3 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium whitespace-nowrap">Copy</button>
+                    </div>
                 </div>
-                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1.5">
-                    Works even if they haven't registered yet &mdash; they'll auto-join when they sign up.
-                </p>
-            </form>
-            <!-- Shown when email delivery isn't configured -->
-            <div id="invite-link-box" class="hidden mb-4 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-lg">
-                <p class="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1.5">Email not configured &mdash; share this link manually:</p>
-                <div class="flex items-center space-x-2">
-                    <input type="text" id="invite-link-input" readonly
-                           class="flex-1 px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-amber-300 dark:border-amber-700 rounded-lg text-gray-800 dark:text-gray-200 font-mono">
-                    <button onclick="copyInviteLink()" class="px-3 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium whitespace-nowrap">Copy</button>
-                </div>
+            </div>
+
+            <!-- Pending invites -->
+            <div id="ws-pending-invites" class="hidden mb-5">
+                <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
+                    <svg class="w-4 h-4 mr-1.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Pending Invites
+                </h4>
+                <div id="ws-pending-invites-list" class="space-y-2"></div>
+            </div>
+
+            <!-- Current members -->
+            <div>
+                <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Members</h4>
+                <div id="members-list" class="space-y-2"></div>
             </div>
         </div>
 
-        <!-- Pending invites -->
-        <div id="ws-pending-invites" class="hidden mb-5">
-            <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
-                <svg class="w-4 h-4 mr-1.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                Pending Invites
-            </h4>
-            <div id="ws-pending-invites-list" class="space-y-2"></div>
-        </div>
-
-        <!-- Current members -->
-        <div>
-            <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Members</h4>
-            <div id="members-list" class="space-y-2"></div>
+        <!-- Shared Books Tab -->
+        <div id="panel-shared-books" class="hidden">
+            <div id="shared-books-list" class="space-y-2">
+                <p class="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+            </div>
         </div>
     </div>
 </div>
@@ -204,8 +227,28 @@ async function openMembersModal(wsId, wsName, myRole) {
     document.getElementById('invite-ws-id').value = wsId;
     document.getElementById('members-modal').classList.remove('hidden');
     const inviteSection = document.getElementById('invite-section');
-    inviteSection.style.display = (myRole === 'admin' || myRole === 'editor') ? 'block' : 'none';
+    const roleRank = {viewer: 0, editor: 1, admin: 2, owner: 3};
+    inviteSection.style.display = (roleRank[myRole] >= roleRank['editor']) ? 'block' : 'none';
+    switchTab('members');
     await Promise.all([loadMembers(wsId), loadWsPendingInvites(wsId)]);
+}
+
+function switchTab(tab) {
+    const tabs = ['members', 'shared-books'];
+    tabs.forEach(t => {
+        const btn = document.getElementById('tab-' + t);
+        const panel = document.getElementById('panel-' + t);
+        if (t === tab) {
+            btn.classList.add('text-brand-600', 'dark:text-brand-400', 'border-brand-600', 'dark:border-brand-400');
+            btn.classList.remove('text-gray-500', 'dark:text-gray-400', 'border-transparent');
+            panel.classList.remove('hidden');
+        } else {
+            btn.classList.remove('text-brand-600', 'dark:text-brand-400', 'border-brand-600', 'dark:border-brand-400');
+            btn.classList.add('text-gray-500', 'dark:text-gray-400', 'border-transparent');
+            panel.classList.add('hidden');
+        }
+    });
+    if (tab === 'shared-books') loadSharedBooks(_currentWsId);
 }
 
 async function loadMembers(wsId) {
@@ -214,14 +257,18 @@ async function loadMembers(wsId) {
         const data = await resp.json();
         const list = document.getElementById('members-list');
         list.innerHTML = '';
+        const roleRank = {viewer: 0, editor: 1, admin: 2, owner: 3};
         data.forEach(m => {
             const isMe = m.user_id === _currentUserId;
-            const canManage = _currentUserRole === 'admin' && !isMe;
+            const myRank = roleRank[_currentUserRole] || 0;
+            const canManage = myRank >= roleRank['admin'] && !isMe && m.role !== 'owner';
             const roleColors = {
+                owner: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300',
                 admin: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
                 editor: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
                 viewer: 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
             };
+            const roleLabels = {owner: 'Owner', admin: 'Admin', editor: 'Editor', viewer: 'Viewer'};
             let actions = '';
             if (canManage) {
                 actions = '<div class="flex items-center space-x-2">'
@@ -236,7 +283,7 @@ async function loadMembers(wsId) {
                     + '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'
                     + '</button></div>';
             } else {
-                actions = '<span class="text-xs font-medium px-2.5 py-1 rounded-full ' + (roleColors[m.role] || roleColors.viewer) + '">' + m.role + '</span>';
+                actions = '<span class="text-xs font-medium px-2.5 py-1 rounded-full ' + (roleColors[m.role] || roleColors.viewer) + '">' + (roleLabels[m.role] || m.role) + '</span>';
             }
             const initials = (m.name || '?')[0].toUpperCase() + ((m.name || '?').length > 1 ? m.name[1].toUpperCase() : '');
             list.innerHTML += '<div class="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">'
@@ -259,7 +306,8 @@ async function loadWsPendingInvites(wsId) {
         container.classList.remove('hidden');
         list.innerHTML = '';
         invites.forEach(inv => {
-            const canRevoke = _currentUserRole === 'admin' || _currentUserRole === 'editor';
+            const roleRank = {viewer: 0, editor: 1, admin: 2, owner: 3};
+            const canRevoke = (roleRank[_currentUserRole] || 0) >= roleRank['editor'];
             list.innerHTML += '<div class="flex items-center justify-between p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30">'
                 + '<div><span class="text-sm font-medium text-gray-900 dark:text-gray-200">' + inv.email + '</span>'
                 + '<span class="text-xs text-gray-500 dark:text-gray-400 ml-2">as ' + inv.role + '</span>'
@@ -331,6 +379,77 @@ async function removeMember(wsId, userId, name) {
         } else {
             const data = await resp.json();
             showToast(data.detail || 'Failed to remove member', 'error');
+        }
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
+async function loadSharedBooks(wsId) {
+    const container = document.getElementById('shared-books-list');
+    try {
+        const resp = await fetch('/api/workspaces/' + wsId + '/shared-books');
+        if (!resp.ok) { container.innerHTML = '<p class="text-sm text-gray-400">Unable to load shared books.</p>'; return; }
+        const books = await resp.json();
+        const roleRank = {viewer: 0, editor: 1, admin: 2, owner: 3};
+        const canManage = (roleRank[_currentUserRole] || 0) >= roleRank['admin'];
+        if (books.length === 0) {
+            container.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">No books shared in this workspace yet.</p>';
+            return;
+        }
+        container.innerHTML = '';
+        books.forEach(b => {
+            const permColor = b.permissions === 'edit'
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400';
+            const permLabel = b.permissions === 'edit' ? 'Edit' : 'View';
+            let actions = '<span class="text-xs font-medium px-2.5 py-1 rounded-full ' + permColor + '">' + permLabel + '-only</span>';
+            if (canManage) {
+                actions = '<div class="flex items-center space-x-2">'
+                    + '<select onchange="changeSharedBookPermission(\'' + wsId + '\', \'' + b.id + '\', this.value)" '
+                    + 'class="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-gray-200">'
+                    + '<option value="view"' + (b.permissions === 'view' ? ' selected' : '') + '>View-only</option>'
+                    + '<option value="edit"' + (b.permissions === 'edit' ? ' selected' : '') + '>Edit</option>'
+                    + '</select>'
+                    + '<button onclick="unshareBook(\'' + wsId + '\', \'' + b.id + '\', \'' + (b.book_folder || '').replace(/'/g, "\\'") + '\')" '
+                    + 'class="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-1" title="Unshare book">'
+                    + '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'
+                    + '</button></div>';
+            }
+            const folderName = (b.book_folder || '').replace(/^Book_/, '').replace(/_/g, ' ');
+            container.innerHTML += '<div class="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">'
+                + '<div><span class="text-sm font-medium text-gray-900 dark:text-gray-200">' + folderName + '</span>'
+                + '<span class="text-xs text-gray-500 dark:text-gray-400 block">Shared by ' + (b.shared_by_name || 'unknown') + '</span></div>'
+                + actions + '</div>';
+        });
+    } catch(err) { container.innerHTML = '<p class="text-sm text-gray-400">Failed to load shared books.</p>'; }
+}
+
+async function changeSharedBookPermission(wsId, shareId, newPerm) {
+    try {
+        const resp = await fetch('/api/workspaces/' + wsId + '/shared-books/' + shareId, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({permissions: newPerm})
+        });
+        if (resp.ok) {
+            showToast('Permissions updated to ' + newPerm, 'success');
+        } else {
+            const data = await resp.json();
+            showToast(data.detail || 'Failed to update permissions', 'error');
+            loadSharedBooks(wsId);
+        }
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
+async function unshareBook(wsId, shareId, folder) {
+    if (!confirm('Remove "' + folder.replace(/^Book_/, '').replace(/_/g, ' ') + '" from shared books?')) return;
+    try {
+        const resp = await fetch('/api/workspaces/' + wsId + '/shared-books/' + shareId, { method: 'DELETE' });
+        if (resp.ok) {
+            showToast('Book unshared', 'success');
+            loadSharedBooks(wsId);
+        } else {
+            const data = await resp.json();
+            showToast(data.detail || 'Failed to unshare', 'error');
         }
     } catch(err) { showToast(err.message, 'error'); }
 }

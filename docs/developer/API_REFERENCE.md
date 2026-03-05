@@ -163,11 +163,29 @@ All API endpoints return JSON unless otherwise noted. Authentication is via JWT 
 | GET | `/api/workspaces` | List user's workspaces |
 | POST | `/api/workspaces` | Create a new workspace |
 | GET | `/api/workspaces/{ws_id}/members` | List workspace members |
-| POST | `/api/workspaces/{ws_id}/invite` | Invite user to workspace |
-| PUT | `/api/workspaces/{ws_id}/members/{user_id}/role` | Update member role |
-| DELETE | `/api/workspaces/{ws_id}/members/{user_id}` | Remove member |
-| POST | `/api/workspaces/{ws_id}/share` | Share a book with workspace |
-| GET | `/api/workspaces/{ws_id}/shared-books` | List shared books |
+| POST | `/api/workspaces/{ws_id}/invite` | Invite user to workspace (admin/owner/editor) |
+| POST | `/api/workspaces/{ws_id}/members/{user_id}/role` | Update member role (admin/owner only) |
+| DELETE | `/api/workspaces/{ws_id}/members/{user_id}` | Remove member (admin/owner only) |
+| POST | `/api/workspaces/{ws_id}/share` | Share a book with workspace (`permissions`: `view`\|`edit`) |
+| GET | `/api/workspaces/{ws_id}/shared-books` | List shared books in workspace |
+| PATCH | `/api/workspaces/{ws_id}/shared-books/{share_id}` | Update shared book permissions (admin/owner only) |
+| DELETE | `/api/workspaces/{ws_id}/shared-books/{share_id}` | Unshare a book from workspace |
+
+#### Workspace Permission Levels
+
+| Role | Invite Members | Share Books | Manage Shared Books | Change Roles | Remove Members |
+|------|---------------|-------------|--------------------|--------------| ---------------|
+| **Owner** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Admin** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Editor** | ✓ | ✓ | ✗ | ✗ | ✗ |
+| **Viewer** | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+#### Shared Book Permission Levels
+
+| Permission | Description |
+|-----------|-------------|
+| `view` | Members can read the book content only (read-only) |
+| `edit` | Members can read and annotate the book |
 
 ### Annotations
 

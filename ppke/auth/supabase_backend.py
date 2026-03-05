@@ -402,7 +402,7 @@ class SupabaseDataBackend:
             "id": share_id, "workspace_id": ws_id, "book_folder": book_folder,
             "shared_by": shared_by, "permissions": permissions, "created_at": now,
         }).execute()
-        return {"id": share_id, "workspace_id": ws_id, "book_folder": book_folder}
+        return {"id": share_id, "workspace_id": ws_id, "book_folder": book_folder, "permissions": permissions}
 
     def get_shared_books(self, ws_id: str) -> list[dict]:
         resp = (self._service_table("shared_books")
@@ -415,6 +415,31 @@ class SupabaseDataBackend:
             row["shared_by_name"] = p.get("name", "")
             results.append(row)
         return results
+
+    def get_shared_book_by_id(self, share_id: str, ws_id: str) -> dict | None:
+        resp = (self._service_table("shared_books")
+                .select("*")
+                .eq("id", share_id)
+                .eq("workspace_id", ws_id)
+                .maybe_single()
+                .execute())
+        return resp.data
+
+    def update_shared_book_permissions(self, share_id: str, ws_id: str, new_permissions: str) -> bool:
+        resp = (self._service_table("shared_books")
+                .update({"permissions": new_permissions})
+                .eq("id", share_id)
+                .eq("workspace_id", ws_id)
+                .execute())
+        return len(resp.data or []) > 0
+
+    def delete_shared_book(self, share_id: str, ws_id: str) -> bool:
+        resp = (self._service_table("shared_books")
+                .delete()
+                .eq("id", share_id)
+                .eq("workspace_id", ws_id)
+                .execute())
+        return len(resp.data or []) > 0
 
     # -- annotations -----------------------------------------------------
 

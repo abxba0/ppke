@@ -154,6 +154,20 @@ def _book_dirs(user: dict | None = None) -> list[Path]:
     )
 
 
+# ── Workspace role hierarchy ──
+
+_ROLE_RANK: dict[str, int] = {"viewer": 0, "editor": 1, "admin": 2, "owner": 3}
+_VALID_WORKSPACE_ROLES = ("viewer", "editor", "admin")  # assignable via invite
+_VALID_SHARED_BOOK_PERMISSIONS = ("view", "edit")
+
+
+def _role_gte(role: str | None, min_role: str) -> bool:
+    """Return True if *role* has at least the privileges of *min_role*."""
+    if role is None:
+        return False
+    return _ROLE_RANK.get(role, -1) >= _ROLE_RANK.get(min_role, 0)
+
+
 # ── Auth-aware helper: get user from request or None ──
 
 
@@ -3721,7 +3735,7 @@ async def api_invite_member(request: Request, ws_id: str, user: dict = Depends(g
     """
     conn = _get_db()
     role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
-    if role not in ("admin", "editor"):
+    if not _role_gte(role, "editor"):
         raise HTTPException(403, "Only admins and editors can invite members")
 
     body = await request.json()
@@ -3729,7 +3743,7 @@ async def api_invite_member(request: Request, ws_id: str, user: dict = Depends(g
     invite_role = body.get("role", "viewer")
     if not email:
         raise HTTPException(400, "Email is required")
-    if invite_role not in ("viewer", "editor", "admin"):
+    if invite_role not in _VALID_WORKSPACE_ROLES:
         raise HTTPException(400, "Invalid role — must be viewer, editor, or admin")
 
     try:
@@ -3806,7 +3820,7 @@ async def api_revoke_invite(ws_id: str, invite_id: str, user: dict = Depends(get
     """Revoke a pending invite (admin/editor only)."""
     conn = _get_db()
     role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
-    if role not in ("admin", "editor"):
+    if not _role_gte(role, "editor"):
         raise HTTPException(403, "Only admins and editors can revoke invites")
     if not auth_db.revoke_invite(conn, invite_id):
         raise HTTPException(404, "Invite not found or already accepted")
@@ -3901,27 +3915,37 @@ h2 {{ color: #4ecca3; margin-bottom: 0.5rem; }}
 async def api_update_member_role(
     request: Request, ws_id: str, member_id: str, user: dict = Depends(get_current_user)
 ):
-    """Update a member's role in a workspace (admin only)."""
+    """Update a member's role in a workspace (admin/owner only)."""
     conn = _get_db()
     role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
-    if role != "admin":
+    if not _role_gte(role, "admin"):
         raise HTTPException(403, "Only admins can change roles")
+
+    # Protect the owner role: cannot be reassigned
+    target_role = auth_db.get_user_role_in_workspace(conn, ws_id, member_id)
+    if target_role == "owner":
+        raise HTTPException(400, "Cannot change the owner's role — transfer ownership instead")
 
     body = await request.json()
     new_role = body.get("role", "viewer")
+    if new_role not in _VALID_WORKSPACE_ROLES:
+        raise HTTPException(400, "Invalid role — must be viewer, editor, or admin")
     auth_db.update_member_role(conn, ws_id, member_id, new_role)
     return {"status": "ok"}
 
 
 @app.delete("/api/workspaces/{ws_id}/members/{member_id}")
 async def api_remove_member(ws_id: str, member_id: str, user: dict = Depends(get_current_user)):
-    """Remove a member from a workspace (admin only)."""
+    """Remove a member from a workspace (admin/owner only)."""
     conn = _get_db()
     role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
-    if role != "admin":
+    if not _role_gte(role, "admin"):
         raise HTTPException(403, "Only admins can remove members")
     if member_id == user["id"]:
         raise HTTPException(400, "Cannot remove yourself — transfer ownership first")
+    target_role = auth_db.get_user_role_in_workspace(conn, ws_id, member_id)
+    if target_role == "owner":
+        raise HTTPException(400, "Cannot remove the workspace owner")
     auth_db.remove_workspace_member(conn, ws_id, member_id)
     return {"status": "ok"}
 
@@ -3934,7 +3958,7 @@ async def api_share_book(request: Request, ws_id: str, user: dict = Depends(get_
     """Share a book with a workspace."""
     conn = _get_db()
     role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
-    if not role or role == "viewer":
+    if not _role_gte(role, "editor"):
         raise HTTPException(403, "Viewers cannot share books")
 
     body = await request.json()
@@ -3943,6 +3967,8 @@ async def api_share_book(request: Request, ws_id: str, user: dict = Depends(get_
 
     if not book_folder:
         raise HTTPException(400, "book_folder is required")
+    if permissions not in _VALID_SHARED_BOOK_PERMISSIONS:
+        raise HTTPException(400, "Invalid permissions — must be 'view' or 'edit'")
 
     share = auth_db.share_book(conn, ws_id, book_folder, user["id"], permissions)
     auth_db.log_activity(conn, user["id"], f"shared book {book_folder}", "book", book_folder, workspace_id=ws_id)
@@ -3957,6 +3983,50 @@ async def api_shared_books(ws_id: str, user: dict = Depends(get_current_user)):
     if not role:
         raise HTTPException(403, "Not a member of this workspace")
     return auth_db.get_shared_books(conn, ws_id)
+
+
+@app.patch("/api/workspaces/{ws_id}/shared-books/{share_id}")
+async def api_update_shared_book(
+    request: Request, ws_id: str, share_id: str, user: dict = Depends(get_current_user)
+):
+    """Update the permissions on a shared book (admin/owner only)."""
+    conn = _get_db()
+    role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
+    if not _role_gte(role, "admin"):
+        raise HTTPException(403, "Only admins can update shared book permissions")
+
+    body = await request.json()
+    new_permissions = body.get("permissions", "").strip()
+    if new_permissions not in _VALID_SHARED_BOOK_PERMISSIONS:
+        raise HTTPException(400, "Invalid permissions — must be 'view' or 'edit'")
+
+    if not auth_db.update_shared_book_permissions(conn, share_id, ws_id, new_permissions):
+        raise HTTPException(404, "Shared book not found")
+    auth_db.log_activity(conn, user["id"], f"updated shared book permissions to {new_permissions}",
+                         "book", share_id, workspace_id=ws_id)
+    return {"status": "ok", "permissions": new_permissions}
+
+
+@app.delete("/api/workspaces/{ws_id}/shared-books/{share_id}")
+async def api_delete_shared_book(ws_id: str, share_id: str, user: dict = Depends(get_current_user)):
+    """Unshare a book from a workspace (admin/owner or original sharer)."""
+    conn = _get_db()
+    role = auth_db.get_user_role_in_workspace(conn, ws_id, user["id"])
+    if not role:
+        raise HTTPException(403, "Not a member of this workspace")
+
+    share = auth_db.get_shared_book_by_id(conn, share_id, ws_id)
+    if not share:
+        raise HTTPException(404, "Shared book not found")
+
+    # Allow: admin/owner, or the user who originally shared the book
+    if not _role_gte(role, "admin") and share.get("shared_by") != user["id"]:
+        raise HTTPException(403, "Only admins or the person who shared the book can unshare it")
+
+    auth_db.delete_shared_book(conn, share_id, ws_id)
+    auth_db.log_activity(conn, user["id"], f"unshared book {share.get('book_folder', '')}",
+                         "book", share.get("book_folder", ""), workspace_id=ws_id)
+    return {"status": "ok"}
 
 
 # ── Annotations ──
