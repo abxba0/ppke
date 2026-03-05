@@ -1,0 +1,48 @@
+# GitHub Pull Request Analysis Template
+# Designed for AI-powered code review, security analysis, and pattern detection
+
+name: gh_pr
+version: "1.0.0"
+tier: official
+author: PPKE Core Team
+description: "GitHub Pull Request analysis with code review, security scanning, and pattern detection"
+
+# Pipeline stages (executed in order)
+stages:
+  - id: extraction
+    name: "PR Structure Extraction"
+    module: ppke.pipeline.stages.extractor
+    prompt: extraction
+
+  - id: logical_map
+    name: "Change Architecture"
+    module: ppke.pipeline.stages.analyzer
+    prompt: logical_map
+    output_file: "02_Logical_Map.md"
+
+  - id: concepts
+    name: "Code Concept Indexing"
+    module: ppke.pipeline.stages.concepts
+    prompt: concepts
+    output_file: "03_Concept_Index.md"
+
+  - id: patterns
+    name: "Code Pattern & Security Detection"
+    module: ppke.pipeline.stages.patterns
+    prompt: patterns
+    output_file: "06_Patterns.md"
+
+# Skip logic (sections to skip during ingestion)
+skip_chapters: []
+
+# Output configuration
+outputs:
+  folder_format: "PR_{title}_{author}_{year}"
+  files:
+    - "meta.yml"
+    - "01_Raw_Structure.md"
+    - "02_Logical_Map.md"
+    - "03_Concept_Index.md"
+    - "05_Coverage_Report.md"
+    - "06_Patterns.md"
+    - "extractions.json"

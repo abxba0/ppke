@@ -1570,6 +1570,250 @@ async def api_import_url(
     return {"job_id": job_id, "status": "running", "source_type": source_type}
 
 
+@app.post("/api/import-github-pr")
+async def api_import_github_pr(
+    request: Request,
+    url: str = Form(...),
+    title: str = Form(""),
+    author: str = Form(""),
+    domain: str = Form("gh_pr"),
+    token: str = Form(""),
+):
+    """Import a GitHub Pull Request URL and ingest it.
+
+    Fetches PR metadata, diff, comments, and reviews via the GitHub API,
+    converts to Markdown, and runs the full analysis pipeline.
+
+    Returns ``{"job_id": ..., "status": "running"}``.
+    """
+    user = await _try_get_user(request)
+
+    url = url.strip()
+    from ppke.converter.github_pr import is_github_pr_url
+
+    if not is_github_pr_url(url):
+        raise HTTPException(
+            400,
+            "Please provide a valid GitHub PR URL "
+            "(e.g., https://github.com/owner/repo/pull/123)",
+        )
+
+    gh_token = token.strip() or os.environ.get("GITHUB_TOKEN") or None
+
+    config = _get_config()
+    vault = _user_vault_path(user)
+    upload_dir = vault / ".uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    job_id = create_job(extra={"url": url, "source_type": "github_pr"})
+
+    def _run_pr_ingest():
+        _start = time.time()
+        md_path: Path | None = None
+        try:
+            update_job(job_id, stage="Fetching PR from GitHub...", progress=5)
+
+            from ppke.converter.github_pr import convert_github_pr, parse_pr_url
+
+            markdown_text = convert_github_pr(url, token=gh_token)
+
+            update_job(job_id, stage="PR fetched — starting analysis...", progress=20)
+
+            _, _, pr_number = parse_pr_url(url)
+
+            ingest_title = title.strip()
+            if not ingest_title:
+                for line in markdown_text.splitlines():
+                    if line.startswith("# "):
+                        ingest_title = line[2:].strip()
+                        break
+                if not ingest_title:
+                    ingest_title = f"PR #{pr_number}"
+
+            ingest_author = author.strip() or "GitHub PR"
+
+            safe_stem = re.sub(r"[^\w\-]", "_", ingest_title)[:60]
+            md_path = upload_dir / f"{safe_stem}_{job_id}.md"
+            md_path.write_text(markdown_text)
+
+            from ppke.parser.markdown import parse_markdown_book
+            from ppke.pipeline.orchestrator import ingest_book
+            from ppke.progress.tracker import ProgressTracker
+            from ppke.vectordb.store import VectorStore
+            from ppke.graph.knowledge_graph import KnowledgeGraph
+
+            book = parse_markdown_book(md_path, ingest_title, ingest_author)
+            update_job(job_id, stage=f"Parsed: {len(book.chapters)} chapters", progress=30)
+
+            tracker = ProgressTracker()
+            vector_store = VectorStore(vault) if config.enable_vector_search else None
+            knowledge_graph = KnowledgeGraph(vault) if config.enable_knowledge_graph else None
+
+            config.vault_path = vault
+
+            def progress_cb(stage: str, detail: str):
+                update_job(job_id, stage=f"[{stage}] {detail}")
+
+            book_dir = ingest_book(
+                book, config,
+                domain=domain,
+                progress_callback=progress_cb,
+                tracker=tracker,
+                vector_store=vector_store,
+                knowledge_graph=knowledge_graph,
+            )
+
+            folder_name = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
+            update_job(job_id, status="completed", progress=100,
+                       book_folder=folder_name, stage="PR analysis complete!")
+            record_ingestion("github_pr", "completed", time.time() - _start)
+
+        except Exception as e:
+            logger.exception("GitHub PR ingestion failed for job %s (url=%s)", job_id, url)
+            update_job(job_id, status="failed", error=str(e), stage=f"Failed: {e}")
+            capture_exception(e, job_id=job_id, url=url)
+            record_ingestion("github_pr", "failed", time.time() - _start)
+        finally:
+            if md_path is not None:
+                md_path.unlink(missing_ok=True)
+
+    run_task(_run_pr_ingest, job_id=job_id)
+
+    return {"job_id": job_id, "status": "running", "source_type": "github_pr"}
+
+
+@app.post("/api/github/webhook")
+async def api_github_webhook(request: Request):
+    """GitHub webhook endpoint for automatic PR ingestion.
+
+    Register this URL as a webhook in your GitHub repository settings.
+    Supports ``pull_request`` events (opened, synchronize, reopened).
+
+    Optionally verify webhook signatures by setting ``GITHUB_WEBHOOK_SECRET``
+    environment variable.
+
+    Returns ``{"job_id": ..., "status": "running"}`` on success.
+    """
+    # Verify webhook signature if secret is configured
+    webhook_secret = os.environ.get("GITHUB_WEBHOOK_SECRET")
+    if webhook_secret:
+        import hashlib
+        import hmac
+
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        body = await request.body()
+        expected = "sha256=" + hmac.new(
+            webhook_secret.encode(), body, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise HTTPException(403, "Invalid webhook signature")
+        payload = json.loads(body)
+    else:
+        payload = await request.json()
+
+    # Only process pull_request events
+    event = request.headers.get("X-GitHub-Event", "")
+    if event == "ping":
+        return {"status": "pong"}
+
+    if event != "pull_request":
+        return {"status": "ignored", "reason": f"Event '{event}' not handled"}
+
+    action = payload.get("action", "")
+    if action not in ("opened", "synchronize", "reopened"):
+        return {"status": "ignored", "reason": f"Action '{action}' not handled"}
+
+    pr = payload.get("pull_request", {})
+    pr_url = pr.get("html_url", "")
+
+    if not pr_url:
+        raise HTTPException(400, "Missing pull_request.html_url in payload")
+
+    from ppke.converter.github_pr import is_github_pr_url
+
+    if not is_github_pr_url(pr_url):
+        raise HTTPException(400, f"Invalid PR URL in payload: {pr_url}")
+
+    gh_token = os.environ.get("GITHUB_TOKEN")
+    config = _get_config()
+    vault = config.vault_path
+    upload_dir = vault / ".uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    pr_title = pr.get("title", "Untitled PR")
+    pr_author = pr.get("user", {}).get("login", "unknown")
+    pr_number = pr.get("number", 0)
+
+    job_id = create_job(extra={
+        "url": pr_url,
+        "source_type": "github_webhook",
+        "pr_number": pr_number,
+        "action": action,
+    })
+
+    def _run_webhook_ingest():
+        _start = time.time()
+        md_path: Path | None = None
+        try:
+            update_job(job_id, stage="Fetching PR from GitHub...", progress=5)
+
+            from ppke.converter.github_pr import convert_github_pr
+
+            markdown_text = convert_github_pr(pr_url, token=gh_token)
+
+            update_job(job_id, stage="PR fetched — starting analysis...", progress=20)
+
+            safe_stem = re.sub(r"[^\w\-]", "_", pr_title)[:60]
+            md_path = upload_dir / f"{safe_stem}_{job_id}.md"
+            md_path.write_text(markdown_text)
+
+            from ppke.parser.markdown import parse_markdown_book
+            from ppke.pipeline.orchestrator import ingest_book
+            from ppke.progress.tracker import ProgressTracker
+            from ppke.vectordb.store import VectorStore
+            from ppke.graph.knowledge_graph import KnowledgeGraph
+
+            book = parse_markdown_book(md_path, pr_title, pr_author)
+            update_job(job_id, stage=f"Parsed: {len(book.chapters)} chapters", progress=30)
+
+            tracker = ProgressTracker()
+            vector_store = VectorStore(vault) if config.enable_vector_search else None
+            knowledge_graph = KnowledgeGraph(vault) if config.enable_knowledge_graph else None
+
+            config.vault_path = vault
+
+            def progress_cb(stage: str, detail: str):
+                update_job(job_id, stage=f"[{stage}] {detail}")
+
+            book_dir = ingest_book(
+                book, config,
+                domain="gh_pr",
+                progress_callback=progress_cb,
+                tracker=tracker,
+                vector_store=vector_store,
+                knowledge_graph=knowledge_graph,
+            )
+
+            folder_name = book_dir.name if hasattr(book_dir, "name") else str(book_dir)
+            update_job(job_id, status="completed", progress=100,
+                       book_folder=folder_name, stage="Webhook PR analysis complete!")
+            record_ingestion("github_webhook", "completed", time.time() - _start)
+
+        except Exception as e:
+            logger.exception("Webhook PR ingestion failed for job %s (url=%s)", job_id, pr_url)
+            update_job(job_id, status="failed", error=str(e), stage=f"Failed: {e}")
+            capture_exception(e, job_id=job_id, url=pr_url)
+            record_ingestion("github_webhook", "failed", time.time() - _start)
+        finally:
+            if md_path is not None:
+                md_path.unlink(missing_ok=True)
+
+    run_task(_run_webhook_ingest, job_id=job_id)
+
+    return {"job_id": job_id, "status": "running", "source_type": "github_webhook",
+            "pr_number": pr_number}
+
+
 @app.post("/api/import-zotero")
 async def api_import_zotero(
     request: Request,

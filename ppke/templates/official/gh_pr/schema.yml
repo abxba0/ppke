@@ -1,0 +1,37 @@
+# GitHub PR Extraction Schema
+
+extraction_model:
+  name: GitHubPRExtraction
+  base: BaseExtraction
+  description: "Pydantic model for GitHub Pull Request code change extraction"
+
+  fields:
+    - name: function_in_argument
+      type: str
+      description: "How this section functions in the PR (code_addition, code_deletion, refactor, bugfix, feature, documentation, review_comment, discussion)"
+      default: ""
+
+    - name: explicit_claims
+      type: list[str]
+      description: "Explicitly stated changes, decisions, or requirements"
+      default: []
+
+    - name: implicit_assumptions
+      type: list[str]
+      description: "Unstated design assumptions or inferred architectural decisions"
+      default: []
+
+    - name: logical_steps
+      type: list[str]
+      description: "Step-by-step breakdown of the change logic"
+      default: []
+
+    - name: emotional_tone
+      type: str
+      description: "Tone of comments/reviews (constructive, critical, neutral, appreciative)"
+      default: "neutral"
+
+    - name: tone_evidence
+      type: str
+      description: "Evidence supporting the identified tone"
+      default: ""
