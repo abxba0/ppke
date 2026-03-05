@@ -78,11 +78,13 @@ class SwarmOrchestrator:
         agent_timings: dict[str, float] = {}
 
         # Phase 1: Run agents concurrently
+        agent_submit_times: dict[str, float] = {}
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = {}
             for agent in enabled_agents:
                 _progress(f"Launching agent: {agent.name}")
                 context = self.bus.context_for(agent.role.value)
+                agent_submit_times[agent.role.value] = time.time()
                 future = executor.submit(
                     agent.run,
                     client,
@@ -95,7 +97,6 @@ class SwarmOrchestrator:
 
             for future in as_completed(futures):
                 agent = futures[future]
-                agent_start = time.time()
                 try:
                     result = future.result()
                     merged.update(result)
@@ -111,7 +112,8 @@ class SwarmOrchestrator:
                     merged[agent.role.value] = {"error": str(exc)}
                     _progress(f"Agent {agent.name} failed: {exc}")
                 finally:
-                    agent_timings[agent.role.value] = time.time() - agent_start
+                    submit_t = agent_submit_times.get(agent.role.value, start_time)
+                    agent_timings[agent.role.value] = time.time() - submit_t
 
         total_time = time.time() - start_time
 

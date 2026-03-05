@@ -10,6 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
 
+import yaml
+
 from ppke.config import Config
 from ppke.llm.client import LLMClient
 from ppke.llm.prompts import AUTHOR_MODEL_SYSTEM, AUTHOR_MODEL_USER
@@ -826,7 +828,6 @@ def ingest_book(
     # Record processing mode in meta.yml
     meta_path = book_dir / "meta.yml"
     if meta_path.exists():
-        import yaml
         try:
             meta = yaml.safe_load(meta_path.read_text()) or {}
             meta["processing_mode"] = mode
