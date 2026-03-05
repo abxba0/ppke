@@ -206,7 +206,7 @@ def _format_diff_section(diff: str, max_lines: int = 500) -> str:
     lines = diff.splitlines()
     if len(lines) > max_lines:
         truncated = lines[:max_lines]
-        truncated.append(f"\n... ({len(lines) - max_lines} more lines truncated)")
+        truncated.append(f"... ({len(lines) - max_lines} more lines truncated)")
         diff = "\n".join(truncated)
     return f"```diff\n{diff}\n```"
 
