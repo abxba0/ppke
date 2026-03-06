@@ -107,9 +107,9 @@ async def get_optional_user(request: Request) -> dict[str, Any] | None:
 def require_role(min_role: str):
     """Dependency factory: require minimum workspace role.
 
-    Role hierarchy: admin > editor > viewer
+    Role hierarchy: owner > admin > editor > viewer
     """
-    role_levels = {"viewer": 0, "editor": 1, "admin": 2}
+    role_levels = {"viewer": 0, "editor": 1, "admin": 2, "owner": 3}
 
     async def _checker(
         request: Request,

@@ -515,9 +515,9 @@ def create_workspace(conn: Any, name: str, slug: str, owner_id: str) -> dict:
         "INSERT INTO workspaces (id, name, slug, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
         (ws_id, name, slug, owner_id, now, now),
     )
-    # Owner is automatically an admin member
+    # Owner gets the explicit 'owner' role
     conn.execute(
-        "INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at) VALUES (?, ?, ?, 'admin', ?)",
+        "INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at) VALUES (?, ?, ?, 'owner', ?)",
         (str(uuid.uuid4()), ws_id, owner_id, now),
     )
     conn.commit()
@@ -603,7 +603,33 @@ def share_book(conn: Any, ws_id: str, book_folder: str, shared_by: str, permissi
         (share_id, ws_id, book_folder, shared_by, permissions, now),
     )
     conn.commit()
-    return {"id": share_id, "workspace_id": ws_id, "book_folder": book_folder}
+    return {"id": share_id, "workspace_id": ws_id, "book_folder": book_folder, "permissions": permissions}
+
+
+def get_shared_book_by_id(conn: Any, share_id: str, ws_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM shared_books WHERE id = ? AND workspace_id = ?",
+        (share_id, ws_id),
+    ).fetchone()
+    return _row_to_dict(row)
+
+
+def update_shared_book_permissions(conn: Any, share_id: str, ws_id: str, new_permissions: str) -> bool:
+    cur = conn.execute(
+        "UPDATE shared_books SET permissions = ? WHERE id = ? AND workspace_id = ?",
+        (new_permissions, share_id, ws_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_shared_book(conn: Any, share_id: str, ws_id: str) -> bool:
+    cur = conn.execute(
+        "DELETE FROM shared_books WHERE id = ? AND workspace_id = ?",
+        (share_id, ws_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
 
 
 def get_shared_books(conn: Any, ws_id: str) -> list[dict]:

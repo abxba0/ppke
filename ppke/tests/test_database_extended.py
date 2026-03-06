@@ -60,7 +60,7 @@ class TestWorkspaces:
         user = create_user(db_conn, "role@test.com", "Role User", "hash")
         ws = create_workspace(db_conn, "Role WS", "role-ws", user["id"])
         role = get_user_role_in_workspace(db_conn, ws["id"], user["id"])
-        assert role == "admin"
+        assert role == "owner"
 
     def test_get_user_role_not_member(self, db_conn):
         from ppke.auth.database import (
@@ -107,10 +107,45 @@ class TestSharedBooks:
         )
         user = create_user(db_conn, "share@test.com", "Sharer", "hash")
         ws = create_workspace(db_conn, "Share WS", "share-ws", user["id"])
-        share_book(db_conn, ws["id"], "Book_Test", user["id"], "read")
+        share_book(db_conn, ws["id"], "Book_Test", user["id"], "view")
         books = get_shared_books(db_conn, ws["id"])
         assert len(books) >= 1
         assert books[0]["book_folder"] == "Book_Test"
+
+    def test_share_book_returns_permissions(self, db_conn):
+        from ppke.auth.database import (
+            create_workspace, create_user, share_book,
+        )
+        user = create_user(db_conn, "share2@test.com", "Sharer2", "hash")
+        ws = create_workspace(db_conn, "Share WS2", "share-ws2", user["id"])
+        result = share_book(db_conn, ws["id"], "Book_Edit", user["id"], "edit")
+        assert result["permissions"] == "edit"
+
+    def test_update_shared_book_permissions(self, db_conn):
+        from ppke.auth.database import (
+            create_workspace, create_user, share_book,
+            update_shared_book_permissions, get_shared_book_by_id
+        )
+        user = create_user(db_conn, "share3@test.com", "Sharer3", "hash")
+        ws = create_workspace(db_conn, "Share WS3", "share-ws3", user["id"])
+        result = share_book(db_conn, ws["id"], "Book_Change", user["id"], "view")
+        updated = update_shared_book_permissions(db_conn, result["id"], ws["id"], "edit")
+        assert updated is True
+        book = get_shared_book_by_id(db_conn, result["id"], ws["id"])
+        assert book["permissions"] == "edit"
+
+    def test_delete_shared_book(self, db_conn):
+        from ppke.auth.database import (
+            create_workspace, create_user, share_book,
+            delete_shared_book, get_shared_book_by_id
+        )
+        user = create_user(db_conn, "share4@test.com", "Sharer4", "hash")
+        ws = create_workspace(db_conn, "Share WS4", "share-ws4", user["id"])
+        result = share_book(db_conn, ws["id"], "Book_Delete", user["id"], "view")
+        deleted = delete_shared_book(db_conn, result["id"], ws["id"])
+        assert deleted is True
+        book = get_shared_book_by_id(db_conn, result["id"], ws["id"])
+        assert book is None
 
 
 class TestAnnotations:
