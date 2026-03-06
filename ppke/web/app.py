@@ -2977,6 +2977,76 @@ async def api_graph_temporal(
     return {"nodes": d3_nodes, "links": d3_links, "range": result.get("range", {})}
 
 
+# ── Graph-to-Text narrative endpoints ──
+
+
+@app.get("/api/graph/narrative")
+async def api_get_graph_narrative(request: Request):
+    """Return cached graph narrative if available.
+
+    Returns ``{"status": "ready", "content": "..."}`` when a cached narrative
+    exists, or ``{"status": "not_generated", "content": null}`` otherwise.
+    """
+    user = await _try_get_user(request)
+    vault = _user_vault_path(user)
+    path = vault / "graph_narrative.md"
+    if not path.exists():
+        return {"status": "not_generated", "content": None}
+    return {"status": "ready", "content": path.read_text()}
+
+
+@app.post("/api/graph/narrative")
+async def api_generate_graph_narrative(
+    request: Request,
+    style: str = Form("essay"),
+    focus_concept: str = Form(""),
+):
+    """Generate a long-form narrative from the knowledge graph via LLM.
+
+    Parameters
+    ----------
+    style:
+        Writing style — one of ``essay``, ``report``, ``literature_review``.
+        Defaults to ``essay``.
+    focus_concept:
+        Optional concept to centre the narrative around (empty = no focus).
+    """
+    user = await _try_get_user(request)
+    vault = _user_vault_path(user)
+
+    graph_path = vault / "knowledge_graph.json"
+    if not graph_path.exists():
+        raise HTTPException(404, "No knowledge graph found — build the graph first")
+
+    valid_styles = {"essay", "report", "literature_review"}
+    if style not in valid_styles:
+        raise HTTPException(400, f"Invalid style '{style}'. Must be one of: {', '.join(sorted(valid_styles))}")
+
+    from ppke.graph.narrative import generate_narrative
+    from ppke.llm.client import LLMClient
+
+    config = _get_config()
+    client = LLMClient(config.llm)
+
+    try:
+        content = generate_narrative(
+            vault,
+            client,
+            style=style,
+            focus_concept=focus_concept.strip() or None,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(500, f"Narrative generation failed: {e}") from e
+
+    # Cache the result
+    cache_path = vault / "graph_narrative.md"
+    cache_path.write_text(content)
+
+    return {"status": "ready", "content": content, "style": style}
+
+
 # ── PDF table detection endpoint ──
 
 
